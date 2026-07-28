@@ -434,9 +434,17 @@ export function emptyForm() {
     lng: null,
     fecha: new Date().toISOString().slice(0, 10),
     descripcion: "",
+    contactoWhatsapp: "",
+    contactoEmail: "",
     // Hasta 3 fotos: [{ dataUrl, hist, embedding }, ...]
     fotos: [],
   };
+}
+
+// Limpia un número de teléfono para armar un link de wa.me (solo dígitos,
+// sin espacios/guiones/paréntesis/+).
+export function sanitizePhoneForWhatsapp(phone) {
+  return (phone || "").replace(/\D/g, "");
 }
 
 export const MAX_FOTOS = 3;

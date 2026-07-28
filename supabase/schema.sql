@@ -20,6 +20,8 @@ create table if not exists reports (
   lng double precision,
   fecha date,
   descripcion text not null,
+  contacto_whatsapp text,
+  contacto_email text,
   foto_url text not null,
   hist jsonb,
   embedding jsonb,
@@ -61,6 +63,8 @@ alter table reports add column if not exists foto_urls jsonb;
 alter table reports add column if not exists hists jsonb;
 alter table reports add column if not exists embeddings jsonb;
 alter table contributors add column if not exists hearts integer not null default 0;
+alter table reports add column if not exists contacto_whatsapp text;
+alter table reports add column if not exists contacto_email text;
 
 alter table reports enable row level security;
 alter table contributors enable row level security;

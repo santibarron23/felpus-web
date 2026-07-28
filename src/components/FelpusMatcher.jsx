@@ -31,6 +31,8 @@ import {
   Facebook,
   Twitter,
   Heart,
+  MessageCircle,
+  Mail,
 } from "lucide-react";
 import {
   normalizeText,
@@ -48,6 +50,7 @@ import {
   haversineKm,
   COLOR_OPTIONS,
   SEXO_OPTIONS,
+  sanitizePhoneForWhatsapp,
   EDAD_OPTIONS,
   PESO_OPTIONS,
   PUNTOS_PERDIDA,
@@ -306,6 +309,37 @@ function DetailModal({ report, onClose, onResolve, confirming, onConfirm, onCanc
             <p className="text-sm" style={{ color: C.text }}>{report.descripcion}</p>
           </div>
           {report.nickname && <p className="text-xs" style={{ color: C.muted }}>Reportado por {report.nickname}</p>}
+          {(report.contactoWhatsapp || report.contactoEmail) && (
+            <div className="space-y-2">
+              <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Contactar</p>
+              <div className="flex gap-2">
+                {report.contactoWhatsapp && (
+                  <a
+                    href={`https://wa.me/${report.contactoWhatsapp}?text=${encodeURIComponent(
+                      `Hola! Vi en Felpus tu publicación de ${report.nombre || `un/a ${report.especie}`} en ${report.zona}. Creo que puedo ayudar.`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold text-white"
+                    style={{ background: "#25D366" }}
+                  >
+                    <MessageCircle className="w-4 h-4" /> WhatsApp
+                  </a>
+                )}
+                {report.contactoEmail && (
+                  <a
+                    href={`mailto:${report.contactoEmail}?subject=${encodeURIComponent("Sobre tu mascota en Felpus")}&body=${encodeURIComponent(
+                      `Hola! Vi en Felpus tu publicación de ${report.nombre || `un/a ${report.especie}`} en ${report.zona}. Creo que puedo ayudar.`
+                    )}`}
+                    className="flex-1 flex items-center justify-center gap-1.5 border rounded-xl py-2.5 text-sm font-bold"
+                    style={{ borderColor: C.border, color: C.text }}
+                  >
+                    <Mail className="w-4 h-4" /> Email
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
           <div className="flex gap-2 pt-2">
             <ShareButton
               report={report}
@@ -844,6 +878,19 @@ export default function FelpusMatcher() {
       setFormError("Elegí el sexo de la mascota (o \"No sé\" si no lo sabés).");
       return;
     }
+    const whatsappDigits = sanitizePhoneForWhatsapp(form.contactoWhatsapp);
+    if (!whatsappDigits && !form.contactoEmail.trim()) {
+      setFormError("Dejá un WhatsApp o un email de contacto — así pueden avisarte si la reconocen.");
+      return;
+    }
+    if (form.contactoWhatsapp.trim() && whatsappDigits.length < 8) {
+      setFormError("Ese WhatsApp no parece completo — incluí el código de país y de área.");
+      return;
+    }
+    if (form.contactoEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.contactoEmail.trim())) {
+      setFormError("Revisá el email de contacto, no parece válido.");
+      return;
+    }
     if (form.color === "Otro color" && !form.colorOtro.trim()) {
       setFormError("Contanos qué color tiene, ya que elegiste \"Otro color\".");
       return;
@@ -868,6 +915,8 @@ export default function FelpusMatcher() {
         lng: form.lng,
         fecha: form.fecha,
         descripcion: form.descripcion.trim(),
+        contactoWhatsapp: whatsappDigits,
+        contactoEmail: form.contactoEmail.trim(),
         fotos: form.fotos,
         nickname: nickname.trim(),
         userId: user?.id || null,
@@ -1423,6 +1472,34 @@ export default function FelpusMatcher() {
                   className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] resize-none"
                   style={{ borderColor: C.border, color: C.text }}
                 />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
+                  Contacto <span style={{ color: C.red }}>*</span>
+                </label>
+                <p className="text-[11px] mb-1.5" style={{ color: C.muted }}>
+                  Para que puedan avisarte si la reconocen. Completá al menos uno.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="tel"
+                    inputMode="tel"
+                    value={form.contactoWhatsapp}
+                    onChange={(e) => setForm((f) => ({ ...f, contactoWhatsapp: e.target.value }))}
+                    placeholder="WhatsApp: +54 9 11 1234-5678"
+                    className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
+                    style={{ borderColor: C.border, color: C.text }}
+                  />
+                  <input
+                    type="email"
+                    value={form.contactoEmail}
+                    onChange={(e) => setForm((f) => ({ ...f, contactoEmail: e.target.value }))}
+                    placeholder="Email"
+                    className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
+                    style={{ borderColor: C.border, color: C.text }}
+                  />
+                </div>
               </div>
 
               {formError && (
