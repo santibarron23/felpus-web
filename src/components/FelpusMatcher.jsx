@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import {
   PawPrint,
@@ -33,6 +33,7 @@ import {
   Heart,
   MessageCircle,
   Mail,
+  Bell,
 } from "lucide-react";
 import {
   normalizeText,
@@ -538,6 +539,7 @@ export default function FelpusMatcher() {
   const [exploreView, setExploreView] = useState("lista");
   const [heartedIds, setHeartedIds] = useState([]);
   const [poppingHeartId, setPoppingHeartId] = useState(null);
+  const [matchesSeenAt, setMatchesSeenAt] = useState(0);
 
   useEffect(() => {
     try {
@@ -578,6 +580,52 @@ export default function FelpusMatcher() {
     });
     return () => listener.subscription.unsubscribe();
   }, []);
+
+  // Cuándo fue la última vez que este usuario revisó sus propias
+  // coincidencias — se usa para saber qué mostrar como "novedad" en la
+  // campanita, sin necesitar un sistema de notificaciones push/email real.
+  useEffect(() => {
+    if (!user) {
+      setMatchesSeenAt(0);
+      return;
+    }
+    try {
+      const saved = Number(localStorage.getItem(`felpus_last_seen_matches_${user.id}`)) || 0;
+      setMatchesSeenAt(saved);
+    } catch {
+      // localStorage no disponible — no es bloqueante, simplemente no hay "vistos"
+    }
+  }, [user]);
+
+  function markMatchesSeen() {
+    if (!user) return;
+    const now = Date.now();
+    setMatchesSeenAt(now);
+    try {
+      localStorage.setItem(`felpus_last_seen_matches_${user.id}`, String(now));
+    } catch {
+      // no bloqueante
+    }
+  }
+
+  // Coincidencias nuevas desde la última visita: recorre los reportes
+  // propios activos y ve si algún candidato (con score suficiente) se creó
+  // después del último "visto". Reemplaza una alerta push/email real (que
+  // necesitaría un servicio externo nuevo) por algo liviano que sí se puede
+  // resolver 100% en el cliente.
+  const newMatchesCount = useMemo(() => {
+    if (!user) return 0;
+    const myActive = reports.filter((r) => r.userId === user.id && !r.resuelto);
+    if (myActive.length === 0) return 0;
+    let count = 0;
+    for (const mine of myActive) {
+      const opposite = mine.tipo === "perdida" ? "encontrada" : "perdida";
+      const candidates = reports.filter((r) => r.tipo === opposite && !r.resuelto && r.creadoEn > matchesSeenAt);
+      const hasNew = candidates.some((c) => scoreMatch(mine, c).score >= SCORE_MINIMO);
+      if (hasNew) count++;
+    }
+    return count;
+  }, [reports, user, matchesSeenAt]);
 
   const googleDisplayName =
     user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split("@")[0] || null;
@@ -1074,12 +1122,39 @@ export default function FelpusMatcher() {
               <p className="text-[11px] text-white/85 -mt-0.5">Buscador inteligente de mascotas perdidas y encontradas</p>
             </div>
           </button>
-          <button
-            onClick={() => setActiveTab("explorar")}
-            className="felpus-mono text-[11px] font-bold bg-white/15 rounded-full px-3 py-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
-          >
-            {activeReports.length} mascotas
-          </button>
+          <div className="flex items-center gap-2">
+            {user && (
+              <button
+                onClick={() => {
+                  playTap();
+                  setActiveTab("explorar");
+                  markMatchesSeen();
+                }}
+                aria-label={
+                  newMatchesCount > 0
+                    ? `${newMatchesCount} coincidencias nuevas desde tu última visita`
+                    : "Sin coincidencias nuevas"
+                }
+                className="relative w-8 h-8 rounded-full bg-white/15 flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+              >
+                <Bell className="w-4 h-4" />
+                {newMatchesCount > 0 && (
+                  <span
+                    className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full text-white text-[10px] font-bold flex items-center justify-center"
+                    style={{ background: C.orangeInk }}
+                  >
+                    {newMatchesCount}
+                  </span>
+                )}
+              </button>
+            )}
+            <button
+              onClick={() => setActiveTab("explorar")}
+              className="felpus-mono text-[11px] font-bold bg-white/15 rounded-full px-3 py-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            >
+              {activeReports.length} mascotas
+            </button>
+          </div>
         </div>
       </header>
 
