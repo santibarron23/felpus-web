@@ -42,6 +42,7 @@ import {
   scoreMatch,
   scoreLabel,
   getTier,
+  getBadges,
   isRecent,
   formatFechaAR,
   buildShareText,
@@ -2009,13 +2010,28 @@ export default function FelpusMatcher() {
 
             {user ? (
               myRank ? (
-                <div className="rounded-2xl p-4 text-white flex items-center gap-3" style={{ background: C.red }}>
-                  <div className="felpus-mono text-xl font-bold w-10 text-center shrink-0">#{myRank.rank}</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-white/80">Tu posición</p>
-                    <p className="text-sm font-bold truncate">{getTier(myRank.points || 0, C).label}</p>
+                <div className="rounded-2xl p-4 text-white" style={{ background: C.red }}>
+                  <div className="flex items-center gap-3">
+                    <div className="felpus-mono text-xl font-bold w-10 text-center shrink-0">#{myRank.rank}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-white/80">Tu posición</p>
+                      <p className="text-sm font-bold truncate">{getTier(myRank.points || 0, C).label}</p>
+                    </div>
+                    <div className="felpus-mono text-lg font-bold shrink-0">{myRank.points || 0} pts</div>
                   </div>
-                  <div className="felpus-mono text-lg font-bold shrink-0">{myRank.points || 0} pts</div>
+                  {getBadges(myRank).length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-white/20">
+                      {getBadges(myRank).map((b) => (
+                        <span
+                          key={b.id}
+                          title={b.label}
+                          className="inline-flex items-center gap-1 bg-white/15 rounded-full px-2 py-1 text-[11px] font-semibold"
+                        >
+                          <span>{b.icon}</span> {b.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="text-sm bg-white rounded-2xl p-4 text-center border" style={{ color: C.muted, borderColor: C.border }}>
@@ -2055,6 +2071,13 @@ export default function FelpusMatcher() {
                         </p>
                         <p className="text-[11px]" style={{ color: tier.color }}>
                           {tier.label} · {"🐾".repeat(tier.paws)}
+                          {getBadges(u).length > 0 && (
+                            <span className="ml-1">
+                              {getBadges(u).map((b) => (
+                                <span key={b.id} title={b.label}>{b.icon}</span>
+                              ))}
+                            </span>
+                          )}
                         </p>
                       </div>
                       <div className="felpus-mono text-base font-bold shrink-0" style={{ color: C.red }}>{u.points || 0}</div>

@@ -404,6 +404,24 @@ export function isRecent(report) {
   return Date.now() - report.creadoEn < 24 * 3600 * 1000;
 }
 
+// Insignias puntuales por comportamiento (además del nivel general por
+// puntos) — se derivan de campos que ya existen en "contributors", no
+// necesitan columnas nuevas. Cada una responde a un comportamiento que
+// vale la pena incentivar (publicar, confirmar reencuentros, ser querido
+// por la comunidad, sostenerlo en el tiempo).
+export const BADGES = [
+  { id: "primera-huella", icon: "🌟", label: "Primera huella", check: (c) => (c.reportes || 0) >= 1 },
+  { id: "guia-de-barrio", icon: "🧭", label: "Guía de barrio", check: (c) => (c.reportes || 0) >= 5 },
+  { id: "heroe-reencuentro", icon: "🎉", label: "Héroe del reencuentro", check: (c) => (c.reencuentros || 0) >= 1 },
+  { id: "querido-comunidad", icon: "💞", label: "Querido por la comunidad", check: (c) => (c.hearts || 0) >= 5 },
+  { id: "leyenda-felpus", icon: "👑", label: "Leyenda Felpus", check: (c) => (c.points || 0) >= 100 },
+];
+
+export function getBadges(contributor) {
+  if (!contributor) return [];
+  return BADGES.filter((b) => b.check(contributor));
+}
+
 // El input de fecha guarda "AAAA-MM-DD" (formato nativo de <input type="date">).
 // Para mostrarla usamos el formato argentino DD/MM/AAAA.
 export function formatFechaAR(fecha) {
