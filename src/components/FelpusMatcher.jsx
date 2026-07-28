@@ -34,6 +34,7 @@ import {
   MessageCircle,
   Mail,
   Bell,
+  Printer,
 } from "lucide-react";
 import {
   normalizeText,
@@ -73,6 +74,7 @@ import {
 } from "../lib/store";
 import { supabase } from "../lib/supabaseClient";
 import { playTap, playSuccess } from "../lib/sound";
+import { downloadFlyer } from "../lib/flyer";
 import { loadGoogleMaps } from "../lib/googleMaps";
 import MapPicker from "./MapPicker";
 import ReportsMap from "./ReportsMap";
@@ -219,12 +221,24 @@ function ReportCard({ report, onOpenDetail, children }) {
 
 function DetailModal({ report, onClose, onResolve, confirming, onConfirm, onCancelConfirm, isLoggedIn, isOwner }) {
   const [activeIndex, setActiveIndex] = useState(0);
+  const [generatingFlyer, setGeneratingFlyer] = useState(false);
   useEffect(() => {
     setActiveIndex(0);
   }, [report?.id]);
   if (!report) return null;
   const fotos = report.fotos?.length ? report.fotos : [{ url: report.foto }];
   const activeFoto = fotos[Math.min(activeIndex, fotos.length - 1)];
+
+  async function handleDownloadFlyer() {
+    setGeneratingFlyer(true);
+    try {
+      await downloadFlyer(report, displayColor(report));
+    } catch (e) {
+      console.error("No se pudo generar el flyer", e);
+    } finally {
+      setGeneratingFlyer(false);
+    }
+  }
   return (
     <div className="fixed inset-0 bg-black/50 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
       <div
@@ -353,6 +367,16 @@ function DetailModal({ report, onClose, onResolve, confirming, onConfirm, onCanc
             >
               <Share2 className="w-4 h-4" /> Compartir
             </ShareButton>
+            <button
+              type="button"
+              onClick={handleDownloadFlyer}
+              disabled={generatingFlyer}
+              className="flex-1 flex items-center justify-center gap-1.5 border rounded-xl py-2.5 text-sm font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D31C22]/50 disabled:opacity-60"
+              style={{ borderColor: C.border, color: C.text }}
+            >
+              {generatingFlyer ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+              Flyer
+            </button>
           </div>
           {!report.resuelto && (
             <div className="pt-1">
