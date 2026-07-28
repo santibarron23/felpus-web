@@ -64,6 +64,7 @@ import {
   createReport,
   resolveReports,
   fetchLeaderboard,
+  fetchMyRank,
   awardPoints as awardPointsRemote,
   sendHeart,
   seedIfEmpty,
@@ -79,6 +80,7 @@ const ICON_C = "/assets/icon_c.png";
 const LOGO_FULL = "/assets/logo_full.png";
 const SIREN_PAW = "/assets/siren_paw.png";
 const PAW_MAGNIFIER = "/assets/paw_magnifier.png";
+const MAX_FOTO_MB = 15;
 
 // Paleta — tonos de texto verificados contra ratio AA (>=4.5:1 sobre blanco/crema)
 const C = {
@@ -550,6 +552,7 @@ export default function FelpusMatcher() {
   const [visionStatus, setVisionStatus] = useState("idle"); // idle | analyzing | ai | basic
   const [nickname, setNickname] = useState("");
   const [leaderboard, setLeaderboard] = useState([]);
+  const [myRank, setMyRank] = useState(null);
   const [confirmingId, setConfirmingId] = useState(null);
   const [showResueltas, setShowResueltas] = useState(false);
   const [toasts, setToasts] = useState([]);
@@ -614,7 +617,19 @@ export default function FelpusMatcher() {
     } catch (e) {
       console.error("No se pudo cargar el ranking", e);
     }
-  }, []);
+    // La posición propia se busca aparte porque el leaderboard general solo
+    // trae el top 10 — si no estás ahí, igual queremos saber tu puesto real.
+    if (user) {
+      try {
+        const rank = await fetchMyRank(user.id);
+        setMyRank(rank);
+      } catch (e) {
+        console.error("No se pudo cargar tu posición en el ranking", e);
+      }
+    } else {
+      setMyRank(null);
+    }
+  }, [user]);
 
   const loadAll = useCallback(async () => {
     setLoadingReports(true);
@@ -762,6 +777,14 @@ export default function FelpusMatcher() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file || form.fotos.length >= MAX_FOTOS) return;
+    if (!file.type.startsWith("image/")) {
+      setFormError("Ese archivo no es una imagen.");
+      return;
+    }
+    if (file.size > MAX_FOTO_MB * 1024 * 1024) {
+      setFormError(`La foto pesa demasiado — subí una de menos de ${MAX_FOTO_MB}MB.`);
+      return;
+    }
     const idx = form.fotos.length;
     try {
       const dataUrl = await resizeImageFile(file);
@@ -1022,8 +1045,7 @@ export default function FelpusMatcher() {
     filteredReports = [...filteredReports].sort((a, b) => b.creadoEn - a.creadoEn);
   }
 
-  const mine = user ? leaderboard.find((u) => u.id === user.id) : null;
-  const myTier = getTier(mine?.points || 0, C);
+  const myTier = getTier(myRank?.points || 0, C);
 
   const NAV_ITEMS = [
     { id: "inicio", label: "Inicio", icon: Home },
@@ -1086,6 +1108,7 @@ export default function FelpusMatcher() {
               <input
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
+                maxLength={40}
                 placeholder="Tu apodo de colaborador (para sumar puntos)"
                 className="flex-1 text-sm outline-none bg-transparent min-w-0"
                 style={{ color: C.text }}
@@ -1097,7 +1120,7 @@ export default function FelpusMatcher() {
               className="felpus-mono text-[10px] font-bold shrink-0 px-2 py-1 rounded-full"
               style={{ color: myTier.color, background: `${myTier.color}1A` }}
             >
-              {mine?.points || 0} pts · {myTier.label}
+              {myRank?.points || 0} pts · {myTier.label}
             </span>
           )}
           {!authLoading && (
@@ -1131,12 +1154,13 @@ export default function FelpusMatcher() {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={LOGO_FULL} alt="Felpus" className="h-14 object-contain mb-3 mx-auto block" />
                 <h2 className="felpus-display text-lg sm:text-xl mb-2 sm:whitespace-nowrap" style={{ color: C.text }}>
-                  Ayudamos a reencontrar mascotas con sus humanos
+                  Ayudemos a reencontrar mascotas con sus humanos
                 </h2>
                 <p className="text-sm leading-relaxed" style={{ color: C.muted }}>
-                  Subí una foto y una descripción de la mascota que perdiste o que encontraste. Felpus compara
-                  automáticamente color, forma, zona y fecha contra todos los demás reportes — y suma puntos por
-                  cada aporte real a la comunidad.
+                  Subí una foto y una descripción de la mascota perdida o encontrada. Felpus analiza automáticamente
+                  el color, las características físicas, la ubicación y la fecha, comparando tu publicación con todos
+                  los reportes existentes para encontrar posibles coincidencias. Sumá puntos con cada aporte a la
+                  comunidad.
                 </p>
                 <div className="flex gap-2 mt-4">
                   <button
@@ -1332,6 +1356,7 @@ export default function FelpusMatcher() {
                     type="text"
                     value={form.nombre}
                     onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
+                    maxLength={60}
                     placeholder="Opcional"
                     className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
                     style={{ borderColor: C.border, color: C.text }}
@@ -1362,6 +1387,7 @@ export default function FelpusMatcher() {
                     type="text"
                     value={form.colorOtro}
                     onChange={(e) => setForm((f) => ({ ...f, colorOtro: e.target.value }))}
+                    maxLength={60}
                     placeholder="Ej: tricolor, manchas naranjas..."
                     className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
                     style={{ borderColor: C.border, color: C.text }}
@@ -1410,6 +1436,7 @@ export default function FelpusMatcher() {
                     type="text"
                     value={form.zona}
                     onChange={(e) => setForm((f) => ({ ...f, zona: e.target.value }))}
+                    maxLength={100}
                     placeholder="Ej: Palermo, cerca de Plaza Serrano"
                     className="flex-1 border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
                     style={{ borderColor: C.border, color: C.text }}
@@ -1468,6 +1495,7 @@ export default function FelpusMatcher() {
                   value={form.descripcion}
                   onChange={(e) => setForm((f) => ({ ...f, descripcion: e.target.value }))}
                   rows={3}
+                  maxLength={600}
                   placeholder="Señas particulares, collar, comportamiento, dónde exactamente..."
                   className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] resize-none"
                   style={{ borderColor: C.border, color: C.text }}
@@ -1487,6 +1515,7 @@ export default function FelpusMatcher() {
                     inputMode="tel"
                     value={form.contactoWhatsapp}
                     onChange={(e) => setForm((f) => ({ ...f, contactoWhatsapp: e.target.value }))}
+                    maxLength={25}
                     placeholder="WhatsApp: +54 9 11 1234-5678"
                     className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
                     style={{ borderColor: C.border, color: C.text }}
@@ -1495,6 +1524,7 @@ export default function FelpusMatcher() {
                     type="email"
                     value={form.contactoEmail}
                     onChange={(e) => setForm((f) => ({ ...f, contactoEmail: e.target.value }))}
+                    maxLength={120}
                     placeholder="Email"
                     className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
                     style={{ borderColor: C.border, color: C.text }}
@@ -1976,6 +2006,30 @@ export default function FelpusMatcher() {
                 Puntos por reportar mascotas y, sobre todo, por confirmar reencuentros reales.
               </p>
             </div>
+
+            {user ? (
+              myRank ? (
+                <div className="rounded-2xl p-4 text-white flex items-center gap-3" style={{ background: C.red }}>
+                  <div className="felpus-mono text-xl font-bold w-10 text-center shrink-0">#{myRank.rank}</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-white/80">Tu posición</p>
+                    <p className="text-sm font-bold truncate">{getTier(myRank.points || 0, C).label}</p>
+                  </div>
+                  <div className="felpus-mono text-lg font-bold shrink-0">{myRank.points || 0} pts</div>
+                </div>
+              ) : (
+                <div className="text-sm bg-white rounded-2xl p-4 text-center border" style={{ color: C.muted, borderColor: C.border }}>
+                  Todavía no sumaste puntos — reportá una mascota o confirmá un reencuentro para aparecer en el ranking.
+                </div>
+              )
+            ) : (
+              <div className="text-sm bg-white rounded-2xl p-4 text-center border" style={{ color: C.muted, borderColor: C.border }}>
+                <button onClick={handleGoogleLogin} className="font-bold underline" style={{ color: C.red }}>
+                  Iniciá sesión con Google
+                </button>{" "}
+                para ver tu posición y tus puntos.
+              </div>
+            )}
 
             {leaderboard.length === 0 && (
               <div className="text-sm bg-white rounded-2xl p-6 text-center border" style={{ color: C.muted, borderColor: C.border }}>

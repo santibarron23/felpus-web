@@ -135,6 +135,29 @@ export async function fetchLeaderboard() {
   return data || [];
 }
 
+// El leaderboard general solo trae el top 10 — esto busca la posición real
+// de un colaborador puntual (esté o no entre los primeros 10), contando
+// cuántos tienen más puntos que él en vez de traer toda la tabla.
+export async function fetchMyRank(userId) {
+  if (!userId) return null;
+  const { data: me, error: meError } = await supabase
+    .from(CONTRIBUTORS_TABLE)
+    .select("*")
+    .eq("id", userId)
+    .maybeSingle();
+  if (meError) throw meError;
+  if (!me) return null;
+
+  const { count, error: countError } = await supabase
+    .from(CONTRIBUTORS_TABLE)
+    .select("id", { count: "exact", head: true })
+    .neq("id", "__seed_lock__")
+    .gt("points", me.points || 0);
+  if (countError) throw countError;
+
+  return { ...me, rank: (count || 0) + 1 };
+}
+
 // Los puntos quedan atados al user.id estable de Supabase Auth (no a un
 // apodo de texto libre) — así solo colaboradores logueados con Google suman
 // puntos, y dos personas nunca pueden "compartir" el mismo contador por
@@ -158,20 +181,15 @@ export async function awardPoints(userId, displayName, delta, reason) {
   if (error) throw error;
 }
 
-// Corazones: un gesto liviano de "gracias" entre colaboradores, sin puntaje
-// ni implicancia económica — por eso alcanza con un contador simple.
+// Corazones: un gesto liviano de "gracias" entre colaboradores. Usa una
+// función de base de datos (RPC) en vez de leer-y-escribir desde acá, por
+// dos motivos: evita que dos corazones simultáneos se pisen (incremento
+// atómico), y permite tocar la fila de OTRA persona de forma seguridad sin
+// tener que abrir el update de "contributors" a cualquiera.
 export async function sendHeart(contributorId) {
-  const { data: existing, error: fetchError } = await supabase
-    .from(CONTRIBUTORS_TABLE)
-    .select("hearts")
-    .eq("id", contributorId)
-    .maybeSingle();
-  if (fetchError) throw fetchError;
-
-  const nextHearts = (existing?.hearts || 0) + 1;
-  const { error } = await supabase.from(CONTRIBUTORS_TABLE).update({ hearts: nextHearts }).eq("id", contributorId);
+  const { data, error } = await supabase.rpc("send_heart", { target_id: contributorId });
   if (error) throw error;
-  return nextHearts;
+  return data;
 }
 
 // ---------------------------------------------------------------------------

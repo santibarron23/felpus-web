@@ -3,8 +3,29 @@
 export const runtime = "nodejs";
 
 const HF_MODEL = "openai/clip-vit-base-patch32";
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8MB — de sobra para una foto ya redimensionada en el cliente.
+
+// Rate limit básico en memoria (por IP). No sobrevive a reinicios ni se
+// comparte entre instancias serverless, pero frena el abuso trivial de un
+// endpoint que consume una API de terceros con costo/límite propio.
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 12;
+const requestLog = new Map();
+
+function isRateLimited(key) {
+  const now = Date.now();
+  const timestamps = (requestLog.get(key) || []).filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+  timestamps.push(now);
+  requestLog.set(key, timestamps);
+  return timestamps.length > RATE_LIMIT_MAX;
+}
 
 export async function POST(request) {
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  if (isRateLimited(ip)) {
+    return Response.json({ error: "Demasiadas solicitudes, probá de nuevo en un minuto." }, { status: 429 });
+  }
+
   const token = process.env.HUGGINGFACE_API_TOKEN;
 
   if (!token) {
@@ -23,13 +44,21 @@ export async function POST(request) {
     return Response.json({ error: "Body inválido." }, { status: 400 });
   }
 
-  if (!imageDataUrl || !imageDataUrl.startsWith("data:")) {
-    return Response.json({ error: "Falta imageDataUrl (debe ser un data URL)." }, { status: 400 });
+  if (!imageDataUrl || typeof imageDataUrl !== "string" || !imageDataUrl.startsWith("data:image/")) {
+    return Response.json({ error: "Falta imageDataUrl (debe ser un data URL de imagen)." }, { status: 400 });
+  }
+
+  if (imageDataUrl.length > MAX_IMAGE_BYTES * 1.4) {
+    // base64 pesa ~1.37x el binario original; el margen cubre esa diferencia.
+    return Response.json({ error: "La imagen es demasiado grande." }, { status: 413 });
   }
 
   try {
     const base64 = imageDataUrl.split(",")[1];
     const bytes = Buffer.from(base64, "base64");
+    if (bytes.length > MAX_IMAGE_BYTES) {
+      return Response.json({ error: "La imagen es demasiado grande." }, { status: 413 });
+    }
 
     const hfRes = await fetch(`https://api-inference.huggingface.co/models/${HF_MODEL}`, {
       method: "POST",
