@@ -1838,6 +1838,10 @@ export default function FelpusMatcher() {
                         {locatingMe ? "Buscando tu ubicación..." : "Necesitamos tu ubicación para poder filtrar por distancia."}
                       </p>
                     )}
+                    <p className="text-[11px] mt-1" style={{ color: C.muted }}>
+                      Esto solo filtra la lista — el % de coincidencia de cada reporte ya tolera más distancia
+                      cuanto más tiempo pasó, porque una mascota perdida hace días pudo alejarse más.
+                    </p>
                   </div>
 
                   {hasAdvancedFilters && (

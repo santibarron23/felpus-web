@@ -342,6 +342,23 @@ function hasAiEmbedding(report) {
   return fotos.some((f) => Array.isArray(f.embedding) && f.embedding.length > 0);
 }
 
+// Radio de referencia para el score de distancia, dinámico según cuántos
+// días pasaron desde el más viejo de los dos reportes — una mascota perdida
+// hace una semana pudo haberse alejado mucho más que una perdida hace una
+// hora, así que toleramos más distancia sin penalizar tanto el score.
+// Tope en 14 días para no diluir la señal de ubicación indefinidamente.
+const RADIO_BASE_KM = 8;
+const RADIO_EXTRA_KM_POR_DIA = 2;
+const RADIO_DIAS_TOPE = 14;
+
+function locationReferenceKm(a, b) {
+  const now = Date.now();
+  const masViejo = Math.min(a.creadoEn ?? now, b.creadoEn ?? now);
+  const diasTranscurridos = Math.max(0, (now - masViejo) / (24 * 3600 * 1000));
+  const diasEfectivos = Math.min(diasTranscurridos, RADIO_DIAS_TOPE);
+  return RADIO_BASE_KM + diasEfectivos * RADIO_EXTRA_KM_POR_DIA;
+}
+
 export function scoreMatch(a, b) {
   const imgSim = imageSimilarity(a, b);
   const structuredSim = structuredFieldSimilarity(a, b);
@@ -354,7 +371,7 @@ export function scoreMatch(a, b) {
   let locScore, distanceLabel;
   if (a.lat != null && a.lng != null && b.lat != null && b.lng != null) {
     const d = haversineKm(a.lat, a.lng, b.lat, b.lng);
-    locScore = Math.exp(-d / 8);
+    locScore = Math.exp(-d / locationReferenceKm(a, b));
     distanceLabel = d < 1 ? `${Math.round(d * 1000)} m` : `${d.toFixed(1)} km`;
   } else {
     const zonaA = normalizeText(a.zona);
