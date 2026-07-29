@@ -425,7 +425,7 @@ function ShareButton({ report, className, style, children, wrapperClassName = "r
   const [menuPos, setMenuPos] = useState(null);
   const btnRef = useRef(null);
 
-  const shareUrl = typeof window !== "undefined" ? window.location.origin : "";
+  const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/?r=${encodeURIComponent(report.id)}` : "";
   const shareText = buildShareText(report);
   const MENU_WIDTH = 192; // w-48
 
@@ -591,6 +591,7 @@ export default function FelpusMatcher() {
   const [authLoading, setAuthLoading] = useState(true);
   const fileInputRef = useRef(null);
   const zonaInputRef = useRef(null);
+  const deepLinkHandled = useRef(false);
 
   // Sesión con Google (opcional). Sin login, se puede seguir aportando
   // como invitado escribiendo un apodo a mano.
@@ -722,6 +723,22 @@ export default function FelpusMatcher() {
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  // Deep link desde un flyer/QR o un enlace compartido (?r=<id>) — abre esa
+  // publicación directamente apenas cargan los reportes. Solo una vez: si el
+  // usuario cierra el modal, no debe reabrirse solo en el próximo refresh.
+  useEffect(() => {
+    if (deepLinkHandled.current || reports.length === 0) return;
+    deepLinkHandled.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const rid = params.get("r");
+    if (!rid) return;
+    const found = reports.find((r) => r.id === rid);
+    if (found) {
+      setDetailReport(found);
+      setActiveTab("explorar");
+    }
+  }, [reports]);
 
   // Confirmar un reencuentro requiere sesión con Google (evita que cualquiera
   // se autoasigne puntos con un apodo de texto libre) Y ser quien publicó ese
