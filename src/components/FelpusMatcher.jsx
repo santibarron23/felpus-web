@@ -2404,7 +2404,10 @@ export default function FelpusMatcher() {
                           )}
                         </p>
                       </div>
-                      <div className="felpus-mono text-base font-bold shrink-0" style={{ color: C.red }}>{u.points || 0}</div>
+                      <div className="flex flex-col items-end shrink-0">
+                        <span className="felpus-mono text-base font-bold" style={{ color: C.red }}>{u.points || 0}</span>
+                        <span className="text-[9px] font-semibold -mt-0.5" style={{ color: C.muted }}>pts</span>
+                      </div>
                     </div>
                     {!isMe && (
                       <button
