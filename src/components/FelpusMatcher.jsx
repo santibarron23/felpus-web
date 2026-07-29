@@ -171,7 +171,7 @@ function ReportCard({ report, onOpenDetail, children }) {
       >
         <div className="relative shrink-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={report.foto} alt={report.especie} className="w-20 h-20 rounded-xl object-cover bg-[#F6EEE1]" />
+          <img src={report.foto} alt={report.especie} loading="lazy" decoding="async" className="w-20 h-20 rounded-xl object-cover bg-[#F6EEE1]" />
           {!resuelto && isRecent(report) && (
             <span className="absolute -top-1 -right-1 bg-[#D31C22] text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow">
               nuevo
