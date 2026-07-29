@@ -34,7 +34,7 @@ export default function ZonaAutocomplete({
         if (!maps.places?.PlaceAutocompleteElement) return;
 
         const el = new maps.places.PlaceAutocompleteElement({
-          includedRegionCodes: ["ar"],
+          includedRegionCodes: ["AR"],
         });
         el.style.width = "100%";
         containerRef.current.appendChild(el);
@@ -70,19 +70,29 @@ export default function ZonaAutocomplete({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // El contenedor del elemento de Google se renderiza SIEMPRE visible y en
+  // flujo normal, desde el primer render — nunca con display:none. Si se le
+  // hace appendChild mientras está oculto, el componente de Google mide mal
+  // su tamaño al conectarse (connectedCallback) y el desplegable de
+  // sugerencias queda roto para siempre, aunque después se muestre. Mientras
+  // no está listo, el input de texto plano se superpone encima (position:
+  // absolute) tapándolo — así solo se ve una cosa a la vez, pero el
+  // contenedor de abajo nunca estuvo escondido.
   return (
-    <>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onManualChange(e.target.value)}
-        maxLength={maxLength}
-        placeholder={placeholder}
-        className={className}
-        style={{ ...style, display: ready ? "none" : undefined }}
-        autoComplete="off"
-      />
-      <div ref={containerRef} className={ready ? className : ""} style={{ display: ready ? "flex" : "none", padding: 0 }} />
-    </>
+    <div className="relative flex-1" style={{ minHeight: 40 }}>
+      <div ref={containerRef} className={className} style={{ ...style, padding: 0, width: "100%" }} />
+      {!ready && (
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onManualChange(e.target.value)}
+          maxLength={maxLength}
+          placeholder={placeholder}
+          className={className}
+          style={{ ...style, position: "absolute", inset: 0 }}
+          autoComplete="off"
+        />
+      )}
+    </div>
   );
 }
