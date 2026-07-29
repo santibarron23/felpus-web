@@ -35,6 +35,7 @@ import {
   Mail,
   Bell,
   Printer,
+  Flame,
 } from "lucide-react";
 import {
   normalizeText,
@@ -70,6 +71,7 @@ import {
   fetchMyRank,
   awardPoints as awardPointsRemote,
   sendHeart,
+  bumpStreak,
   seedIfEmpty,
 } from "../lib/store";
 import { supabase } from "../lib/supabaseClient";
@@ -619,6 +621,27 @@ export default function FelpusMatcher() {
     });
     return () => listener.subscription.unsubscribe();
   }, []);
+
+  // Racha de días consecutivos: se actualiza una vez por sesión apenas hay
+  // un usuario logueado (bumpStreak es idempotente si "hoy" ya se contó).
+  // Es la mecánica de retención más emblemática de apps tipo Duolingo —
+  // "no quiero perder mi racha" trae de vuelta todos los días.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    bumpStreak(user.id, user.user_metadata?.full_name || user.user_metadata?.name || user.email)
+      .then((res) => {
+        if (!res || cancelled) return;
+        setMyRank((prev) => (prev ? { ...prev, streak_days: res.streakDays } : prev));
+        if (res.isNewToday && res.streakDays > 1) {
+          pushToast("success", `🔥 ¡Racha de ${res.streakDays} días seguidos ayudando!`);
+        }
+      })
+      .catch((e) => console.error("No se pudo actualizar la racha diaria", e));
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   // Cuándo fue la última vez que este usuario revisó sus propias
   // coincidencias — se usa para saber qué mostrar como "novedad" en la
@@ -1274,6 +1297,15 @@ export default function FelpusMatcher() {
                 style={{ color: C.text }}
               />
             </>
+          )}
+          {!!myRank?.streak_days && (
+            <span
+              className="felpus-mono text-[10px] font-bold shrink-0 px-2 py-1 rounded-full flex items-center gap-0.5"
+              style={{ color: C.orangeInkDark, background: "#FBE4DC" }}
+              title={`Racha de ${myRank.streak_days} ${myRank.streak_days === 1 ? "día" : "días"} seguidos`}
+            >
+              <Flame className="w-3 h-3" fill="currentColor" /> {myRank.streak_days}
+            </span>
           )}
           {nickname.trim() && (
             <span
@@ -2218,6 +2250,12 @@ export default function FelpusMatcher() {
                     </div>
                     <div className="felpus-mono text-lg font-bold shrink-0">{myRank.points || 0} pts</div>
                   </div>
+                  {!!myRank.streak_days && (
+                    <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-white/20 text-[13px] font-bold">
+                      <Flame className="w-4 h-4" fill="currentColor" style={{ color: "#FFD08A" }} />
+                      Racha de {myRank.streak_days} {myRank.streak_days === 1 ? "día" : "días"} seguidos
+                    </div>
+                  )}
                   {getBadges(myRank).length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-white/20">
                       {getBadges(myRank).map((b) => (

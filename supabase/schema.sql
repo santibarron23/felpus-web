@@ -45,6 +45,8 @@ create table if not exists contributors (
   reportes integer not null default 0,
   reencuentros integer not null default 0,
   hearts integer not null default 0,
+  streak_days integer not null default 0,
+  last_active_date date,
   updated_at timestamptz not null default now()
 );
 
@@ -65,6 +67,9 @@ alter table reports add column if not exists embeddings jsonb;
 alter table contributors add column if not exists hearts integer not null default 0;
 alter table reports add column if not exists contacto_whatsapp text;
 alter table reports add column if not exists contacto_email text;
+-- Racha de días consecutivos usando la app (mecánica de retención tipo Duolingo).
+alter table contributors add column if not exists streak_days integer not null default 0;
+alter table contributors add column if not exists last_active_date date;
 
 -- ---------------------------------------------------------------------------
 -- Límites de longitud a nivel de base de datos: el formulario ya los aplica

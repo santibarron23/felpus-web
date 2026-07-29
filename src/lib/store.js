@@ -181,6 +181,54 @@ export async function awardPoints(userId, displayName, delta, reason) {
   if (error) throw error;
 }
 
+function localDateStr(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+// Racha de días consecutivos usando la app — la mecánica de retención más
+// emblemática de apps tipo Duolingo. Se llama una vez por sesión apenas hay
+// un usuario logueado; si "hoy" ya se contó, no hace nada (evita duplicar
+// al recargar la página varias veces el mismo día).
+export async function bumpStreak(userId, displayName) {
+  if (!userId) return null;
+  const { data: existing, error: fetchError } = await supabase
+    .from(CONTRIBUTORS_TABLE)
+    .select("*")
+    .eq("id", userId)
+    .maybeSingle();
+  if (fetchError) throw fetchError;
+
+  const today = localDateStr();
+  const current = existing || {
+    id: userId,
+    nickname: displayName,
+    points: 0,
+    reportes: 0,
+    reencuentros: 0,
+    hearts: 0,
+    streak_days: 0,
+    last_active_date: null,
+  };
+
+  if (current.last_active_date === today) {
+    return { streakDays: current.streak_days || 0, isNewToday: false };
+  }
+
+  const yesterday = localDateStr(new Date(Date.now() - 24 * 3600 * 1000));
+  const continued = current.last_active_date === yesterday;
+  current.nickname = displayName || current.nickname;
+  current.streak_days = continued ? (current.streak_days || 0) + 1 : 1;
+  current.last_active_date = today;
+  current.updated_at = new Date().toISOString();
+
+  const { error } = await supabase.from(CONTRIBUTORS_TABLE).upsert(current);
+  if (error) throw error;
+  return { streakDays: current.streak_days, isNewToday: true };
+}
+
 // Corazones: un gesto liviano de "gracias" entre colaboradores. Usa una
 // función de base de datos (RPC) en vez de leer-y-escribir desde acá, por
 // dos motivos: evita que dos corazones simultáneos se pisen (incremento
