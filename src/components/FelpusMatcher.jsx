@@ -666,6 +666,26 @@ export default function FelpusMatcher() {
     return count;
   }, [reports, user, matchesSeenAt]);
 
+  // Checklist de campos clave del formulario de reporte, en el mismo orden
+  // en que handleSubmit los valida — sirve para la barra de progreso que
+  // motiva a completar todo antes de publicar (menos fricción, más feedback
+  // inmediato, en línea con la filosofía de gamificación del proyecto).
+  const reportChecklist = useMemo(() => {
+    const whatsappDigits = sanitizePhoneForWhatsapp(form.contactoWhatsapp);
+    const colorOk = form.color.trim() && (form.color !== "Otro color" || form.colorOtro.trim());
+    return [
+      { id: "apodo", label: "Apodo", done: !!nickname.trim() },
+      { id: "fotos", label: "Foto", done: form.fotos.length > 0 },
+      { id: "zona", label: "Zona", done: !!form.zona.trim() },
+      { id: "color", label: "Color", done: !!colorOk },
+      { id: "descripcion", label: "Descripción", done: !!form.descripcion.trim() },
+      { id: "sexo", label: "Sexo", done: !!form.sexo },
+      { id: "contacto", label: "Contacto", done: !!whatsappDigits || !!form.contactoEmail.trim() },
+    ];
+  }, [nickname, form.fotos.length, form.zona, form.color, form.colorOtro, form.descripcion, form.sexo, form.contactoWhatsapp, form.contactoEmail]);
+  const reportProgressDone = reportChecklist.filter((s) => s.done).length;
+  const reportProgressPct = Math.round((reportProgressDone / reportChecklist.length) * 100);
+
   const googleDisplayName =
     user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split("@")[0] || null;
   const googleAvatar = user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null;
@@ -1379,6 +1399,42 @@ export default function FelpusMatcher() {
                   {k === "perdida" ? "Perdí una mascota" : "Encontré una mascota"}
                 </button>
               ))}
+            </div>
+
+            <div className="bg-white rounded-2xl p-3.5 border sticky top-2 z-10 shadow-sm" style={{ borderColor: C.border }}>
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-xs font-bold" style={{ color: C.text }}>
+                  {reportProgressPct === 100 ? "¡Publicación lista para enviar!" : "Completá tu publicación"}
+                </p>
+                <p className="felpus-mono text-xs font-bold" style={{ color: reportProgressPct === 100 ? C.green : C.muted }}>
+                  {reportProgressDone}/{reportChecklist.length}
+                </p>
+              </div>
+              <div className="h-2 rounded-full overflow-hidden" style={{ background: "#F0E7D8" }}>
+                <div
+                  className="h-full rounded-full transition-all duration-500 ease-out"
+                  style={{
+                    width: `${reportProgressPct}%`,
+                    background: reportProgressPct === 100 ? C.green : reportKind === "perdida" ? C.red : C.orangeInk,
+                  }}
+                />
+              </div>
+              <div className="flex flex-wrap gap-1.5 mt-2.5">
+                {reportChecklist.map((step) => (
+                  <span
+                    key={step.id}
+                    className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold transition-colors duration-300"
+                    style={
+                      step.done
+                        ? { background: "#EAF3EC", color: C.greenDark }
+                        : { background: "#F6F1E7", color: C.muted }
+                    }
+                  >
+                    {step.done ? <Check className="w-2.5 h-2.5" /> : <span className="w-1.5 h-1.5 rounded-full bg-current opacity-40" />}
+                    {step.label}
+                  </span>
+                ))}
+              </div>
             </div>
 
             <div className="bg-white rounded-2xl p-4 border space-y-4" style={{ borderColor: C.border }}>
