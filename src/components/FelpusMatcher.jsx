@@ -1154,42 +1154,18 @@ export default function FelpusMatcher() {
     setForm((f) => ({ ...f, fotos: f.fotos.filter((_, i) => i !== index) }));
   }
 
-  useEffect(() => {
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-    if (!apiKey || activeTab !== "reportar" || !zonaInputRef.current) return;
-    let autocomplete;
-    let cancelled = false;
-
-    loadGoogleMaps(apiKey).then((maps) => {
-      if (cancelled || !zonaInputRef.current || !maps.places) return;
-      autocomplete = new maps.places.Autocomplete(zonaInputRef.current, {
-        componentRestrictions: { country: "ar" },
-        types: ["(cities)"],
-        fields: ["name", "formatted_address", "geometry"],
-      });
-      autocomplete.addListener("place_changed", () => {
-        const place = autocomplete.getPlace();
-        const zona = place.name || place.formatted_address;
-        if (!zona) return;
-        const lat = place.geometry?.location?.lat();
-        const lng = place.geometry?.location?.lng();
-        setForm((f) => ({
-          ...f,
-          zona,
-          ...(lat != null && lng != null ? { lat, lng } : {}),
-        }));
-        if (lat != null && lng != null) setGeoStatus("done");
-      });
-    });
-
-    return () => {
-      cancelled = true;
-      if (autocomplete) window.google?.maps.event.clearInstanceListeners(autocomplete);
-    };
-    // Se re-adjunta cada vez que se entra a la pestaña de reporte, ya que el
-    // input de zona se desmonta al salir de ella.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
+  // Nota: este campo usaba antes google.maps.places.Autocomplete (legacy)
+  // para sugerir zonas mientras se escribe. Se sacó por completo — Google
+  // dejó de habilitar esa API a proyectos nuevos desde marzo 2025, y cuando
+  // no está disponible, la falla de autenticación se lleva puesta toda la
+  // sesión de Maps compartida (rompía el mapa de abajo apenas se tipeaba
+  // acá, aunque el mapa en sí no tenía ningún problema). El campo sigue
+  // funcionando 100% escribiendo a mano, con el botón "Ubicación", o
+  // tocando el pin en el mapa. Si algún día se quiere retomar el
+  // autocompletado, la reemplazante oficial es
+  // google.maps.places.PlaceAutocompleteElement (API nueva, requiere
+  // habilitar "Places API (New)" en Google Cloud y un componente propio,
+  // no un simple input).
 
   function handleUseLocation() {
     if (!navigator.geolocation) {

@@ -271,6 +271,34 @@ function iconChat(ctx, cx, cy, r, fg, bg) {
   });
 }
 
+function iconFace(ctx, cx, cy, r, fg) {
+  ctx.strokeStyle = fg;
+  ctx.fillStyle = fg;
+  ctx.lineWidth = Math.max(2.5, r * 0.13);
+  ctx.lineCap = "round";
+  [-1, 1].forEach((side) => {
+    ctx.beginPath();
+    ctx.arc(cx + side * r * 0.28, cy - r * 0.12, r * 0.09, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.beginPath();
+  ctx.arc(cx, cy - r * 0.05, r * 0.4, 0.15 * Math.PI, 0.85 * Math.PI);
+  ctx.stroke();
+}
+
+function iconHeartGlyph(ctx, cx, cy, r, fg) {
+  ctx.fillStyle = fg;
+  const s = r * 1.15;
+  const top = cy - s * 0.42;
+  ctx.beginPath();
+  ctx.moveTo(cx, top + s * 0.3);
+  ctx.bezierCurveTo(cx, top, cx - s * 0.5, top, cx - s * 0.5, top + s * 0.3);
+  ctx.bezierCurveTo(cx - s * 0.5, top + s * 0.58, cx, top + s * 0.68, cx, top + s * 0.95);
+  ctx.bezierCurveTo(cx, top + s * 0.68, cx + s * 0.5, top + s * 0.58, cx + s * 0.5, top + s * 0.3);
+  ctx.bezierCurveTo(cx + s * 0.5, top, cx, top, cx, top + s * 0.3);
+  ctx.fill();
+}
+
 function iconPhone(ctx, cx, cy, r, fg) {
   ctx.save();
   ctx.translate(cx, cy);
@@ -313,6 +341,12 @@ function drawIcon(ctx, type, cx, cy, r, fg, bg, extra) {
     case "chat":
       iconChat(ctx, cx, cy, r, fg, bg);
       break;
+    case "face":
+      iconFace(ctx, cx, cy, r, fg);
+      break;
+    case "heart":
+      iconHeartGlyph(ctx, cx, cy, r, fg);
+      break;
     case "phone":
       iconPhone(ctx, cx, cy, r, fg);
       break;
@@ -325,6 +359,50 @@ function especieLabel(especie) {
   if (especie === "gato") return "Gato";
   if (especie === "perro") return "Perro";
   return "Mascota";
+}
+
+// Cada oración de la descripción libre se ilustra con un ícono relacionado
+// a lo que dice, no siempre el mismo — "se perdió en la entrada de..." usa
+// un pin de ubicación, "tiene la nariz negra" usa un ícono de cara, "es muy
+// dócil" un corazón, y el resto cae en el globo de texto genérico. Es un
+// heurístico simple por palabras clave, no NLP real, pero cubre bien el
+// vocabulario típico de estas descripciones.
+const ICON_KEYWORD_CATEGORIES = [
+  {
+    icon: "pin",
+    words: [
+      "perdio", "perdió", "encontro", "encontró", "encontrado", "entrada", "zona", "cerca",
+      "cuadra", "calle", "avenida", "esquina", "barrio", "plaza", "parque", "estacion",
+      "estación", "salio", "salió", "escapo", "escapó", "cerca de", "altura",
+    ],
+  },
+  {
+    icon: "face",
+    words: ["cabeza", "hocico", "nariz", "orejas", "oreja", "ojos", "ojo", "franja", "cara", "bigotes"],
+  },
+  {
+    icon: "heart",
+    words: [
+      "docil", "dócil", "amigable", "tranquilo", "tranquila", "agresivo", "agresiva",
+      "jugueton", "juguetón", "juguetona", "cariñoso", "cariñosa", "carinoso", "carinosa",
+      "manso", "mansa", "arisco", "arisca", "asustadizo", "asustadiza", "querida", "querido", "familia",
+    ],
+  },
+];
+
+function normalizeForMatch(text) {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+}
+
+function classifySentenceIcon(sentence) {
+  const norm = normalizeForMatch(sentence);
+  for (const category of ICON_KEYWORD_CATEGORIES) {
+    if (category.words.some((w) => norm.includes(normalizeForMatch(w)))) return category.icon;
+  }
+  return "chat";
 }
 
 function splitSentences(text) {
@@ -373,7 +451,7 @@ export async function buildFlyerBlob(report, colorText) {
     rowDefs.push({ icon: "scale", tokens: tokensFromParts("Peso aproximado:", report.peso, ".") });
   }
   splitSentences(report.descripcion).forEach((sentence) => {
-    rowDefs.push({ icon: "chat", tokens: tokensFromSentence(sentence) });
+    rowDefs.push({ icon: classifySentenceIcon(sentence), tokens: tokensFromSentence(sentence) });
   });
 
   const ROW_LINE_H = 30;
