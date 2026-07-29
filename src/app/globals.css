@@ -68,6 +68,31 @@ body {
   animation: felpus-fade 0.32s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* Bottom sheet (filtros, etc.): el panel entra deslizando desde abajo y el
+   fondo se atenúa — patrón estándar de apps mobile premium (Airbnb, Booking). */
+@keyframes felpus-sheet-backdrop {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes felpus-sheet-up {
+  0% {
+    transform: translateY(100%);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+.felpus-sheet-backdrop {
+  animation: felpus-sheet-backdrop 0.25s ease-out;
+}
+.felpus-sheet-panel {
+  animation: felpus-sheet-up 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 /* Tarjetas: sombra suave que se acentúa levemente al pasar el mouse — le da
    sensación de "vida" a listas de reportes/colaboradores sin ser invasivo. */
 .felpus-card-hover {
@@ -141,7 +166,9 @@ button:not(:disabled):active {
   .felpus-fadein,
   .felpus-progress-fill,
   .felpus-match-glow,
-  .felpus-heart-pop {
+  .felpus-heart-pop,
+  .felpus-sheet-backdrop,
+  .felpus-sheet-panel {
     animation: none;
   }
   button:not(:disabled) {

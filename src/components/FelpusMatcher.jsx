@@ -558,6 +558,167 @@ function SkeletonRankRow() {
   );
 }
 
+// Bottom sheet de filtros avanzados de Explorar — desliza desde abajo en vez
+// de expandir inline, como en apps mobile premium (Airbnb, Booking). Se
+// mantiene el mismo patrón visual que ya usa DetailModal (rounded-t-3xl,
+// items-end en mobile / centrado en desktop).
+function FilterSheet({
+  open,
+  onClose,
+  filterTamano,
+  setFilterTamano,
+  filterColor,
+  setFilterColor,
+  filterFecha,
+  setFilterFecha,
+  filterRadioKm,
+  setFilterRadioKm,
+  myLocation,
+  locatingMe,
+  handleLocateMe,
+  hasAdvancedFilters,
+  resultCount,
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 bg-black/50 z-[60] flex items-end sm:items-center justify-center felpus-sheet-backdrop"
+      onClick={onClose}
+    >
+      <div
+        className="felpus-sheet-panel bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md max-h-[85vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-white flex items-center justify-between px-4 pt-4 pb-3 border-b" style={{ borderColor: C.border }}>
+          <h3 className="felpus-display text-lg" style={{ color: C.text }}>Filtros avanzados</h3>
+          <button type="button" onClick={onClose} aria-label="Cerrar filtros" className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "#F6F1E7" }}>
+            <X className="w-4 h-4" style={{ color: C.text }} />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          <div className="flex gap-2">
+            <select
+              value={filterTamano}
+              onChange={(e) => setFilterTamano(e.target.value)}
+              className="flex-1 border rounded-lg px-3 py-2 text-sm bg-white"
+              style={{ borderColor: C.border, color: C.text }}
+            >
+              <option value="todos">Cualquier tamaño</option>
+              <option value="chico">Chico</option>
+              <option value="mediano">Mediano</option>
+              <option value="grande">Grande</option>
+            </select>
+            <select
+              value={filterColor}
+              onChange={(e) => setFilterColor(e.target.value)}
+              className="flex-1 border rounded-lg px-3 py-2 text-sm bg-white"
+              style={{ borderColor: C.border, color: C.text }}
+            >
+              <option value="todos">Cualquier color</option>
+              {COLOR_OPTIONS.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <p className="text-[11px] font-semibold mb-1.5" style={{ color: C.muted }}>Antigüedad</p>
+            <div className="flex gap-1.5 flex-wrap">
+              {[
+                { id: "todos", label: "Cualquiera" },
+                { id: "24h", label: "Últimas 24h" },
+                { id: "7d", label: "Última semana" },
+                { id: "30d", label: "Último mes" },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setFilterFecha(opt.id)}
+                  className="rounded-full px-3 py-1.5 text-xs font-semibold border"
+                  style={
+                    filterFecha === opt.id
+                      ? { background: C.ink, color: "#fff", borderColor: C.ink }
+                      : { color: C.muted, borderColor: C.border, background: "#fff" }
+                  }
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[11px] font-semibold mb-1.5" style={{ color: C.muted }}>Radio de distancia</p>
+            <select
+              value={filterRadioKm ?? "todos"}
+              onChange={(e) => {
+                const val = e.target.value === "todos" ? null : Number(e.target.value);
+                if (val != null && !myLocation) handleLocateMe();
+                setFilterRadioKm(val);
+              }}
+              className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+              style={{ borderColor: C.border, color: C.text }}
+            >
+              <option value="todos">Cualquier distancia</option>
+              <option value="2">Hasta 2 km</option>
+              <option value="5">Hasta 5 km</option>
+              <option value="10">Hasta 10 km</option>
+              <option value="25">Hasta 25 km</option>
+            </select>
+            {filterRadioKm != null && !myLocation && (
+              <p className="text-[11px] mt-1" style={{ color: C.muted }}>
+                {locatingMe ? "Buscando tu ubicación..." : "Necesitamos tu ubicación para poder filtrar por distancia."}
+              </p>
+            )}
+            <p className="text-[11px] mt-1" style={{ color: C.muted }}>
+              Esto solo filtra la lista — el % de coincidencia de cada reporte ya tolera más distancia
+              cuanto más tiempo pasó, porque una mascota perdida hace días pudo alejarse más.
+            </p>
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 bg-white border-t p-3 flex items-center gap-2" style={{ borderColor: C.border }}>
+          {hasAdvancedFilters && (
+            <button
+              type="button"
+              onClick={() => {
+                setFilterTamano("todos");
+                setFilterColor("todos");
+                setFilterFecha("todos");
+                setFilterRadioKm(null);
+              }}
+              className="text-xs font-bold px-3 py-2.5"
+              style={{ color: C.red }}
+            >
+              Limpiar filtros
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-xl py-2.5 text-sm font-bold text-white"
+            style={{ background: C.ink }}
+          >
+            Ver {resultCount} {resultCount === 1 ? "resultado" : "resultados"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 export default function FelpusMatcher() {
   const [activeTab, setActiveTab] = useState("inicio");
   const [reportKind, setReportKind] = useState("perdida");
@@ -1978,116 +2139,34 @@ export default function FelpusMatcher() {
             <div>
               <button
                 type="button"
-                onClick={() => setShowAdvancedFilters((v) => !v)}
+                onClick={() => setShowAdvancedFilters(true)}
                 className="flex items-center gap-1.5 text-xs font-semibold"
                 style={{ color: C.text }}
               >
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAdvancedFilters ? "rotate-180" : ""}`} />
+                <ChevronDown className="w-3.5 h-3.5" />
                 Filtros avanzados
                 {hasAdvancedFilters && (
                   <span className="w-1.5 h-1.5 rounded-full" style={{ background: C.red }} />
                 )}
               </button>
 
-              {showAdvancedFilters && (
-                <div className="mt-2.5 bg-white rounded-xl border p-3 space-y-3" style={{ borderColor: C.border }}>
-                  <div className="flex gap-2">
-                    <select
-                      value={filterTamano}
-                      onChange={(e) => setFilterTamano(e.target.value)}
-                      className="flex-1 border rounded-lg px-3 py-2 text-sm bg-white"
-                      style={{ borderColor: C.border, color: C.text }}
-                    >
-                      <option value="todos">Cualquier tamaño</option>
-                      <option value="chico">Chico</option>
-                      <option value="mediano">Mediano</option>
-                      <option value="grande">Grande</option>
-                    </select>
-                    <select
-                      value={filterColor}
-                      onChange={(e) => setFilterColor(e.target.value)}
-                      className="flex-1 border rounded-lg px-3 py-2 text-sm bg-white"
-                      style={{ borderColor: C.border, color: C.text }}
-                    >
-                      <option value="todos">Cualquier color</option>
-                      {COLOR_OPTIONS.map((c) => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <p className="text-[11px] font-semibold mb-1.5" style={{ color: C.muted }}>Antigüedad</p>
-                    <div className="flex gap-1.5 flex-wrap">
-                      {[
-                        { id: "todos", label: "Cualquiera" },
-                        { id: "24h", label: "Últimas 24h" },
-                        { id: "7d", label: "Última semana" },
-                        { id: "30d", label: "Último mes" },
-                      ].map((opt) => (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          onClick={() => setFilterFecha(opt.id)}
-                          className="rounded-full px-3 py-1.5 text-xs font-semibold border"
-                          style={
-                            filterFecha === opt.id
-                              ? { background: C.ink, color: "#fff", borderColor: C.ink }
-                              : { color: C.muted, borderColor: C.border, background: "#fff" }
-                          }
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className="text-[11px] font-semibold mb-1.5" style={{ color: C.muted }}>Radio de distancia</p>
-                    <select
-                      value={filterRadioKm ?? "todos"}
-                      onChange={(e) => {
-                        const val = e.target.value === "todos" ? null : Number(e.target.value);
-                        if (val != null && !myLocation) handleLocateMe();
-                        setFilterRadioKm(val);
-                      }}
-                      className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-                      style={{ borderColor: C.border, color: C.text }}
-                    >
-                      <option value="todos">Cualquier distancia</option>
-                      <option value="2">Hasta 2 km</option>
-                      <option value="5">Hasta 5 km</option>
-                      <option value="10">Hasta 10 km</option>
-                      <option value="25">Hasta 25 km</option>
-                    </select>
-                    {filterRadioKm != null && !myLocation && (
-                      <p className="text-[11px] mt-1" style={{ color: C.muted }}>
-                        {locatingMe ? "Buscando tu ubicación..." : "Necesitamos tu ubicación para poder filtrar por distancia."}
-                      </p>
-                    )}
-                    <p className="text-[11px] mt-1" style={{ color: C.muted }}>
-                      Esto solo filtra la lista — el % de coincidencia de cada reporte ya tolera más distancia
-                      cuanto más tiempo pasó, porque una mascota perdida hace días pudo alejarse más.
-                    </p>
-                  </div>
-
-                  {hasAdvancedFilters && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFilterTamano("todos");
-                        setFilterColor("todos");
-                        setFilterFecha("todos");
-                        setFilterRadioKm(null);
-                      }}
-                      className="text-xs font-bold"
-                      style={{ color: C.red }}
-                    >
-                      Limpiar filtros
-                    </button>
-                  )}
-                </div>
-              )}
+              <FilterSheet
+                open={showAdvancedFilters}
+                onClose={() => setShowAdvancedFilters(false)}
+                filterTamano={filterTamano}
+                setFilterTamano={setFilterTamano}
+                filterColor={filterColor}
+                setFilterColor={setFilterColor}
+                filterFecha={filterFecha}
+                setFilterFecha={setFilterFecha}
+                filterRadioKm={filterRadioKm}
+                setFilterRadioKm={setFilterRadioKm}
+                myLocation={myLocation}
+                locatingMe={locatingMe}
+                handleLocateMe={handleLocateMe}
+                hasAdvancedFilters={hasAdvancedFilters}
+                resultCount={filteredReports.length}
+              />
             </div>
 
             {!loadingReports && (
