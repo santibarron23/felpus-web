@@ -81,6 +81,7 @@ import { loadGoogleMaps } from "../lib/googleMaps";
 import MapPicker from "./MapPicker";
 import ReportsMap from "./ReportsMap";
 import Mascot from "./Mascot";
+import ZonaAutocomplete from "./ZonaAutocomplete";
 
 const ICON_C = "/assets/icon_c.png";
 const LOGO_FULL = "/assets/logo_full.png";
@@ -768,7 +769,6 @@ export default function FelpusMatcher() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const fileInputRef = useRef(null);
-  const zonaInputRef = useRef(null);
   const deepLinkHandled = useRef(false);
 
   // Escape cierra el overlay que esté abierto, de más encima a menos: el
@@ -1892,16 +1892,21 @@ export default function FelpusMatcher() {
                   Zona / barrio <span style={{ color: C.red }}>*</span>
                 </label>
                 <div className="flex gap-2">
-                  <input
-                    ref={zonaInputRef}
-                    type="text"
+                  <ZonaAutocomplete
                     value={form.zona}
-                    onChange={(e) => setForm((f) => ({ ...f, zona: e.target.value }))}
+                    onManualChange={(zona) => setForm((f) => ({ ...f, zona }))}
+                    onSelectPlace={(zona, lat, lng) => {
+                      setForm((f) => ({
+                        ...f,
+                        zona,
+                        ...(lat != null && lng != null ? { lat, lng } : {}),
+                      }));
+                      if (lat != null && lng != null) setGeoStatus("done");
+                    }}
                     maxLength={100}
                     placeholder="Ej: Palermo, cerca de Plaza Serrano"
                     className="flex-1 border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
                     style={{ borderColor: C.border, color: C.text }}
-                    autoComplete="off"
                   />
                   <button
                     type="button"
