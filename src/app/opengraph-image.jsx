@@ -43,8 +43,20 @@ export default async function OpengraphImage() {
           fontFamily: "Montserrat",
         }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={iconSrc} width={150} height={143} alt="" />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 168,
+            height: 168,
+            borderRadius: 84,
+            background: "#ffffff",
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={iconSrc} width={118} height={113} alt="" />
+        </div>
         <div style={{ display: "flex", fontSize: 104, fontWeight: 800, color: "#ffffff", marginTop: 20, letterSpacing: -2 }}>
           Felpus
         </div>

@@ -771,6 +771,26 @@ export default function FelpusMatcher() {
   const zonaInputRef = useRef(null);
   const deepLinkHandled = useRef(false);
 
+  // Escape cierra el overlay que esté abierto, de más encima a menos: el
+  // modal de detalle de un reporte, el panel de notificaciones, y por
+  // último el bottom sheet de filtros — accesibilidad básica de teclado
+  // que faltaba en todos los overlays de la app.
+  useEffect(() => {
+    function handleKeyDown(e) {
+      if (e.key !== "Escape") return;
+      if (detailReport) {
+        setDetailReport(null);
+        setConfirmingId(null);
+      } else if (notifOpen) {
+        setNotifOpen(false);
+      } else if (showAdvancedFilters) {
+        setShowAdvancedFilters(false);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [detailReport, notifOpen, showAdvancedFilters]);
+
   // Sesión con Google (opcional). Sin login, se puede seguir aportando
   // como invitado escribiendo un apodo a mano.
   useEffect(() => {
