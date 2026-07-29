@@ -741,6 +741,7 @@ export default function FelpusMatcher() {
   const [heartedIds, setHeartedIds] = useState([]);
   const [poppingHeartId, setPoppingHeartId] = useState(null);
   const [matchesSeenAt, setMatchesSeenAt] = useState(0);
+  const [notifOpen, setNotifOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -831,24 +832,31 @@ export default function FelpusMatcher() {
     }
   }
 
-  // Coincidencias nuevas desde la última visita: recorre los reportes
-  // propios activos y ve si algún candidato (con score suficiente) se creó
-  // después del último "visto". Reemplaza una alerta push/email real (que
-  // necesitaría un servicio externo nuevo) por algo liviano que sí se puede
-  // resolver 100% en el cliente.
-  const newMatchesCount = useMemo(() => {
-    if (!user) return 0;
+  // Coincidencias nuevas desde la última visita: para cada reporte propio
+  // activo, busca su mejor candidato nuevo (creado después del último
+  // "visto") con score suficiente. Antes esto solo contaba un número y
+  // mandaba a Explorar a ciegas — ahora la campanita puede mostrar
+  // directamente CUÁL reporte tuyo tiene una coincidencia nueva y con qué,
+  // para poder ir directo al detalle en vez de tener que buscarlo.
+  const newMatchItems = useMemo(() => {
+    if (!user) return [];
     const myActive = reports.filter((r) => r.userId === user.id && !r.resuelto);
-    if (myActive.length === 0) return 0;
-    let count = 0;
+    if (myActive.length === 0) return [];
+    const items = [];
     for (const mine of myActive) {
       const opposite = mine.tipo === "perdida" ? "encontrada" : "perdida";
       const candidates = reports.filter((r) => r.tipo === opposite && !r.resuelto && r.creadoEn > matchesSeenAt);
-      const hasNew = candidates.some((c) => scoreMatch(mine, c).score >= SCORE_MINIMO);
-      if (hasNew) count++;
+      const scored = candidates
+        .map((c) => ({ candidate: c, score: scoreMatch(mine, c).score }))
+        .filter((m) => m.score >= SCORE_MINIMO)
+        .sort((a, b) => b.score - a.score);
+      if (scored.length > 0) {
+        items.push({ mine, best: scored[0].candidate, score: scored[0].score, extraCount: scored.length - 1 });
+      }
     }
-    return count;
+    return items;
   }, [reports, user, matchesSeenAt]);
+  const newMatchesCount = newMatchItems.length;
 
   // Checklist de campos clave del formulario de reporte, en el mismo orden
   // en que handleSubmit los valida — sirve para la barra de progreso que
@@ -1392,29 +1400,97 @@ export default function FelpusMatcher() {
           </button>
           <div className="flex items-center gap-2">
             {user && (
-              <button
-                onClick={() => {
-                  playTap();
-                  goToTab("explorar");
-                  markMatchesSeen();
-                }}
-                aria-label={
-                  newMatchesCount > 0
-                    ? `${newMatchesCount} coincidencias nuevas desde tu última visita`
-                    : "Sin coincidencias nuevas"
-                }
-                className="relative w-8 h-8 rounded-full bg-white/15 flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
-              >
-                <Bell className="w-4 h-4" />
-                {newMatchesCount > 0 && (
-                  <span
-                    className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full text-white text-[10px] font-bold flex items-center justify-center"
-                    style={{ background: C.orangeInk }}
-                  >
-                    {newMatchesCount}
-                  </span>
+              <div className="relative">
+                <button
+                  onClick={() => {
+                    playTap();
+                    setNotifOpen((v) => !v);
+                  }}
+                  aria-label={
+                    newMatchesCount > 0
+                      ? `${newMatchesCount} coincidencias nuevas desde tu última visita`
+                      : "Sin coincidencias nuevas"
+                  }
+                  className="relative w-8 h-8 rounded-full bg-white/15 flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                >
+                  <Bell className="w-4 h-4" />
+                  {newMatchesCount > 0 && (
+                    <span
+                      className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full text-white text-[10px] font-bold flex items-center justify-center"
+                      style={{ background: C.orangeInk }}
+                    >
+                      {newMatchesCount}
+                    </span>
+                  )}
+                </button>
+
+                {notifOpen && (
+                  <>
+                    <button
+                      type="button"
+                      aria-label="Cerrar notificaciones"
+                      onClick={() => setNotifOpen(false)}
+                      className="fixed inset-0 z-[65] cursor-default"
+                    />
+                    <div
+                      className="absolute right-0 top-full mt-2 w-72 max-h-[70vh] overflow-y-auto bg-white rounded-2xl border shadow-lg z-[66] text-left"
+                      style={{ borderColor: C.border }}
+                    >
+                      <div className="px-3.5 pt-3 pb-2 border-b" style={{ borderColor: C.border }}>
+                        <p className="text-sm font-bold" style={{ color: C.text }}>Coincidencias nuevas</p>
+                      </div>
+                      {newMatchItems.length === 0 ? (
+                        <p className="px-3.5 py-4 text-xs" style={{ color: C.muted }}>
+                          Todavía no hay coincidencias nuevas para tus reportes. Te avisamos acá apenas aparezca alguna.
+                        </p>
+                      ) : (
+                        <div className="py-1">
+                          {newMatchItems.map(({ mine, best, score, extraCount }) => (
+                            <button
+                              key={mine.id}
+                              type="button"
+                              onClick={() => {
+                                playTap();
+                                setNotifOpen(false);
+                                markMatchesSeen();
+                                setDetailReport(best);
+                              }}
+                              className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-[#FBF7F0] focus:outline-none focus-visible:bg-[#FBF7F0]"
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={best.foto} alt="" className="w-11 h-11 rounded-lg object-cover shrink-0 bg-[#F0E7D8]" />
+                              <span className="flex-1 min-w-0">
+                                <span className="block text-xs font-bold truncate" style={{ color: C.text }}>
+                                  Tu {mine.tipo === "perdida" ? "reporte de perdida" : "reporte de encontrada"}
+                                  {mine.nombre ? ` (${mine.nombre})` : ""}
+                                </span>
+                                <span className="block text-[11px] truncate" style={{ color: C.muted }}>
+                                  Coincide con {best.nombre || best.especie} · {Math.round(score * 100)}%
+                                  {extraCount > 0 ? ` · +${extraCount} más` : ""}
+                                </span>
+                              </span>
+                              <ChevronRight className="w-3.5 h-3.5 shrink-0" style={{ color: C.muted }} />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          playTap();
+                          setNotifOpen(false);
+                          goToTab("explorar");
+                          markMatchesSeen();
+                        }}
+                        className="w-full text-center text-xs font-bold py-2.5 border-t"
+                        style={{ color: C.red, borderColor: C.border }}
+                      >
+                        Ver todo en Explorar
+                      </button>
+                    </div>
+                  </>
                 )}
-              </button>
+              </div>
             )}
             <button
               onClick={() => goToTab("explorar")}
