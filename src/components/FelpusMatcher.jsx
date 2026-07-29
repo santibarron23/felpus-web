@@ -542,6 +542,20 @@ function SkeletonCard() {
   );
 }
 
+function SkeletonRankRow() {
+  return (
+    <div className="flex items-center gap-3 bg-white rounded-xl p-3 border animate-pulse" style={{ borderColor: C.border }}>
+      <div className="w-6 h-4 rounded bg-[#F0E7D8] shrink-0" />
+      <div className="w-9 h-9 rounded-full bg-[#F0E7D8] shrink-0" />
+      <div className="flex-1 space-y-2 py-0.5">
+        <div className="h-3.5 w-1/3 rounded bg-[#F0E7D8]" />
+        <div className="h-2.5 w-1/2 rounded bg-[#F0E7D8]" />
+      </div>
+      <div className="h-4 w-8 rounded bg-[#F0E7D8] shrink-0" />
+    </div>
+  );
+}
+
 export default function FelpusMatcher() {
   const [activeTab, setActiveTab] = useState("inicio");
   const [reportKind, setReportKind] = useState("perdida");
@@ -684,6 +698,15 @@ export default function FelpusMatcher() {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4200);
   }, []);
 
+  // Cambiar de pestaña siempre vuelve al tope — si no, se entra a una vista
+  // nueva ya scrolleada a la mitad porque quedó así en la pestaña anterior.
+  const goToTab = useCallback((tabId) => {
+    setActiveTab(tabId);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, []);
+
   const loadLeaderboard = useCallback(async () => {
     try {
       const items = await fetchLeaderboard();
@@ -736,7 +759,7 @@ export default function FelpusMatcher() {
     const found = reports.find((r) => r.id === rid);
     if (found) {
       setDetailReport(found);
-      setActiveTab("explorar");
+      goToTab("explorar");
     }
   }, [reports]);
 
@@ -1040,7 +1063,7 @@ export default function FelpusMatcher() {
       const opposite = reportKind === "perdida" ? "encontrada" : "perdida";
       const candidates = reports.filter((r) => r.tipo === opposite && !r.resuelto);
 
-      setActiveTab("resultado");
+      goToTab("resultado");
       setScanning(true);
       setMatchResult(null);
 
@@ -1074,7 +1097,7 @@ export default function FelpusMatcher() {
     } catch (err) {
       console.error(err);
       setFormError("Algo falló al publicar el reporte. Probá de nuevo.");
-      setActiveTab("reportar");
+      goToTab("reportar");
     } finally {
       setScanning(false);
       setSubmitting(false);
@@ -1151,7 +1174,7 @@ export default function FelpusMatcher() {
         <div className="max-w-2xl mx-auto px-4 pt-6 pb-4 flex items-center justify-between">
           <button
             type="button"
-            onClick={() => setActiveTab("inicio")}
+            onClick={() => goToTab("inicio")}
             className="flex items-center gap-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-white rounded-lg"
           >
             <div className="w-11 h-11 rounded-full bg-white flex items-center justify-center shrink-0 p-1.5">
@@ -1168,7 +1191,7 @@ export default function FelpusMatcher() {
               <button
                 onClick={() => {
                   playTap();
-                  setActiveTab("explorar");
+                  goToTab("explorar");
                   markMatchesSeen();
                 }}
                 aria-label={
@@ -1190,7 +1213,7 @@ export default function FelpusMatcher() {
               </button>
             )}
             <button
-              onClick={() => setActiveTab("explorar")}
+              onClick={() => goToTab("explorar")}
               className="felpus-mono text-[11px] font-bold bg-white/15 rounded-full px-3 py-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
               {activeReports.length} mascotas
@@ -1284,7 +1307,7 @@ export default function FelpusMatcher() {
                     onClick={() => {
                       playTap();
                       setReportKind("perdida");
-                      setActiveTab("reportar");
+                      goToTab("reportar");
                     }}
                     className="flex-1 text-white text-sm font-bold rounded-xl py-2.5 transition-colors flex items-center justify-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#D31C22]"
                     style={{ background: C.red }}
@@ -1297,7 +1320,7 @@ export default function FelpusMatcher() {
                     onClick={() => {
                       playTap();
                       setReportKind("encontrada");
-                      setActiveTab("reportar");
+                      goToTab("reportar");
                     }}
                     className="flex-1 text-white text-sm font-bold rounded-xl py-2.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E36525]"
                     style={{ background: C.orangeInk }}
@@ -1327,7 +1350,7 @@ export default function FelpusMatcher() {
             </div>
 
             <button
-              onClick={() => setActiveTab("ranking")}
+              onClick={() => goToTab("ranking")}
               className="w-full rounded-2xl p-4 text-white flex items-center gap-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
               style={{ background: C.ink }}
             >
@@ -1674,7 +1697,7 @@ export default function FelpusMatcher() {
         {/* RESULTADO */}
         {activeTab === "resultado" && (
           <div key="resultado" className="space-y-4 felpus-fadein">
-            <button onClick={() => setActiveTab("explorar")} className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: C.muted }}>
+            <button onClick={() => goToTab("explorar")} className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: C.muted }}>
               <ArrowLeft className="w-3.5 h-3.5" /> Volver a explorar
             </button>
 
@@ -2167,7 +2190,15 @@ export default function FelpusMatcher() {
               </div>
             )}
 
-            {leaderboard.length === 0 && (
+            {loadingReports && leaderboard.length === 0 && (
+              <div className="space-y-2">
+                <SkeletonRankRow />
+                <SkeletonRankRow />
+                <SkeletonRankRow />
+              </div>
+            )}
+
+            {!loadingReports && leaderboard.length === 0 && (
               <div className="text-sm bg-white rounded-2xl p-6 text-center border" style={{ color: C.muted, borderColor: C.border }}>
                 <Mascot mood="happy" size={88} className="mx-auto mb-2" />
                 <p className="font-semibold" style={{ color: C.text }}>Todavía nadie sumó puntos.</p>
@@ -2251,7 +2282,7 @@ export default function FelpusMatcher() {
                 onClick={() => {
                   playTap();
                   setReportKind("perdida");
-                  setActiveTab("reportar");
+                  goToTab("reportar");
                 }}
                 className="flex flex-col items-center justify-center -mt-4 focus:outline-none"
                 aria-label="Reportar mascota"
@@ -2270,11 +2301,16 @@ export default function FelpusMatcher() {
               key={item.id}
               onClick={() => {
                 playTap();
-                setActiveTab(item.id);
+                goToTab(item.id);
               }}
               className="flex flex-col items-center justify-center gap-0.5 py-2 px-3 focus:outline-none"
             >
-              <item.icon className="w-5 h-5" style={{ color: isActive ? C.red : C.muted }} />
+              <span
+                className="flex items-center justify-center w-9 h-7 rounded-full transition-all duration-300"
+                style={{ background: isActive ? "#FBE4DC" : "transparent", transform: isActive ? "scale(1)" : "scale(0.9)" }}
+              >
+                <item.icon className="w-5 h-5 transition-colors duration-200" style={{ color: isActive ? C.red : C.muted }} />
+              </span>
               <span className="text-[10px] font-bold" style={{ color: isActive ? C.red : C.muted }}>
                 {item.label}
               </span>
