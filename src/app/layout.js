@@ -1,9 +1,35 @@
 import "./globals.css";
 
+const SITE_URL = "https://felpus-web.vercel.app";
+const TITLE = "Felpus — Buscador inteligente de mascotas perdidas y encontradas";
+const DESCRIPTION =
+  "Reportá una mascota perdida o encontrada con foto y descripción. Felpus busca coincidencias automáticamente por imagen, texto y zona.";
+
 export const metadata = {
-  title: "Felpus — Buscador inteligente de mascotas perdidas y encontradas",
-  description:
-    "Reportá una mascota perdida o encontrada con foto y descripción. Felpus busca coincidencias automáticamente por imagen, texto y zona.",
+  metadataBase: new URL(SITE_URL),
+  title: TITLE,
+  description: DESCRIPTION,
+  icons: {
+    icon: "/assets/icon_c.png",
+    apple: "/assets/icon_c.png",
+  },
+  openGraph: {
+    title: TITLE,
+    description: DESCRIPTION,
+    url: SITE_URL,
+    siteName: "Felpus",
+    locale: "es_AR",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+  },
+};
+
+export const viewport = {
+  themeColor: "#D31C22",
 };
 
 export default function RootLayout({ children }) {
