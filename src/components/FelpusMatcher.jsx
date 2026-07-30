@@ -771,6 +771,12 @@ export default function FelpusMatcher() {
   const fileInputRef = useRef(null);
   const deepLinkHandled = useRef(false);
 
+  const pushToast = useCallback((type, message) => {
+    const id = Math.random().toString(36).slice(2);
+    setToasts((t) => [...t.slice(-2), { id, type, message }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4200);
+  }, []);
+
   // Escape cierra el overlay que esté abierto, de más encima a menos: el
   // modal de detalle de un reporte, el panel de notificaciones, y por
   // último el bottom sheet de filtros — accesibilidad básica de teclado
@@ -823,7 +829,7 @@ export default function FelpusMatcher() {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, pushToast]);
 
   // Cuándo fue la última vez que este usuario revisó sus propias
   // coincidencias — se usa para saber qué mostrar como "novedad" en la
@@ -924,12 +930,6 @@ export default function FelpusMatcher() {
     setNickname("");
   }
 
-  const pushToast = useCallback((type, message) => {
-    const id = Math.random().toString(36).slice(2);
-    setToasts((t) => [...t.slice(-2), { id, type, message }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4200);
-  }, []);
-
   // Cambiar de pestaña siempre vuelve al tope — si no, se entra a una vista
   // nueva ya scrolleada a la mitad porque quedó así en la pestaña anterior.
   const goToTab = useCallback((tabId) => {
@@ -993,7 +993,7 @@ export default function FelpusMatcher() {
       setDetailReport(found);
       goToTab("explorar");
     }
-  }, [reports]);
+  }, [reports, goToTab]);
 
   // Confirmar un reencuentro requiere sesión con Google (evita que cualquiera
   // se autoasigne puntos con un apodo de texto libre) Y ser quien publicó ese
@@ -2082,7 +2082,7 @@ export default function FelpusMatcher() {
                         {matchResult.hadCandidates
                           ? `Hay reportes en la zona, pero ninguno supera el ${Math.round(SCORE_MINIMO * 100)}% mínimo de similitud todavía.`
                           : `Ni bien alguien reporte una mascota ${matchResult.source.tipo === "perdida" ? "encontrada" : "perdida"} que se parezca, va a aparecer acá.`}{" "}
-                        Revisá la pestaña "Explorar" más tarde.
+                        Revisá la pestaña &ldquo;Explorar&rdquo; más tarde.
                       </p>
                     </div>
                   )}

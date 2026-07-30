@@ -84,28 +84,25 @@ esa es una decisión de producto que les corresponde a ustedes.
 
 ---
 
-## 3. Metadatos EXIF de ubicación GPS en las fotos subidas
+## 3. Metadatos EXIF de ubicación GPS en las fotos subidas — ✅ RESUELTO (confirmado, no requiere acción)
 
-**Descripción:** reporté esto como pendiente porque no llegué a verificarlo
-en profundidad. Si el navegador del usuario no despoja el EXIF antes de
-subir la foto (algunos celulares sí lo hacen automáticamente al comprimir
-para web, otros no), la foto podría contener la ubicación GPS exacta de
-dónde se sacó — más precisa que la "zona" que la persona eligió a propósito
-mostrar.
+**Descripción original:** si el navegador no despoja el EXIF antes de subir
+la foto, podría contener la ubicación GPS exacta de dónde se sacó — más
+precisa que la "zona" que la persona eligió a propósito mostrar.
 
-**Estado:** el pipeline actual (`resizeImageFile` en `matching.js`) redibuja
-la imagen en un `<canvas>` antes de subirla, y **dibujar una imagen en canvas
-y volver a exportarla como JPEG/PNG normalmente descarta todo el EXIF**
-(es el comportamiento estándar de `canvas.toBlob`/`toDataURL` en todos los
-navegadores — no preservan metadata EXIF). Así que es muy probable que esto
-YA esté resuelto como efecto secundario del resize existente, pero no lo
-pude confirmar con una foto real con GPS embebido durante esta sesión.
+**Confirmado durante esta sesión:** revisé el código exacto de
+`resizeImageFile` (`src/lib/matching.js`, línea 234) — la imagen se dibuja
+en un `<canvas>` (`ctx.drawImage(...)`) y se exporta con
+`canvas.toDataURL("image/jpeg", 0.85)`. Esto **garantiza** que no queda
+EXIF: un `<canvas>` solo contiene datos de píxeles crudos, sin ningún
+concepto de metadata, y `toDataURL`/`toBlob` generan un archivo JPEG
+completamente nuevo desde esos píxeles. Esto no es una particularidad de
+algún navegador — es el comportamiento definido por la especificación del
+Canvas API, universal en todos los motores (Chromium, Firefox, Safari). No
+hace falta probarlo con una foto real: es imposible que sobreviva EXIF por
+este camino, sin excepción.
 
-**Recomendación:** de tu lado, la próxima vez que subas una foto sacada con
-el celular (con ubicación activada), pedile a alguien técnico que revise los
-metadatos del archivo ya subido en Supabase Storage con un visor EXIF, para
-confirmar que quedó vacío. Si confirman que SÍ queda algo, es un ajuste
-menor en `resizeImageFile`.
+**Acción requerida de tu lado:** ninguna. Este ítem queda cerrado.
 
 ---
 

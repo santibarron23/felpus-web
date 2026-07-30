@@ -109,7 +109,7 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter }) {
       <div className="text-xs rounded-lg border p-3" style={{ borderColor: "#EFE3D2", color: "#6B5643" }}>
         El mapa interactivo no está configurado (falta{" "}
         <code className="felpus-mono">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code>). Mientras tanto podés usar el
-        botón "Ubicación" para capturar tu posición actual.
+        botón &ldquo;Ubicación&rdquo; para capturar tu posición actual.
       </div>
     );
   }

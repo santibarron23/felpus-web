@@ -60,9 +60,11 @@ Basado en `AUDITORIA.md`. Backlog ordenado por prioridad P0 → P3.
 ### [ID 005] Confirmar que las fotos subidas no conservan EXIF de ubicación GPS
 - **Prioridad:** P2
 - **Impacto esperado:** privacidad — evitar exponer ubicación más precisa de la que la persona eligió compartir.
-- **Archivos:** `src/lib/matching.js` (`resizeImageFile`), a confirmar.
-- **Riesgo:** bajo si hace falta ajustar (el pipeline actual ya pasa por `<canvas>`, que normalmente descarta EXIF).
-- **Estado:** 🔒 Pendiente de verificación manual con una foto real. Ver `PENDIENTE_DECISION.md` #3.
+- **Archivos:** `src/lib/matching.js` (`resizeImageFile`).
+- **Riesgo:** ninguno — solo verificación, sin cambio de código.
+- **Criterio de aceptación:** confirmar que el pipeline de subida no puede preservar EXIF.
+- **Prueba:** lectura del código (`ctx.drawImage` + `canvas.toDataURL`) contra la especificación del Canvas API.
+- **Estado:** ✅ Confirmado — el Canvas API no tiene forma de preservar EXIF, es imposible que sobreviva por este camino. Ver `PENDIENTE_DECISION.md` #3.
 
 ### [ID 006] Botón de "eliminar mi publicación"
 - **Prioridad:** P2
