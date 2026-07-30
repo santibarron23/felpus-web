@@ -11,6 +11,7 @@ import { loadGoogleMaps } from "../lib/googleMaps";
 // acá una falla nunca se lleva puesta el resto de la sesión de Maps
 // compartida (el mapa de abajo sigue funcionando pase lo que pase acá).
 export default function ZonaAutocomplete({
+  id,
   value,
   onManualChange,
   onSelectPlace,
@@ -37,6 +38,7 @@ export default function ZonaAutocomplete({
           includedRegionCodes: ["AR"],
         });
         el.style.width = "100%";
+        if (id) el.setAttribute("aria-label", "Zona / barrio");
         containerRef.current.appendChild(el);
         elRef.current = el;
 
@@ -83,6 +85,7 @@ export default function ZonaAutocomplete({
       <div ref={containerRef} className={className} style={{ ...style, padding: 0, width: "100%" }} />
       {!ready && (
         <input
+          id={id}
           type="text"
           value={value}
           onChange={(e) => onManualChange(e.target.value)}

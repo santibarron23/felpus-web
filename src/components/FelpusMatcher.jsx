@@ -1766,8 +1766,9 @@ export default function FelpusMatcher() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Especie</label>
+                  <label htmlFor="form-especie" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Especie</label>
                   <select
+                    id="form-especie"
                     value={form.especie}
                     onChange={(e) => setForm((f) => ({ ...f, especie: e.target.value }))}
                     className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
@@ -1779,8 +1780,9 @@ export default function FelpusMatcher() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Tamaño</label>
+                  <label htmlFor="form-tamano" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Tamaño</label>
                   <select
+                    id="form-tamano"
                     value={form.tamano}
                     onChange={(e) => setForm((f) => ({ ...f, tamano: e.target.value }))}
                     className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
@@ -1794,10 +1796,11 @@ export default function FelpusMatcher() {
               </div>
 
               <div>
-                <label className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
+                <label htmlFor="form-sexo" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
                   Sexo <span style={{ color: C.red }}>*</span>
                 </label>
                 <select
+                  id="form-sexo"
                   value={form.sexo}
                   onChange={(e) => setForm((f) => ({ ...f, sexo: e.target.value }))}
                   className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
@@ -1812,8 +1815,9 @@ export default function FelpusMatcher() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Nombre (si lo sabés)</label>
+                  <label htmlFor="form-nombre" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Nombre (si lo sabés)</label>
                   <input
+                    id="form-nombre"
                     type="text"
                     value={form.nombre}
                     onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
@@ -1824,10 +1828,11 @@ export default function FelpusMatcher() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
+                  <label htmlFor="form-color" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
                     Color <span style={{ color: C.red }}>*</span>
                   </label>
                   <select
+                    id="form-color"
                     value={form.color}
                     onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
                     className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
@@ -1843,8 +1848,9 @@ export default function FelpusMatcher() {
 
               {form.color === "Otro color" && (
                 <div>
-                  <label className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Describí el color</label>
+                  <label htmlFor="form-color-otro" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Describí el color</label>
                   <input
+                    id="form-color-otro"
                     type="text"
                     value={form.colorOtro}
                     onChange={(e) => setForm((f) => ({ ...f, colorOtro: e.target.value }))}
@@ -1858,8 +1864,9 @@ export default function FelpusMatcher() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Edad aproximada</label>
+                  <label htmlFor="form-edad" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Edad aproximada</label>
                   <select
+                    id="form-edad"
                     value={form.edad}
                     onChange={(e) => setForm((f) => ({ ...f, edad: e.target.value }))}
                     className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
@@ -1872,8 +1879,9 @@ export default function FelpusMatcher() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Peso aproximado</label>
+                  <label htmlFor="form-peso" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Peso aproximado</label>
                   <select
+                    id="form-peso"
                     value={form.peso}
                     onChange={(e) => setForm((f) => ({ ...f, peso: e.target.value }))}
                     className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
@@ -1888,11 +1896,12 @@ export default function FelpusMatcher() {
               </div>
 
               <div>
-                <label className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
+                <label htmlFor="form-zona" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
                   Zona / barrio <span style={{ color: C.red }}>*</span>
                 </label>
                 <div className="flex gap-2">
                   <ZonaAutocomplete
+                    id="form-zona"
                     value={form.zona}
                     onManualChange={(zona) => setForm((f) => ({ ...f, zona }))}
                     onSelectPlace={(zona, lat, lng) => {
@@ -1943,8 +1952,9 @@ export default function FelpusMatcher() {
               </div>
 
               <div>
-                <label className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Fecha</label>
+                <label htmlFor="form-fecha" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Fecha</label>
                 <input
+                  id="form-fecha"
                   type="date"
                   value={form.fecha}
                   onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))}
@@ -1954,10 +1964,11 @@ export default function FelpusMatcher() {
               </div>
 
               <div>
-                <label className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
+                <label htmlFor="form-descripcion" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
                   Descripción <span style={{ color: C.red }}>*</span>
                 </label>
                 <textarea
+                  id="form-descripcion"
                   value={form.descripcion}
                   onChange={(e) => setForm((f) => ({ ...f, descripcion: e.target.value }))}
                   rows={3}
@@ -1969,7 +1980,7 @@ export default function FelpusMatcher() {
               </div>
 
               <div>
-                <label className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
+                <label id="form-contacto-label" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
                   Contacto <span style={{ color: C.red }}>*</span>
                 </label>
                 <p className="text-[11px] mb-1.5" style={{ color: C.muted }}>
@@ -1979,6 +1990,8 @@ export default function FelpusMatcher() {
                   <input
                     type="tel"
                     inputMode="tel"
+                    aria-label="WhatsApp de contacto"
+                    aria-describedby="form-contacto-label"
                     value={form.contactoWhatsapp}
                     onChange={(e) => setForm((f) => ({ ...f, contactoWhatsapp: e.target.value }))}
                     maxLength={25}
@@ -1988,6 +2001,8 @@ export default function FelpusMatcher() {
                   />
                   <input
                     type="email"
+                    aria-label="Email de contacto"
+                    aria-describedby="form-contacto-label"
                     value={form.contactoEmail}
                     onChange={(e) => setForm((f) => ({ ...f, contactoEmail: e.target.value }))}
                     maxLength={120}
