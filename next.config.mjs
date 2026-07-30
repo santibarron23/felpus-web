@@ -14,8 +14,13 @@ const csp = [
   // data:/blob: para las fotos redimensionadas en canvas y los placeholders
   // SVG generados en el cliente; googleusercontent.com para el avatar de Google.
   "img-src 'self' data: blob: https://*.supabase.co https://maps.gstatic.com https://maps.googleapis.com https://*.googleusercontent.com",
+  // places.googleapis.com es un dominio DISTINTO de maps.googleapis.com: lo
+  // usa el autocompletado de zona (PlaceAutocompleteElement, API nueva de
+  // Places) para sus pedidos de sugerencias — sin esto en connect-src, el
+  // CSP bloquea esos pedidos en silencio (queda como "xhr error" genérico,
+  // sin ningún mensaje de CSP explícito en la consola).
   // ws://localhost solo en desarrollo: el socket de hot-reload de Next.js.
-  `connect-src 'self' https://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com${isDev ? " ws://localhost:* http://localhost:*" : ""}`,
+  `connect-src 'self' https://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://places.googleapis.com${isDev ? " ws://localhost:* http://localhost:*" : ""}`,
   "frame-src 'self' https://accounts.google.com",
   "object-src 'none'",
   "base-uri 'self'",
