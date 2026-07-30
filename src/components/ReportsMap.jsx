@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { loadGoogleMaps } from "../lib/googleMaps";
+import { loadGoogleMaps, observeMapResize } from "../lib/googleMaps";
 
 // Mapa de sólo lectura que pinta un marcador por cada reporte que tenga
 // ubicación exacta (lat/lng) — rojo para perdidas, naranja para encontradas.
@@ -21,6 +21,7 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
   useEffect(() => {
     if (!apiKey) return;
     let cancelled = false;
+    let stopResizeObserver = null;
     loadGoogleMaps(apiKey)
       .then((maps) => {
         if (cancelled || !containerRef.current) return;
@@ -33,11 +34,13 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
           clickableIcons: false,
         });
         mapObjRef.current = map;
+        stopResizeObserver = observeMapResize(map, containerRef.current);
         setStatus("ready");
       })
       .catch(() => setStatus("error"));
     return () => {
       cancelled = true;
+      if (stopResizeObserver) stopResizeObserver();
     };
     // Sólo se inicializa una vez con la key disponible.
     // eslint-disable-next-line react-hooks/exhaustive-deps

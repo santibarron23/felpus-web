@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { loadGoogleMaps } from "../lib/googleMaps";
+import { loadGoogleMaps, observeMapResize } from "../lib/googleMaps";
 
 // Mapa con un pin arrastrable/tocable para marcar la ubicación exacta de un
 // reporte. Si no hay API key configurada, muestra un aviso y la app sigue
@@ -27,6 +27,7 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter }) {
   useEffect(() => {
     if (!apiKey) return;
     let cancelled = false;
+    let stopResizeObserver = null;
 
     loadGoogleMaps(apiKey)
       .then((maps) => {
@@ -60,12 +61,14 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter }) {
         });
         mapObjRef.current = map;
         markerObjRef.current = marker;
+        stopResizeObserver = observeMapResize(map, containerRef.current);
         setStatus("ready");
       })
       .catch(() => setStatus("error"));
 
     return () => {
       cancelled = true;
+      if (stopResizeObserver) stopResizeObserver();
     };
     // Sólo se inicializa una vez con la key disponible.
     // eslint-disable-next-line react-hooks/exhaustive-deps
