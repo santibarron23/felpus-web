@@ -417,6 +417,37 @@ export function getTier(points, colors) {
   return { label: "Vecino atento", paws: 1, color: colors.muted };
 }
 
+const TIER_THRESHOLDS = [
+  { min: 0, label: "Vecino atento" },
+  { min: 20, label: "Guardián de barrio" },
+  { min: 50, label: "Rescatista" },
+  { min: 100, label: "Leyenda Felpus" },
+];
+
+// Progreso hacia el próximo nivel — la app ya tenía niveles por puntos
+// (getTier) pero nunca se mostraba cuánto faltaba para subir. Devuelve el
+// nivel actual, el próximo (o null si ya es el máximo) y el % de la barra.
+export function getTierProgress(points) {
+  const p = points || 0;
+  let current = TIER_THRESHOLDS[0];
+  let next = null;
+  for (let i = 0; i < TIER_THRESHOLDS.length; i++) {
+    if (p >= TIER_THRESHOLDS[i].min) {
+      current = TIER_THRESHOLDS[i];
+      next = TIER_THRESHOLDS[i + 1] || null;
+    }
+  }
+  if (!next) return { currentLabel: current.label, nextLabel: null, pointsToNext: 0, progressPct: 100 };
+  const span = next.min - current.min;
+  const progressPct = Math.min(100, Math.round(((p - current.min) / span) * 100));
+  return {
+    currentLabel: current.label,
+    nextLabel: next.label,
+    pointsToNext: next.min - p,
+    progressPct,
+  };
+}
+
 export function isRecent(report) {
   return Date.now() - report.creadoEn < 24 * 3600 * 1000;
 }

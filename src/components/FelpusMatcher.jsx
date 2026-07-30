@@ -46,6 +46,7 @@ import {
   scoreMatch,
   scoreLabel,
   getTier,
+  getTierProgress,
   getBadges,
   isRecent,
   formatFechaAR,
@@ -2785,6 +2786,24 @@ export default function FelpusMatcher() {
                     </div>
                     <div className="felpus-mono text-lg font-bold shrink-0">{myRank.points || 0} pts</div>
                   </div>
+                  {(() => {
+                    const progress = getTierProgress(myRank.points || 0);
+                    return (
+                      <div className="mt-3">
+                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.25)" }}>
+                          <div
+                            className="h-full rounded-full transition-[width] duration-700 ease-out"
+                            style={{ width: `${progress.progressPct}%`, background: "#fff" }}
+                          />
+                        </div>
+                        <p className="text-[11px] font-semibold mt-1 text-white/85">
+                          {progress.nextLabel
+                            ? `${progress.pointsToNext} pts para ${progress.nextLabel}`
+                            : "¡Nivel máximo alcanzado!"}
+                        </p>
+                      </div>
+                    );
+                  })()}
                   {!!(myRank.reencuentros || myRank.reportes) && (
                     <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/20 text-[13px] font-bold">
                       {!!myRank.reportes && (
