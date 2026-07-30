@@ -91,6 +91,16 @@ const MASCOT_HERO = "/assets/mascot_hero.png";
 const PAW_MAGNIFIER = "/assets/paw_magnifier.png";
 const MAX_FOTO_MB = 15;
 
+// Pasos que realmente hace el matching (histograma de color + embedding de
+// forma en resizeImageFile/scoreMatch, más zona/cercanía) — se muestran en
+// la pantalla de "escaneo" para que se perciba el trabajo real detrás del
+// resultado, sin inventar capacidades que la app no tiene.
+const SCAN_STEPS = [
+  "Analizando la foto...",
+  "Comparando color y forma...",
+  "Buscando reportes cercanos...",
+];
+
 // Paleta — tonos de texto verificados contra ratio AA (>=4.5:1 sobre blanco/crema)
 const C = {
   red: "#D31C22",
@@ -587,6 +597,40 @@ function ShareButton({ report, className, style, children, wrapperClassName = "r
   );
 }
 
+// Cuenta ascendente suave para los números de la franja de actividad — le da
+// sensación de "vivo" a datos que son reales (no simulados), sin depender de
+// ninguna librería de animación nueva. Respeta prefers-reduced-motion
+// mostrando el número final directamente.
+function AnimatedNumber({ value }) {
+  const [display, setDisplay] = useState(0);
+  const prevValue = useRef(0);
+
+  useEffect(() => {
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) {
+      setDisplay(value);
+      prevValue.current = value;
+      return;
+    }
+    const from = prevValue.current;
+    const to = value;
+    const duration = 600;
+    const start = performance.now();
+    let raf;
+    function tick(now) {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setDisplay(Math.round(from + (to - from) * eased));
+      if (t < 1) raf = requestAnimationFrame(tick);
+      else prevValue.current = to;
+    }
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+
+  return <>{display}</>;
+}
+
 function ToastStack({ toasts }) {
   return (
     <div className="fixed bottom-20 sm:bottom-6 left-0 right-0 flex flex-col items-center gap-2 px-4 z-50 pointer-events-none">
@@ -816,6 +860,7 @@ export default function FelpusMatcher() {
   const [loadingReports, setLoadingReports] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [scanStep, setScanStep] = useState(0);
   const [matchResult, setMatchResult] = useState(null);
   const [geoStatus, setGeoStatus] = useState("idle");
   const [filterTipo, setFilterTipo] = useState("todos");
@@ -884,6 +929,20 @@ export default function FelpusMatcher() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [detailReport, notifOpen, showAdvancedFilters]);
+
+  // Rota los mensajes de la pantalla de "escaneo" mientras dura la
+  // publicación real (subida de fotos + insert), para que se perciba el
+  // trabajo del matching en vez de un spinner mudo.
+  useEffect(() => {
+    if (!scanning) {
+      setScanStep(0);
+      return;
+    }
+    const id = setInterval(() => {
+      setScanStep((s) => (s + 1) % SCAN_STEPS.length);
+    }, 900);
+    return () => clearInterval(id);
+  }, [scanning]);
 
   // Sesión con Google (opcional). Sin login, se puede seguir aportando
   // como invitado escribiendo un apodo a mano.
@@ -1454,6 +1513,10 @@ export default function FelpusMatcher() {
   const happyReunions = [...resueltas]
     .sort((a, b) => (b.resueltoEn || b.creadoEn) - (a.resueltoEn || a.creadoEn))
     .slice(0, 10);
+  // Franja de actividad de la comunidad en Inicio — números reales (no
+  // simulados) derivados de los reportes ya cargados, para transmitir que
+  // hay gente usando la app ahora mismo sin inventar datos.
+  const last24hCount = reports.filter(isRecent).length;
   let filteredReports = activeReports.filter((r) => {
     if (filterTipo !== "todos" && r.tipo !== filterTipo) return false;
     if (filterEspecie !== "todos" && r.especie !== filterEspecie) return false;
@@ -1506,7 +1569,10 @@ export default function FelpusMatcher() {
             className="flex items-center gap-2.5 text-left min-w-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D31C22]/40 rounded-lg"
           >
             <div className="min-w-0">
-              <h1 className="sr-only">Felpus</h1>
+              {/* El H1 llevaba solo "Felpus" — muy poco descriptivo para SEO.
+                  Se amplía con la propuesta de valor real de la página, que
+                  ya se muestra visualmente en el párrafo de abajo. */}
+              <h1 className="sr-only">Felpus — Buscador inteligente de mascotas perdidas y encontradas</h1>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={LOGO_RED} alt="Felpus" className="h-9 w-auto object-contain" />
               <p className="hidden sm:block text-[11px] mt-0.5 truncate" style={{ color: C.muted }}>
@@ -1741,7 +1807,7 @@ export default function FelpusMatcher() {
                       setReportKind("perdida");
                       goToTab("reportar");
                     }}
-                    className="flex-1 text-white text-sm font-bold rounded-xl py-3 transition-colors flex flex-col items-center justify-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#D31C22]"
+                    className="felpus-cta flex-1 text-white text-sm font-bold rounded-xl py-3 transition-all duration-200 flex flex-col items-center justify-center gap-1 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#D31C22]"
                     style={{ background: C.red }}
                   >
                     <Heart className="w-5 h-5" fill="currentColor" />
@@ -1753,7 +1819,7 @@ export default function FelpusMatcher() {
                       setReportKind("encontrada");
                       goToTab("reportar");
                     }}
-                    className="flex-1 text-white text-sm font-bold rounded-xl py-3 transition-colors flex flex-col items-center justify-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E36525]"
+                    className="felpus-cta flex-1 text-white text-sm font-bold rounded-xl py-3 transition-all duration-200 flex flex-col items-center justify-center gap-1 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E36525]"
                     style={{ background: C.orangeInk }}
                   >
                     <MapPin className="w-5 h-5" fill="currentColor" strokeWidth={1.5} />
@@ -1761,6 +1827,27 @@ export default function FelpusMatcher() {
                   </button>
                 </div>
               </div>
+            </div>
+
+            {/* Franja de actividad — le da pulso a la app con datos reales
+                (nada simulado): cuántos reportes hay activos ahora, cuántos
+                se publicaron en las últimas 24hs, y cuántas mascotas ya
+                volvieron a casa gracias a la comunidad. */}
+            <div className="grid grid-cols-3 gap-2.5">
+              {[
+                { value: activeReports.length, label: "Reportes activos", color: C.red },
+                { value: last24hCount, label: "Últimas 24hs", color: C.orangeInk },
+                { value: resueltas.length, label: "Reencontradas", color: C.green },
+              ].map((s, i) => (
+                <div key={i} className="bg-white rounded-xl border shadow-sm p-3 text-center" style={{ borderColor: C.border }}>
+                  <p className="felpus-mono text-xl font-bold" style={{ color: s.color }}>
+                    <AnimatedNumber value={s.value} />
+                  </p>
+                  <p className="text-[10px] font-semibold leading-tight mt-0.5" style={{ color: C.muted }}>
+                    {s.label}
+                  </p>
+                </div>
+              ))}
             </div>
 
             {/* Cómo funciona — tarjetas con más aire y jerarquía visual clara,
@@ -2262,7 +2349,9 @@ export default function FelpusMatcher() {
                     <img src={PAW_MAGNIFIER} alt="" className="w-full h-full object-contain" />
                   </div>
                 </div>
-                <p className="felpus-mono text-xs" style={{ color: C.muted }}>comparando imagen, texto y zona...</p>
+                <p key={scanStep} className="felpus-mono text-xs felpus-fadein" style={{ color: C.muted }}>
+                  {SCAN_STEPS[scanStep]}
+                </p>
                 <div className="w-full max-w-[220px] h-1.5 rounded-full overflow-hidden" style={{ background: "#F0E7D8" }}>
                   <div className="felpus-progress-fill h-full rounded-full" style={{ background: C.red }} />
                 </div>
@@ -2774,7 +2863,10 @@ export default function FelpusMatcher() {
                 className="flex flex-col items-center justify-center -mt-5 focus:outline-none"
                 aria-label="Reportar mascota"
               >
-                <span className="w-14 h-14 rounded-full flex items-center justify-center text-white shadow-lg border-4" style={{ background: C.red, borderColor: C.cream }}>
+                <span
+                  className="felpus-cta w-14 h-14 rounded-full flex items-center justify-center text-white shadow-lg border-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl"
+                  style={{ background: C.red, borderColor: C.cream }}
+                >
                   <item.icon className="w-7 h-7" />
                 </span>
                 <span className="text-[10px] font-bold mt-1" style={{ color: isActive ? C.red : C.muted }}>

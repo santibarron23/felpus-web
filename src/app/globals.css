@@ -183,6 +183,12 @@ button:not(:disabled):active {
   .felpus-card-hover:hover {
     transform: none;
   }
+  .felpus-cta {
+    transition: none;
+  }
+  .felpus-cta:hover {
+    transform: none;
+  }
 }
 
 /* "+N" animado al sumar puntos (toasts, pantalla de resultado) — entra con
