@@ -85,7 +85,7 @@ import ReportsMap from "./ReportsMap";
 import Mascot from "./Mascot";
 import ZonaAutocomplete from "./ZonaAutocomplete";
 
-const ICON_C = "/assets/icon_c.png";
+const LOGO_RED = "/assets/logo_full_red.png";
 const PAW_MAGNIFIER = "/assets/paw_magnifier.png";
 const MAX_FOTO_MB = 15;
 
@@ -1475,18 +1475,18 @@ export default function FelpusMatcher() {
           <button
             type="button"
             onClick={() => goToTab("inicio")}
-            className="flex items-center gap-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D31C22]/40 rounded-lg"
+            className="flex items-center gap-2.5 text-left min-w-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D31C22]/40 rounded-lg"
           >
-            <div className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 p-1.5" style={{ background: C.cream }}>
+            <div className="min-w-0">
+              <h1 className="sr-only">Felpus</h1>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={ICON_C} alt="Felpus" className="w-full h-full object-contain" />
-            </div>
-            <div>
-              <h1 className="felpus-display text-2xl leading-none" style={{ color: C.text }}>Felpus</h1>
-              <p className="text-[11px] -mt-0.5" style={{ color: C.muted }}>Buscador inteligente de mascotas perdidas y encontradas</p>
+              <img src={LOGO_RED} alt="Felpus" className="h-9 w-auto object-contain" />
+              <p className="hidden sm:block text-[11px] mt-0.5 truncate" style={{ color: C.muted }}>
+                Buscador inteligente de mascotas perdidas y encontradas
+              </p>
             </div>
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {user && (
               <div className="relative">
                 <button
@@ -1583,7 +1583,7 @@ export default function FelpusMatcher() {
             )}
             <button
               onClick={() => goToTab("explorar")}
-              className="felpus-mono text-[11px] font-bold text-white rounded-full px-3 py-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D31C22]/40"
+              className="felpus-mono text-[11px] font-bold text-white rounded-full px-3 py-1.5 whitespace-nowrap shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D31C22]/40"
               style={{ background: C.red }}
             >
               {activeReports.length} mascotas
@@ -1625,7 +1625,7 @@ export default function FelpusMatcher() {
                 className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center"
                 style={{ background: C.cream }}
               >
-                <PawPrint className="w-4 h-4" style={{ color: C.red }} />
+                <PawPrint className="w-4 h-4" style={{ color: C.red }} fill="currentColor" strokeWidth={1.5} />
               </span>
               <span className="flex-1 min-w-0">
                 <span className="block text-[10px] font-bold uppercase tracking-wide" style={{ color: C.muted }}>
@@ -1717,7 +1717,7 @@ export default function FelpusMatcher() {
                     className="flex-1 text-white text-sm font-bold rounded-xl py-3 transition-colors flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E36525]"
                     style={{ background: C.orangeInk }}
                   >
-                    <PawPrint className="w-5 h-5" />
+                    <PawPrint className="w-5 h-5" fill="currentColor" strokeWidth={1.5} />
                     Encontré una mascota
                   </button>
                 </div>
@@ -1734,12 +1734,12 @@ export default function FelpusMatcher() {
                 { icon: Heart, label: "Recibís las coincidencias", color: C.green },
               ].map((s, i, arr) => (
                 <React.Fragment key={i}>
-                  <div className="flex items-center gap-3.5 py-1.5">
-                    <span
-                      className="w-12 h-12 rounded-full flex items-center justify-center shrink-0"
-                      style={{ background: `${s.color}1A` }}
-                    >
-                      <s.icon className="w-6 h-6" style={{ color: s.color }} />
+                  <div
+                    className="felpus-step flex items-center gap-3.5 py-1.5 -mx-2 px-2 rounded-xl cursor-default"
+                    style={{ "--step-color": s.color, "--step-tint": `${s.color}1A` }}
+                  >
+                    <span className="felpus-step-badge w-12 h-12 rounded-full flex items-center justify-center shrink-0">
+                      <s.icon className="felpus-step-icon w-6 h-6" />
                     </span>
                     <p className="text-sm font-bold" style={{ color: C.text }}>
                       {s.label}

@@ -213,6 +213,43 @@ button:not(:disabled):active {
   }
 }
 
+/* Pasos de "Cómo funciona": la placa de ícono usa variables CSS por fila
+   (--step-color/--step-tint) para poder invertir sus colores al pasar el
+   cursor o al tocar (:active cubre el tap en mobile), sin necesitar estado
+   de React — un efecto sutil de "placa llena" que se siente más refinado
+   que un simple cambio de fondo en toda la fila. */
+.felpus-step-badge {
+  background: var(--step-tint);
+  transition: background 0.2s ease;
+}
+.felpus-step-icon {
+  color: var(--step-color);
+  transition: color 0.2s ease;
+}
+.felpus-step {
+  transition: background 0.2s ease;
+}
+.felpus-step:hover,
+.felpus-step:active {
+  background: rgba(43, 27, 18, 0.04);
+}
+.felpus-step:hover .felpus-step-badge,
+.felpus-step:active .felpus-step-badge {
+  background: var(--step-color);
+}
+.felpus-step:hover .felpus-step-icon,
+.felpus-step:active .felpus-step-icon {
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .felpus-step-badge,
+  .felpus-step-icon,
+  .felpus-step {
+    transition: none;
+  }
+}
+
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
