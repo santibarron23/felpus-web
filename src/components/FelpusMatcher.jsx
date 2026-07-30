@@ -86,7 +86,7 @@ import Mascot from "./Mascot";
 import ZonaAutocomplete from "./ZonaAutocomplete";
 
 const LOGO_RED = "/assets/logo_full_red.png";
-const MASCOT_HERO = "/assets/mascot_hero.png";
+const MASCOT_HERO = "/assets/mascot_hero.jpg";
 const PAW_MAGNIFIER = "/assets/paw_magnifier.png";
 const MAX_FOTO_MB = 15;
 
@@ -1697,7 +1697,7 @@ export default function FelpusMatcher() {
                     src={MASCOT_HERO}
                     alt="Perro esperando volver a casa"
                     className="w-full h-full object-cover"
-                    style={{ objectPosition: "50% 22%" }}
+                    style={{ objectPosition: "50% 35%" }}
                   />
                 </div>
                 <h2 className="felpus-display text-xl sm:text-2xl mb-2" style={{ color: C.text }}>
