@@ -6,68 +6,58 @@ externa, o una decisión de producto/negocio.
 
 ---
 
-## 1. Autocompletado de zona roto — causa real: la API key en Vercel está corrupta
+## 1. Autocompletado de zona roto — falta habilitar "Places API (New)" en Google Cloud
 
-**Estado:** la Places API (New) que estaba deshabilitada YA SE HABILITÓ (ya
-no aparece ese error). Pero apareció un segundo problema, distinto, que
-también bloquea el autocompletado: la key guardada en Vercel no es idéntica
-a la que genera Google Cloud.
+**Estado actual (2026-07-30):** ya arreglaste el problema de la key
+corrupta en Vercel (ver historial abajo) — el header `X-Goog-Api-Key` ahora
+es válido y el request sí llega a Google. Pero al llegar, Google contesta
+que la API todavía no está habilitada para este proyecto. Es el mismo
+bloqueo original, solo que antes nunca llegábamos a verlo porque el
+navegador rechazaba el pedido localmente por la key corrupta.
 
-**Diagnóstico confirmado (2026-07-30):** interceptando el request real del
-navegador, el error que tira la consola cambió de:
-
-```
-Places API (New) has not been used in project 885118143352...
-```
-
-a este otro, distinto:
+**Diagnóstico confirmado** (interceptando la llamada de red real):
 
 ```
 <gmp-place-autocomplete>: Encountered a network request error:
-Failed to execute 'setRequestHeader' on 'XMLHttpRequest': String contains
-non ISO-8859-1 code point.
+Places API (New) has not been used in project 885118143352 before or
+it is disabled. Enable it by visiting
+https://console.developers.google.com/apis/api/places.googleapis.com/overview?project=885118143352
+then retry. If you enabled this API recently, wait a few minutes for
+the action to propagate to our systems and retry.
 ```
 
-Investigué a fondo (parcheando `XMLHttpRequest.setRequestHeader` para ver
-exactamente qué header falla, sin exponer el valor de la key en ningún
-momento) y confirmé: el header `X-Goog-Api-Key` — que se arma directamente
-con el valor de `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` en Vercel — tiene 39
-caracteres (el largo normal de una key de Google) pero **al menos uno de
-esos caracteres no es texto ASCII/Latin-1 puro**. Es decir: la key guardada
-en Vercel no es un copy-paste limpio de la key real — en algún momento se
-coló un carácter "raro" (común cuando se pega un texto desde Word, Notion,
-Slack u otro editor que autocorrige guiones/comillas a versiones
-tipográficas, por ejemplo "-" → "–").
+**⚠️ ACCIÓN REQUERIDA DE TU LADO — 1 paso:**
 
-**Por qué el mapa en sí funciona bien pero el autocompletado no:** el mapa
-base (`MapPicker`, `ReportsMap`) manda la key como parámetro de la URL del
-script de Google — el navegador codifica automáticamente cualquier
-carácter raro ahí, así que "funciona" aunque la key tenga basura. El
-autocompletado nuevo (`PlaceAutocompleteElement`) manda la MISMA key como
-un header HTTP crudo (`X-Goog-Api-Key`), y ahí el navegador exige texto
-ISO-8859-1 puro — por eso explota justo en esta única función.
+1. Entrá a [este link](https://console.developers.google.com/apis/api/places.googleapis.com/overview?project=885118143352)
+   con la cuenta de Google Cloud correcta y tocá **"Habilitar"**.
+2. Esperá unos minutos a que propague.
+3. Probá de nuevo: Reportar → escribir "Palermo" en Zona → debería aparecer
+   un desplegable con sugerencias reales.
 
-Ya descarté que el problema fuera el CSP (commit `[ID 001]`, ya resuelto) o
-el guion largo del `<title>` de la página (lo arreglé igual, por las dudas,
-commit `e2271d6`, pero confirmé que no era la causa real).
+**Riesgo:** ninguno — es gratis dentro de la cuota normal de Maps Platform,
+misma facturación que ya tenés activa.
 
-**⚠️ ACCIÓN REQUERIDA DE TU LADO — no tengo acceso a tu dashboard de
-Vercel:**
+<details><summary>Historial de este diagnóstico (guiones y keys corruptas ya resueltos)</summary>
 
-1. Entrá a [Google Cloud Console → APIs & Services → Credentials](https://console.cloud.google.com/apis/credentials)
-   y ubicá la key de Maps. Copiala con el botón de copiar que aparece al
-   lado del campo (el ícono de portapapeles), **no** selecciones el texto a
-   mano — así evitás que se cuele algún carácter invisible.
-2. Andá a tu proyecto en Vercel → **Settings → Environment Variables**,
-   editá `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, borrá el valor actual por
-   completo y pegá el que acabás de copiar.
-3. Guardá y volvé a desplegar (Vercel suele ofrecer "Redeploy" apenas
-   guardás la variable; si no, hacé un redeploy manual desde la pestaña
-   Deployments).
+Antes de llegar a este punto se resolvieron, en orden, dos problemas
+laterales que tapaban el diagnóstico real:
 
-**Cómo verificar después:** entrar a Reportar, escribir "Palermo" en Zona,
-y confirmar que aparece un desplegable con sugerencias reales (no solo el
-input de texto plano).
+1. El CSP bloqueaba en silencio el dominio `places.googleapis.com` —
+   resuelto (commit `[ID 001]`).
+2. El `<title>` de la página tenía un guion largo "—" fuera de rango
+   ISO-8859-1 — se corrigió por las dudas (commit `e2271d6`), aunque
+   luego se confirmó que no era la causa real del bloqueo.
+3. La key `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` guardada en Vercel tenía al
+   menos un carácter fuera de ISO-8859-1 (probablemente un copy-paste
+   sucio desde un editor que autocorrige guiones/comillas). Esto hacía
+   que el navegador rechazara el header `X-Goog-Api-Key` del
+   autocompletado ANTES de mandar el request — por eso el error real de
+   Google (API deshabilitada) nunca aparecía. El mapa base seguía
+   funcionando porque manda la key por URL, no por header, así que no
+   había ninguna señal visible de que la key estuviera mal. Ya lo
+   corregiste en Vercel y quedó confirmado (header ahora válido).
+
+</details>
 
 ---
 
