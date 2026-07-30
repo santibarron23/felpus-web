@@ -86,7 +86,7 @@ import Mascot from "./Mascot";
 import ZonaAutocomplete from "./ZonaAutocomplete";
 
 const LOGO_RED = "/assets/logo_full_red.png";
-const MASCOT_HERO = "/assets/mascot_hero.jpg";
+const MASCOT_HERO = "/assets/mascot_hero.png";
 const PAW_MAGNIFIER = "/assets/paw_magnifier.png";
 const MAX_FOTO_MB = 15;
 
@@ -108,6 +108,29 @@ const C = {
 
 function displayColor(report) {
   return report.color === "Otro color" && report.colorOtro ? report.colorOtro : report.color;
+}
+
+// El error crudo de Supabase (ej. violación de un CHECK constraint de largo
+// máximo) nunca llegaba a mostrarse — todo caía en el mismo "Algo falló,
+// probá de nuevo" genérico, así que alguien podía quedar reintentando sin
+// entender qué campo corregir. Esto traduce las causas más comunes a un
+// mensaje accionable; si no reconoce el error, se queda con el genérico.
+function describeSubmitError(err) {
+  const msg = String(err?.message || "");
+  if (err?.code === "23514" || /violates check constraint/.test(msg)) {
+    if (/descripcion_len/.test(msg)) return "La descripción es muy larga — acortala e intentá de nuevo.";
+    if (/zona_len/.test(msg)) return "La zona/dirección elegida es muy larga — probá escribirla más corta.";
+    if (/nombre_len/.test(msg)) return "El nombre de la mascota es muy largo — acortalo e intentá de nuevo.";
+    if (/color_otro_len/.test(msg)) return "La descripción del color es muy larga — acortala e intentá de nuevo.";
+    if (/nickname_len/.test(msg)) return "Tu apodo es muy largo — probá uno más corto.";
+    if (/contacto_email_len/.test(msg)) return "El email de contacto es muy largo.";
+    if (/contacto_whatsapp_len/.test(msg)) return "El WhatsApp de contacto es muy largo.";
+    return "Algún campo supera el largo permitido — revisá los textos e intentá de nuevo.";
+  }
+  if (msg.includes("Failed to fetch") || err?.name === "TypeError") {
+    return "No pudimos conectar con el servidor — revisá tu conexión e intentá de nuevo.";
+  }
+  return "Algo falló al publicar el reporte. Probá de nuevo.";
 }
 
 function Badge({ tipo }) {
@@ -1395,7 +1418,7 @@ export default function FelpusMatcher() {
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
       console.error(err);
-      setFormError("Algo falló al publicar el reporte. Probá de nuevo.");
+      setFormError(describeSubmitError(err));
       goToTab("reportar");
     } finally {
       setScanning(false);
@@ -2037,9 +2060,14 @@ export default function FelpusMatcher() {
                     value={form.zona}
                     onManualChange={(zona) => setForm((f) => ({ ...f, zona }))}
                     onSelectPlace={(zona, lat, lng) => {
+                      // El widget de Google no respeta el maxLength del input
+                      // (ese límite solo aplica al fallback de texto plano) —
+                      // sin este recorte, una dirección larga puede superar el
+                      // límite de 100 caracteres de la base y tirar abajo la
+                      // publicación entera con un error genérico.
                       setForm((f) => ({
                         ...f,
-                        zona,
+                        zona: zona.slice(0, 100),
                         ...(lat != null && lng != null ? { lat, lng } : {}),
                       }));
                       if (lat != null && lng != null) setGeoStatus("done");
