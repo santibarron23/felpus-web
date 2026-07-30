@@ -197,7 +197,7 @@ function ReportCard({ report, onOpenDetail, children }) {
   const resuelto = !!report.resuelto;
   return (
     <div
-      className="felpus-card-hover bg-white rounded-2xl border overflow-hidden shadow-sm"
+      className="felpus-card-hover group bg-white rounded-2xl border overflow-hidden shadow-sm"
       style={{ borderColor: resuelto ? "#CFE3D6" : C.border, opacity: resuelto ? 0.75 : 1 }}
     >
       <button
@@ -205,9 +205,17 @@ function ReportCard({ report, onOpenDetail, children }) {
         onClick={() => onOpenDetail && onOpenDetail(report)}
         className="flex gap-3 p-3 w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D31C22]/50 rounded-t-2xl"
       >
-        <div className="relative shrink-0">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={report.foto} alt={report.especie} loading="lazy" decoding="async" className="w-20 h-20 rounded-xl object-cover bg-[#F6EEE1]" />
+        <div className="relative shrink-0 w-24 h-24">
+          <div className="w-full h-full rounded-xl overflow-hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={report.foto}
+              alt={report.especie}
+              loading="lazy"
+              decoding="async"
+              className="felpus-photo-zoom w-full h-full object-cover bg-[#F6EEE1] transition-transform duration-300 group-hover:scale-110"
+            />
+          </div>
           {!resuelto && isRecent(report) && (
             <span className="absolute -top-1 -right-1 bg-[#D31C22] text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow">
               nuevo

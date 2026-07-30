@@ -189,6 +189,9 @@ button:not(:disabled):active {
   .felpus-cta:hover {
     transform: none;
   }
+  .felpus-photo-zoom {
+    transition: none;
+  }
 }
 
 /* "+N" animado al sumar puntos (toasts, pantalla de resultado) — entra con
