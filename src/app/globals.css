@@ -185,6 +185,34 @@ button:not(:disabled):active {
   }
 }
 
+/* "+N" animado al sumar puntos (toasts, pantalla de resultado) — entra con
+   un rebote y un pequeño salto hacia arriba, para que el número se sienta
+   como una recompensa y no como texto más. */
+@keyframes felpus-points-pop {
+  0% {
+    transform: scale(0.4) translateY(4px);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.25) translateY(-2px);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+.felpus-points-pop {
+  display: inline-block;
+  animation: felpus-points-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .felpus-points-pop {
+    animation: none;
+  }
+}
+
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;

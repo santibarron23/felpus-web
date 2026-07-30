@@ -86,8 +86,6 @@ import Mascot from "./Mascot";
 import ZonaAutocomplete from "./ZonaAutocomplete";
 
 const ICON_C = "/assets/icon_c.png";
-const LOGO_FULL = "/assets/logo_full.png";
-const SIREN_PAW = "/assets/siren_paw.png";
 const PAW_MAGNIFIER = "/assets/paw_magnifier.png";
 const MAX_FOTO_MB = 15;
 
@@ -103,7 +101,7 @@ const C = {
   ink: "#2B1B12",
   text: "#3A2A1C",
   muted: "#6B5643",
-  cream: "#F6EEE1",
+  cream: "#F6EFE4",
   border: "#EFE3D2",
 };
 
@@ -567,16 +565,31 @@ function ShareButton({ report, className, style, children, wrapperClassName = "r
 function ToastStack({ toasts }) {
   return (
     <div className="fixed bottom-20 sm:bottom-6 left-0 right-0 flex flex-col items-center gap-2 px-4 z-50 pointer-events-none">
-      {toasts.map((t) => (
-        <div
-          key={t.id}
-          className="felpus-toast flex items-center gap-2 text-sm font-semibold rounded-xl px-4 py-3 shadow-lg max-w-md text-white"
-          style={{ background: t.type === "error" ? C.redDark : C.ink }}
-        >
-          {t.type === "error" ? <AlertCircle className="w-4 h-4 shrink-0" /> : <PartyPopper className="w-4 h-4 shrink-0" />}
-          {t.message}
-        </div>
-      ))}
+      {toasts.map((t) => {
+        const pointsMatch = t.message.match(/\+\d+ (puntos|pts)/);
+        return (
+          <div
+            key={t.id}
+            className="felpus-toast flex items-center gap-2 text-sm font-semibold rounded-xl px-4 py-3 shadow-lg max-w-md text-white"
+            style={{ background: t.type === "error" ? C.redDark : C.ink }}
+          >
+            {t.type === "error" ? <AlertCircle className="w-4 h-4 shrink-0" /> : <PartyPopper className="w-4 h-4 shrink-0" />}
+            <span>
+              {pointsMatch ? (
+                <>
+                  {t.message.slice(0, pointsMatch.index)}
+                  <span className="felpus-points-pop font-extrabold" style={{ color: C.orange }}>
+                    {pointsMatch[0]}
+                  </span>
+                  {t.message.slice(pointsMatch.index + pointsMatch[0].length)}
+                </>
+              ) : (
+                t.message
+              )}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1454,21 +1467,23 @@ export default function FelpusMatcher() {
 
   return (
     <div className="min-h-screen w-full" style={{ background: C.cream, fontFamily: "'Inter', system-ui, sans-serif" }}>
-      {/* Header */}
-      <header className="text-white" style={{ background: C.red }}>
-        <div className="max-w-2xl mx-auto px-4 pt-6 pb-4 flex items-center justify-between">
+      {/* Header — fondo claro con el rojo reservado a acentos puntuales, para
+          que el beige tenga más protagonismo y el rojo destaque donde importa
+          (las llamadas a la acción), no como color de fondo de la barra. */}
+      <header className="bg-white border-b" style={{ borderColor: C.border }}>
+        <div className="max-w-2xl mx-auto px-4 pt-5 pb-4 flex items-center justify-between">
           <button
             type="button"
             onClick={() => goToTab("inicio")}
-            className="flex items-center gap-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-white rounded-lg"
+            className="flex items-center gap-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D31C22]/40 rounded-lg"
           >
-            <div className="w-11 h-11 rounded-full bg-white flex items-center justify-center shrink-0 p-1.5">
+            <div className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 p-1.5" style={{ background: C.cream }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={ICON_C} alt="Felpus" className="w-full h-full object-contain" />
             </div>
             <div>
-              <h1 className="felpus-display text-2xl leading-none">Felpus</h1>
-              <p className="text-[11px] text-white/85 -mt-0.5">Buscador inteligente de mascotas perdidas y encontradas</p>
+              <h1 className="felpus-display text-2xl leading-none" style={{ color: C.text }}>Felpus</h1>
+              <p className="text-[11px] -mt-0.5" style={{ color: C.muted }}>Buscador inteligente de mascotas perdidas y encontradas</p>
             </div>
           </button>
           <div className="flex items-center gap-2">
@@ -1484,9 +1499,10 @@ export default function FelpusMatcher() {
                       ? `${newMatchesCount} coincidencias nuevas desde tu última visita`
                       : "Sin coincidencias nuevas"
                   }
-                  className="relative w-8 h-8 rounded-full bg-white/15 flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                  className="relative w-8 h-8 rounded-full flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D31C22]/40"
+                  style={{ background: C.cream }}
                 >
-                  <Bell className="w-4 h-4" />
+                  <Bell className="w-4 h-4" style={{ color: C.red }} />
                   {newMatchesCount > 0 && (
                     <span
                       className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full text-white text-[10px] font-bold flex items-center justify-center"
@@ -1567,7 +1583,8 @@ export default function FelpusMatcher() {
             )}
             <button
               onClick={() => goToTab("explorar")}
-              className="felpus-mono text-[11px] font-bold bg-white/15 rounded-full px-3 py-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+              className="felpus-mono text-[11px] font-bold text-white rounded-full px-3 py-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D31C22]/40"
+              style={{ background: C.red }}
             >
               {activeReports.length} mascotas
             </button>
@@ -1575,37 +1592,54 @@ export default function FelpusMatcher() {
         </div>
       </header>
 
-      {/* Apodo / identidad del contribuyente — con o sin cuenta */}
+      {/* Identificación del contribuyente — tarjeta propia, no un buscador:
+          ícono en placa circular + micro-label arriba dejan claro que esto
+          identifica a la persona, no busca nada. */}
       <div className="max-w-2xl mx-auto px-4 pt-3 space-y-2">
-        <div className="flex items-center gap-2 bg-white rounded-xl border px-3 py-2" style={{ borderColor: C.border }}>
+        <div className="flex items-center gap-2.5 bg-white rounded-xl border px-3 py-2.5 shadow-sm" style={{ borderColor: C.border }}>
           {user ? (
             <>
               {googleAvatar ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={googleAvatar} alt="" className="w-6 h-6 rounded-full shrink-0" referrerPolicy="no-referrer" />
+                <img src={googleAvatar} alt="" className="w-8 h-8 rounded-full shrink-0" referrerPolicy="no-referrer" />
               ) : (
                 <span
-                  className="w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-white text-[11px] font-bold"
+                  className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-white text-xs font-bold"
                   style={{ background: C.red }}
                 >
                   {(googleDisplayName || "?").charAt(0).toUpperCase()}
                 </span>
               )}
-              <span className="flex-1 text-sm font-semibold truncate" style={{ color: C.text }}>
-                {googleDisplayName}
+              <span className="flex-1 min-w-0">
+                <span className="block text-[10px] font-bold uppercase tracking-wide" style={{ color: C.muted }}>
+                  Colaborador
+                </span>
+                <span className="block text-sm font-semibold truncate" style={{ color: C.text }}>
+                  {googleDisplayName}
+                </span>
               </span>
             </>
           ) : (
             <>
-              <PawPrint className="w-4 h-4 shrink-0" style={{ color: C.red }} />
-              <input
-                value={nickname}
-                onChange={(e) => setNickname(e.target.value)}
-                maxLength={40}
-                placeholder="Tu apodo de colaborador (para sumar puntos)"
-                className="flex-1 text-sm outline-none bg-transparent min-w-0"
-                style={{ color: C.text }}
-              />
+              <span
+                className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center"
+                style={{ background: C.cream }}
+              >
+                <PawPrint className="w-4 h-4" style={{ color: C.red }} />
+              </span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-[10px] font-bold uppercase tracking-wide" style={{ color: C.muted }}>
+                  Elegí un apodo
+                </span>
+                <input
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  maxLength={40}
+                  placeholder="Para sumar puntos como colaborador"
+                  className="block w-full text-sm font-semibold outline-none bg-transparent min-w-0"
+                  style={{ color: C.text }}
+                />
+              </span>
             </>
           )}
           {!!myRank?.streak_days && (
@@ -1639,7 +1673,7 @@ export default function FelpusMatcher() {
           <p className="text-[10px] px-1" style={{ color: C.muted }}>
             Podés reportar mascotas como invitado con solo un apodo, pero para sumar puntos y confirmar
             reencuentros necesitás{" "}
-            <button onClick={handleGoogleLogin} className="font-bold underline" style={{ color: C.red }}>
+            <button onClick={handleGoogleLogin} className="font-bold underline" style={{ color: C.text }}>
               iniciar sesión con Google
             </button>
             .
@@ -1651,18 +1685,15 @@ export default function FelpusMatcher() {
         {/* INICIO */}
         {activeTab === "inicio" && (
           <div key="inicio" className="space-y-5 felpus-fadein">
-            <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.border }}>
-              <div className="p-5">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={LOGO_FULL} alt="Felpus" className="h-14 object-contain mb-3 mx-auto block" />
-                <h2 className="felpus-display text-lg sm:text-xl mb-2 sm:whitespace-nowrap" style={{ color: C.text }}>
-                  Ayudemos a reencontrar mascotas con sus humanos
+            <div className="bg-white rounded-2xl border overflow-hidden shadow-sm" style={{ borderColor: C.border }}>
+              <div className="p-5 text-center">
+                <Mascot mood="happy" size={100} className="mx-auto mb-2" />
+                <h2 className="felpus-display text-xl sm:text-2xl mb-2" style={{ color: C.text }}>
+                  Cada mascota merece volver a casa
                 </h2>
-                <p className="text-sm leading-relaxed" style={{ color: C.muted }}>
-                  Subí una foto y una descripción de la mascota perdida o encontrada. Felpus analiza automáticamente
-                  el color, las características físicas, la ubicación y la fecha, comparando tu publicación con todos
-                  los reportes existentes para encontrar posibles coincidencias. Sumá puntos con cada aporte a la
-                  comunidad.
+                <p className="text-sm leading-relaxed max-w-sm mx-auto" style={{ color: C.muted }}>
+                  Subí una foto y Felpus la compara automáticamente con toda la comunidad para encontrar
+                  coincidencias cerca tuyo.
                 </p>
                 <div className="flex gap-2 mt-4">
                   <button
@@ -1671,12 +1702,11 @@ export default function FelpusMatcher() {
                       setReportKind("perdida");
                       goToTab("reportar");
                     }}
-                    className="flex-1 text-white text-sm font-bold rounded-xl py-2.5 transition-colors flex items-center justify-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#D31C22]"
+                    className="flex-1 text-white text-sm font-bold rounded-xl py-3 transition-colors flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#D31C22]"
                     style={{ background: C.red }}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={SIREN_PAW} alt="" className="w-4 h-4 invert" />
-                    Perdí una mascota
+                    <Heart className="w-5 h-5" fill="currentColor" />
+                    Perdí a mi mascota
                   </button>
                   <button
                     onClick={() => {
@@ -1684,30 +1714,43 @@ export default function FelpusMatcher() {
                       setReportKind("encontrada");
                       goToTab("reportar");
                     }}
-                    className="flex-1 text-white text-sm font-bold rounded-xl py-2.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E36525]"
+                    className="flex-1 text-white text-sm font-bold rounded-xl py-3 transition-colors flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E36525]"
                     style={{ background: C.orangeInk }}
                   >
+                    <PawPrint className="w-5 h-5" />
                     Encontré una mascota
                   </button>
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            {/* Cómo funciona — tarjetas con más aire y jerarquía visual clara,
+                estilo Duolingo: ícono grande en placa de color + un solo
+                renglón de texto, conectados por una flecha vertical. */}
+            <div className="bg-white rounded-2xl border shadow-sm p-4" style={{ borderColor: C.border }}>
               {[
-                { icon: Camera, label: "1. Foto + descripción" },
-                { icon: Sparkles, label: "2. Felpus compara" },
-                { icon: Check, label: "3. Consultás las coincidencias" },
-              ].map((s, i) => (
-                <div
-                  key={i}
-                  className="group bg-white rounded-xl p-3 border border-[#EFE3D2] text-center transition-colors duration-200 hover:bg-[#D31C22] cursor-default"
-                >
-                  <s.icon className="w-5 h-5 mx-auto mb-1.5 transition-colors duration-200 text-[#D31C22] group-hover:text-white" />
-                  <p className="text-[11px] font-semibold leading-tight transition-colors duration-200 text-[#3A2A1C] group-hover:text-white">
-                    {s.label}
-                  </p>
-                </div>
+                { icon: Camera, label: "Subí una foto", color: C.red },
+                { icon: Sparkles, label: "Felpus la compara automáticamente", color: C.orangeInk },
+                { icon: Heart, label: "Recibís las coincidencias", color: C.green },
+              ].map((s, i, arr) => (
+                <React.Fragment key={i}>
+                  <div className="flex items-center gap-3.5 py-1.5">
+                    <span
+                      className="w-12 h-12 rounded-full flex items-center justify-center shrink-0"
+                      style={{ background: `${s.color}1A` }}
+                    >
+                      <s.icon className="w-6 h-6" style={{ color: s.color }} />
+                    </span>
+                    <p className="text-sm font-bold" style={{ color: C.text }}>
+                      {s.label}
+                    </p>
+                  </div>
+                  {i < arr.length - 1 && (
+                    <div className="flex justify-center py-0.5">
+                      <ChevronDown className="w-4 h-4" style={{ color: C.border }} />
+                    </div>
+                  )}
+                </React.Fragment>
               ))}
             </div>
 
@@ -2142,7 +2185,11 @@ export default function FelpusMatcher() {
                   <div className="flex items-center gap-2 mb-3">
                     <Mascot mood="celebrating" size={40} />
                     <p className="text-xs font-bold flex items-center gap-1.5" style={{ color: C.green }}>
-                      <Check className="w-4 h-4" /> Reporte publicado (+{matchResult.source.tipo === "perdida" ? PUNTOS_PERDIDA : PUNTOS_ENCONTRADA} pts)
+                      <Check className="w-4 h-4" /> Reporte publicado (
+                      <span className="felpus-points-pop">
+                        +{matchResult.source.tipo === "perdida" ? PUNTOS_PERDIDA : PUNTOS_ENCONTRADA} pts
+                      </span>
+                      )
                     </p>
                   </div>
                   <ReportCard report={matchResult.source} onOpenDetail={setDetailReport} />
@@ -2613,10 +2660,15 @@ export default function FelpusMatcher() {
         )}
       </main>
 
-      {/* Navegación inferior estilo app */}
+      {/* Navegación inferior — más redondeada y con más peso visual propio,
+          en vez del Material Design genérico de antes (esquinas superiores
+          grandes, sombra flotante, íconos más grandes). */}
       <nav
-        className="fixed bottom-0 left-0 right-0 bg-white border-t flex items-stretch justify-around z-40 px-2"
-        style={{ borderColor: C.border, paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+        className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[28px] flex items-stretch justify-around z-40 px-2"
+        style={{
+          paddingBottom: "env(safe-area-inset-bottom, 0px)",
+          boxShadow: "0 -6px 24px -4px rgba(43, 27, 18, 0.14)",
+        }}
       >
         {NAV_ITEMS.map((item) => {
           const isActive = activeTab === item.id || (activeTab === "resultado" && item.id === "reportar");
@@ -2629,13 +2681,13 @@ export default function FelpusMatcher() {
                   setReportKind("perdida");
                   goToTab("reportar");
                 }}
-                className="flex flex-col items-center justify-center -mt-4 focus:outline-none"
+                className="flex flex-col items-center justify-center -mt-5 focus:outline-none"
                 aria-label="Reportar mascota"
               >
-                <span className="w-12 h-12 rounded-full flex items-center justify-center text-white shadow-lg border-4" style={{ background: C.red, borderColor: C.cream }}>
-                  <item.icon className="w-6 h-6" />
+                <span className="w-14 h-14 rounded-full flex items-center justify-center text-white shadow-lg border-4" style={{ background: C.red, borderColor: C.cream }}>
+                  <item.icon className="w-7 h-7" />
                 </span>
-                <span className="text-[10px] font-bold mt-0.5" style={{ color: isActive ? C.red : C.muted }}>
+                <span className="text-[10px] font-bold mt-1" style={{ color: isActive ? C.red : C.muted }}>
                   {item.label}
                 </span>
               </button>
@@ -2648,13 +2700,13 @@ export default function FelpusMatcher() {
                 playTap();
                 goToTab(item.id);
               }}
-              className="flex flex-col items-center justify-center gap-0.5 py-2 px-3 focus:outline-none"
+              className="flex flex-col items-center justify-center gap-1 py-2.5 px-3 focus:outline-none"
             >
               <span
-                className="flex items-center justify-center w-9 h-7 rounded-full transition-all duration-300"
+                className="flex items-center justify-center w-11 h-8 rounded-full transition-all duration-300"
                 style={{ background: isActive ? "#FBE4DC" : "transparent", transform: isActive ? "scale(1)" : "scale(0.9)" }}
               >
-                <item.icon className="w-5 h-5 transition-colors duration-200" style={{ color: isActive ? C.red : C.muted }} />
+                <item.icon className="w-6 h-6 transition-colors duration-200" style={{ color: isActive ? C.red : C.muted }} />
               </span>
               <span className="text-[10px] font-bold" style={{ color: isActive ? C.red : C.muted }}>
                 {item.label}
