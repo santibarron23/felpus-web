@@ -2717,6 +2717,12 @@ export default function FelpusMatcher() {
               myRank ? (
                 <div className="rounded-2xl p-4 text-white" style={{ background: C.red }}>
                   <div className="flex items-center gap-3">
+                    <span
+                      className="w-11 h-11 rounded-full flex items-center justify-center text-base font-bold shrink-0"
+                      style={{ background: "rgba(255,255,255,0.18)" }}
+                    >
+                      {(googleDisplayName || myRank.nickname || "?").charAt(0).toUpperCase()}
+                    </span>
                     <div className="felpus-mono text-xl font-bold w-10 text-center shrink-0">#{myRank.rank}</div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-bold text-white/80">Tu posición</p>
@@ -2724,6 +2730,21 @@ export default function FelpusMatcher() {
                     </div>
                     <div className="felpus-mono text-lg font-bold shrink-0">{myRank.points || 0} pts</div>
                   </div>
+                  {!!(myRank.reencuentros || myRank.reportes) && (
+                    <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/20 text-[13px] font-bold">
+                      {!!myRank.reportes && (
+                        <span className="flex items-center gap-1.5">
+                          <Camera className="w-4 h-4" /> {myRank.reportes} {myRank.reportes === 1 ? "reporte" : "reportes"}
+                        </span>
+                      )}
+                      {!!myRank.reencuentros && (
+                        <span className="flex items-center gap-1.5">
+                          <PartyPopper className="w-4 h-4" /> {myRank.reencuentros}{" "}
+                          {myRank.reencuentros === 1 ? "reencuentro" : "reencuentros"}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   {!!myRank.streak_days && (
                     <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-white/20 text-[13px] font-bold">
                       <Flame className="w-4 h-4" fill="currentColor" style={{ color: "#FFD08A" }} />
@@ -2781,17 +2802,29 @@ export default function FelpusMatcher() {
                 const alreadyHearted = heartedIds.includes(u.id);
                 return (
                   <div key={u.id || u.nickname + i} className="relative">
-                    <div className="flex items-center gap-3 bg-white rounded-xl p-3 border" style={{ borderColor: isMe ? C.red : C.border }}>
-                      <div className="w-6 text-center felpus-mono text-sm font-bold" style={{ color: C.muted }}>{i + 1}</div>
-                      {i === 0 ? <Crown className="w-5 h-5 shrink-0" style={{ color: C.orange }} /> : <div className="w-5 shrink-0" />}
+                    <div className="flex items-center gap-2.5 bg-white rounded-xl p-3 border" style={{ borderColor: isMe ? C.red : C.border }}>
+                      <div className="w-5 text-center felpus-mono text-sm font-bold shrink-0" style={{ color: C.muted }}>{i + 1}</div>
+                      <span
+                        className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
+                        style={{ background: tier.color }}
+                      >
+                        {i === 0 ? <Crown className="w-4 h-4" /> : u.nickname.charAt(0).toUpperCase()}
+                      </span>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold truncate" style={{ color: C.text }}>
                           {u.nickname} {isMe && <span style={{ color: C.red }}>(vos)</span>}
                         </p>
-                        <p className="text-[11px]" style={{ color: tier.color }}>
-                          {tier.label} · {"🐾".repeat(tier.paws)}
+                        <p className="text-[11px] flex items-center flex-wrap gap-x-1.5" style={{ color: tier.color }}>
+                          <span>
+                            {tier.label} · {"🐾".repeat(tier.paws)}
+                          </span>
+                          {!!u.reencuentros && (
+                            <span className="inline-flex items-center gap-0.5" style={{ color: C.greenDark }}>
+                              <PartyPopper className="w-3 h-3" /> {u.reencuentros}
+                            </span>
+                          )}
                           {getBadges(u).length > 0 && (
-                            <span className="ml-1">
+                            <span>
                               {getBadges(u).map((b) => (
                                 <span key={b.id} title={b.label}>{b.icon}</span>
                               ))}
