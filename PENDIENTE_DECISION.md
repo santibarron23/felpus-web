@@ -53,7 +53,20 @@ con la misma facturación.
 
 ---
 
-## 2. Ciclo de vida de datos sensibles tras marcar una mascota como "reencontrada"
+## 2. Ciclo de vida de datos sensibles tras marcar una mascota como "reencontrada" — ✅ RESUELTO
+
+**Implementado:** se eligió la opción B. `resolveReports()` (`src/lib/store.js`)
+ahora borra `contacto_whatsapp` y `contacto_email` en la misma fila que marca
+`resuelto = true`, en la base (no solo en el cliente). El estado en memoria
+(`FelpusMatcher.jsx`) también se sincroniza para no mostrar datos que ya no
+existen del lado del servidor. Fotos y descripción se mantienen para el
+"final feliz" en el contador de reencuentros.
+
+**Acción requerida de tu lado:** ninguna, ya está en `main` y desplegado.
+
+<details><summary>Descripción original</summary>
+
+**Descripción:** hoy, cuando un reporte se marca como resuelto (`resuelto =
 
 **Descripción:** hoy, cuando un reporte se marca como resuelto (`resuelto =
 true`), las fotos y los datos de contacto (WhatsApp/email) del reporte
@@ -78,9 +91,9 @@ agradecer, o para casos de "reencuentro falso" que se descubren después).
   resuelto) — requeriría un job programado (cron) que hoy no existe en el
   proyecto; es la opción de mayor esfuerzo.
 
-**Recomendación técnica:** B es el mejor balance costo/beneficio. No lo
-implementé porque cambia qué datos ve la gente después de un reencuentro, y
-esa es una decisión de producto que les corresponde a ustedes.
+**Recomendación técnica:** B es el mejor balance costo/beneficio.
+
+</details>
 
 ---
 
@@ -106,26 +119,27 @@ este camino, sin excepción.
 
 ---
 
-## 4. Mecanismo de eliminación de reporte por pedido del usuario
+## 4. Mecanismo de eliminación de reporte por pedido del usuario — ✅ IMPLEMENTADO, requiere 1 paso tuyo
 
-**Descripción:** hoy no existe ningún botón de "eliminar mi reporte" — solo
-"marcar como reencontrada". Si alguien publicó por error, o quiere borrar
-sus datos de contacto por privacidad, no tiene forma de hacerlo desde la app.
+**Implementado:** se usó la "recomendación mínima viable" original — un
+botón "Eliminar publicación" en el detalle del reporte, visible solo para
+el dueño (mismo chequeo de `user_id` que "marcar como reencontrada"), con
+confirmación inline antes de borrar. Borra la fila de `reports` y sus fotos
+de Storage; no toca los puntos ya ganados en `contributors`.
 
-**Motivo del bloqueo:** agregar un DELETE real requeriría decidir varias
-cosas de política (¿cualquiera puede borrar su propio reporte sin
-confirmación? ¿se borra también de Storage? ¿afecta el conteo de puntos ya
-otorgados?) — corresponde a una decisión de producto.
+**⚠️ ACCIÓN REQUERIDA DE TU LADO — 1 paso:** agregué la policy de RLS
+`reports_delete_owner` a `supabase/schema.sql`, pero **no la ejecuté** (no
+tengo acceso a tu SQL Editor). Sin esa policy, Supabase deniega el borrado
+por default aunque el botón funcione del lado del cliente. Pasos:
 
-**Recomendación mínima viable:** un botón "Eliminar publicación" visible
-solo para el dueño del reporte (mismo chequeo de `user_id` que ya se usa
-para "marcar como reencontrada"), que borre la fila de `reports` y sus fotos
-de Storage, sin tocar los puntos ya ganados en `contributors` (evita
-complicaciones de "restar puntos retroactivamente").
+1. Abrí el SQL Editor de tu proyecto Supabase.
+2. Pegá y ejecutá todo `supabase/schema.sql` de nuevo (es seguro re-correrlo
+   completo — todas las sentencias usan `if not exists` / `drop policy if
+   exists`, no borra datos existentes).
+3. Listo — probá el botón "Eliminar publicación" en un reporte propio.
 
-**Mientras tanto:** cualquier usuario puede pedir la eliminación
-manualmente contactando a quien administre el proyecto (vía Supabase
-directamente).
+**Mientras tanto** (hasta que corras el paso de arriba), el botón va a
+mostrar el error genérico "No pudimos eliminar la publicación."
 
 ---
 
