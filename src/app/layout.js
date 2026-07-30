@@ -1,7 +1,7 @@
 import "./globals.css";
 
 const SITE_URL = "https://felpus-web.vercel.app";
-const TITLE = "Felpus — Buscador inteligente de mascotas perdidas y encontradas";
+const TITLE = "Felpus - Buscador inteligente de mascotas perdidas y encontradas";
 const DESCRIPTION =
   "Reportá una mascota perdida o encontrada con foto y descripción. Felpus busca coincidencias automáticamente por imagen, texto y zona.";
 
