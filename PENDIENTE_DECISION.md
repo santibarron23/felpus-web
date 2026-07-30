@@ -6,50 +6,68 @@ externa, o una decisión de producto/negocio.
 
 ---
 
-## 1. Habilitar "Places API (New)" en Google Cloud
+## 1. Autocompletado de zona roto — causa real: la API key en Vercel está corrupta
 
-**Descripción:** el autocompletado de sugerencias al escribir la zona (campo
-"Zona / barrio" del formulario de Reportar) no muestra ningún desplegable.
+**Estado:** la Places API (New) que estaba deshabilitada YA SE HABILITÓ (ya
+no aparece ese error). Pero apareció un segundo problema, distinto, que
+también bloquea el autocompletado: la key guardada en Vercel no es idéntica
+a la que genera Google Cloud.
 
-**Motivo del bloqueo:** requiere una acción manual en la consola de Google
-Cloud, a la que no tengo acceso.
+**Diagnóstico confirmado (2026-07-30):** interceptando el request real del
+navegador, el error que tira la consola cambió de:
 
-**Diagnóstico confirmado** (interceptando la llamada de red real):
+```
+Places API (New) has not been used in project 885118143352...
+```
+
+a este otro, distinto:
 
 ```
 <gmp-place-autocomplete>: Encountered a network request error:
-Places API (New) has not been used in project 885118143352 before or
-it is disabled. Enable it by visiting
-https://console.developers.google.com/apis/api/places.googleapis.com/overview?project=885118143352
-then retry. If you enabled this API recently, wait a few minutes for
-the action to propagate to our systems and retry.
+Failed to execute 'setRequestHeader' on 'XMLHttpRequest': String contains
+non ISO-8859-1 code point.
 ```
 
-Ya arreglé dos problemas relacionados que SÍ eran responsabilidad del código:
-1. El CSP bloqueaba en silencio el dominio `places.googleapis.com` (commit
-   `[ID 001]`) — sin este fix, ni siquiera se vería el error de arriba.
-2. El mapa ya no se rompe si este autocompletado falla (commit `[ID 002]` y
-   los commits de la sesión de esta tarde que aislaron `ZonaAutocomplete` del
-   resto de la sesión de Maps compartida).
+Investigué a fondo (parcheando `XMLHttpRequest.setRequestHeader` para ver
+exactamente qué header falla, sin exponer el valor de la key en ningún
+momento) y confirmé: el header `X-Goog-Api-Key` — que se arma directamente
+con el valor de `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` en Vercel — tiene 39
+caracteres (el largo normal de una key de Google) pero **al menos uno de
+esos caracteres no es texto ASCII/Latin-1 puro**. Es decir: la key guardada
+en Vercel no es un copy-paste limpio de la key real — en algún momento se
+coló un carácter "raro" (común cuando se pega un texto desde Word, Notion,
+Slack u otro editor que autocorrige guiones/comillas a versiones
+tipográficas, por ejemplo "-" → "–").
 
-Lo único que falta es habilitar la API en sí.
+**Por qué el mapa en sí funciona bien pero el autocompletado no:** el mapa
+base (`MapPicker`, `ReportsMap`) manda la key como parámetro de la URL del
+script de Google — el navegador codifica automáticamente cualquier
+carácter raro ahí, así que "funciona" aunque la key tenga basura. El
+autocompletado nuevo (`PlaceAutocompleteElement`) manda la MISMA key como
+un header HTTP crudo (`X-Goog-Api-Key`), y ahí el navegador exige texto
+ISO-8859-1 puro — por eso explota justo en esta única función.
 
-**Opciones:**
-- **A. Habilitarla** (recomendado): entrar al link de arriba con la cuenta de
-  Google Cloud correcta y tocar "Habilitar". Gratis dentro de la cuota
-  mensual normal de Maps Platform — es la misma cuenta de facturación que ya
-  tenés activa para el resto de Maps. Después de habilitarla, puede tardar
-  unos minutos en propagar.
-- **B. Dejarlo así:** el campo de zona sigue funcionando 100% escribiendo a
-  mano (sin sugerencias), con el botón "Ubicación", o tocando el pin en el
-  mapa. No es un bloqueante funcional, solo una comodidad menos.
+Ya descarté que el problema fuera el CSP (commit `[ID 001]`, ya resuelto) o
+el guion largo del `<title>` de la página (lo arreglé igual, por las dudas,
+commit `e2271d6`, pero confirmé que no era la causa real).
 
-**Riesgo:** ninguno — habilitar una API en Google Cloud no cuesta nada por sí
-sola, solo se factura por uso real, y ya tenés el resto de Maps funcionando
-con la misma facturación.
+**⚠️ ACCIÓN REQUERIDA DE TU LADO — no tengo acceso a tu dashboard de
+Vercel:**
 
-**Cómo verificar después de habilitarla:** entrar a Reportar, escribir
-"Salta" en Zona, y confirmar que aparece un desplegable con sugerencias.
+1. Entrá a [Google Cloud Console → APIs & Services → Credentials](https://console.cloud.google.com/apis/credentials)
+   y ubicá la key de Maps. Copiala con el botón de copiar que aparece al
+   lado del campo (el ícono de portapapeles), **no** selecciones el texto a
+   mano — así evitás que se cuele algún carácter invisible.
+2. Andá a tu proyecto en Vercel → **Settings → Environment Variables**,
+   editá `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, borrá el valor actual por
+   completo y pegá el que acabás de copiar.
+3. Guardá y volvé a desplegar (Vercel suele ofrecer "Redeploy" apenas
+   guardás la variable; si no, hacé un redeploy manual desde la pestaña
+   Deployments).
+
+**Cómo verificar después:** entrar a Reportar, escribir "Palermo" en Zona,
+y confirmar que aparece un desplegable con sugerencias reales (no solo el
+input de texto plano).
 
 ---
 
