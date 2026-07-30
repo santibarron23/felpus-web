@@ -1741,7 +1741,7 @@ export default function FelpusMatcher() {
                       setReportKind("perdida");
                       goToTab("reportar");
                     }}
-                    className="flex-1 text-white text-sm font-bold rounded-xl py-3 transition-colors flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#D31C22]"
+                    className="flex-1 text-white text-sm font-bold rounded-xl py-3 transition-colors flex flex-col items-center justify-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#D31C22]"
                     style={{ background: C.red }}
                   >
                     <Heart className="w-5 h-5" fill="currentColor" />
@@ -1753,10 +1753,10 @@ export default function FelpusMatcher() {
                       setReportKind("encontrada");
                       goToTab("reportar");
                     }}
-                    className="flex-1 text-white text-sm font-bold rounded-xl py-3 transition-colors flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E36525]"
+                    className="flex-1 text-white text-sm font-bold rounded-xl py-3 transition-colors flex flex-col items-center justify-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E36525]"
                     style={{ background: C.orangeInk }}
                   >
-                    <PawPrint className="w-5 h-5" fill="currentColor" strokeWidth={1.5} />
+                    <MapPin className="w-5 h-5" fill="currentColor" strokeWidth={1.5} />
                     Encontré una mascota
                   </button>
                 </div>
