@@ -55,6 +55,32 @@ export async function uploadPhoto(dataUrl, path) {
   return data.publicUrl;
 }
 
+function storagePathFromPublicUrl(url) {
+  const marker = `/${PHOTOS_BUCKET}/`;
+  const idx = String(url || "").indexOf(marker);
+  if (idx === -1) return null;
+  return url.slice(idx + marker.length);
+}
+
+// Borra la publicación y sus fotos de Storage. El chequeo de dueño es
+// doble: la política RLS de Supabase (única barrera real) más un filtro
+// .eq("user_id", ...) acá — no aporta seguridad extra por sí solo, pero deja
+// el intento explícito en el código en vez de confiar solo en que el botón
+// de la UI ya lo filtró.
+export async function deleteReport(reportId, ownerUserId, fotoUrls) {
+  const paths = (fotoUrls || []).map(storagePathFromPublicUrl).filter(Boolean);
+  if (paths.length > 0) {
+    const { error: storageError } = await supabase.storage.from(PHOTOS_BUCKET).remove(paths);
+    if (storageError) {
+      // No bloqueante: mejor borrar la fila igual que dejar una publicación
+      // "zombie" que no se puede eliminar solo porque una foto vieja falló.
+      console.error("No se pudieron borrar todas las fotos de Storage", storageError);
+    }
+  }
+  const { error } = await supabase.from(REPORTS_TABLE).delete().eq("id", reportId).eq("user_id", ownerUserId);
+  if (error) throw error;
+}
+
 export async function fetchReports() {
   const { data, error } = await supabase
     .from(REPORTS_TABLE)
@@ -111,6 +137,11 @@ export async function createReport(report) {
   return { ...report, foto: uploaded[0].url, fotos: uploaded };
 }
 
+// Al confirmar un reencuentro, se borran los datos de contacto (WhatsApp/
+// email) del reporte — ya cumplieron su propósito (avisar a quien lo
+// publicó) y no hay motivo para dejarlos expuestos públicamente de forma
+// indefinida una vez resuelto el caso. Fotos y descripción se mantienen,
+// porque son las que muestran el "final feliz" en el resto de la app.
 export async function resolveReports(ids, resolverUserId, resolverDisplayName) {
   const { error } = await supabase
     .from(REPORTS_TABLE)
@@ -119,6 +150,8 @@ export async function resolveReports(ids, resolverUserId, resolverDisplayName) {
       resuelto_por: resolverDisplayName,
       resuelto_por_user_id: resolverUserId,
       resuelto_en: new Date().toISOString(),
+      contacto_whatsapp: null,
+      contacto_email: null,
     })
     .in("id", ids);
   if (error) throw error;

@@ -36,6 +36,7 @@ import {
   Bell,
   Printer,
   Flame,
+  Trash2,
 } from "lucide-react";
 import {
   normalizeText,
@@ -67,6 +68,7 @@ import {
   fetchReports,
   createReport,
   resolveReports,
+  deleteReport,
   fetchLeaderboard,
   fetchMyRank,
   awardPoints as awardPointsRemote,
@@ -222,11 +224,14 @@ function ReportCard({ report, onOpenDetail, children }) {
   );
 }
 
-function DetailModal({ report, onClose, onResolve, confirming, onConfirm, onCancelConfirm, isLoggedIn, isOwner }) {
+function DetailModal({ report, onClose, onResolve, confirming, onConfirm, onCancelConfirm, isLoggedIn, isOwner, onDelete }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [generatingFlyer, setGeneratingFlyer] = useState(false);
+  const [deleteConfirming, setDeleteConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   useEffect(() => {
     setActiveIndex(0);
+    setDeleteConfirming(false);
   }, [report?.id]);
   if (!report) return null;
   const fotos = report.fotos?.length ? report.fotos : [{ url: report.foto }];
@@ -240,6 +245,15 @@ function DetailModal({ report, onClose, onResolve, confirming, onConfirm, onCanc
       console.error("No se pudo generar el flyer", e);
     } finally {
       setGeneratingFlyer(false);
+    }
+  }
+
+  async function handleDeleteClick() {
+    setDeleting(true);
+    try {
+      await onDelete(report);
+    } finally {
+      setDeleting(false);
     }
   }
   return (
@@ -412,6 +426,42 @@ function DetailModal({ report, onClose, onResolve, confirming, onConfirm, onCanc
                       <PartyPopper className="w-4 h-4" /> Marcar como reencontrada
                     </>
                   )}
+                </button>
+              )}
+            </div>
+          )}
+          {isOwner && (
+            <div className="pt-1">
+              {deleteConfirming ? (
+                <div className="flex items-center gap-2 rounded-xl p-2.5" style={{ background: "#FBEAEA" }}>
+                  <span className="text-xs flex-1" style={{ color: C.redDark }}>¿Eliminar esta publicación para siempre?</span>
+                  <button
+                    type="button"
+                    onClick={handleDeleteClick}
+                    disabled={deleting}
+                    className="text-xs font-bold text-white rounded-lg px-3 py-1.5 disabled:opacity-60"
+                    style={{ background: C.red }}
+                  >
+                    {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Sí, eliminar"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteConfirming(false)}
+                    disabled={deleting}
+                    className="text-xs font-semibold"
+                    style={{ color: C.muted }}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirming(true)}
+                  className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold py-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D31C22]/50 rounded-lg"
+                  style={{ color: C.muted }}
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Eliminar publicación
                 </button>
               )}
             </div>
@@ -1082,6 +1132,12 @@ export default function FelpusMatcher() {
         resuelto: true,
         resueltoPor: resolverDisplayName,
         resueltoPorUserId: user.id,
+        // resolveReports() ya borró estos dos campos en la base (ver
+        // src/lib/store.js) — se reflejan acá también para que el estado en
+        // memoria no muestre datos de contacto que ya no existen del lado
+        // del servidor.
+        contactoWhatsapp: "",
+        contactoEmail: "",
       }));
       setReports((prev) => {
         const map = new Map(prev.map((r) => [r.id, r]));
@@ -1115,6 +1171,27 @@ export default function FelpusMatcher() {
     } catch (e) {
       console.error(e);
       pushToast("error", "No pudimos guardar el reencuentro. Probá de nuevo.");
+    }
+  }
+
+  // Eliminar la propia publicación (fila + fotos de Storage). No toca los
+  // puntos ya ganados en contributors — restarlos retroactivamente abriría
+  // más preguntas de las que resuelve (¿y si ya se reencontró de verdad y
+  // solo borra la publicación para limpiar?).
+  async function handleDeleteReport(report) {
+    if (!user || report.userId !== user.id) {
+      pushToast("error", "Solo quien publicó este reporte puede eliminarlo.");
+      return;
+    }
+    try {
+      const fotoUrls = (report.fotos?.length ? report.fotos : [{ url: report.foto }]).map((f) => f.url);
+      await deleteReport(report.id, user.id, fotoUrls);
+      setReports((prev) => prev.filter((r) => r.id !== report.id));
+      setDetailReport(null);
+      pushToast("success", "Publicación eliminada.");
+    } catch (e) {
+      console.error(e);
+      pushToast("error", "No pudimos eliminar la publicación. Probá de nuevo.");
     }
   }
 
@@ -2606,6 +2683,7 @@ export default function FelpusMatcher() {
         }
         onCancelConfirm={() => setConfirmingId(null)}
         isLoggedIn={!!user}
+        onDelete={handleDeleteReport}
       />
 
       <footer className="max-w-2xl mx-auto px-4 pb-24 pt-2 space-y-1.5">

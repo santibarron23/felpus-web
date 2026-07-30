@@ -125,6 +125,13 @@ drop policy if exists "reports_update_authenticated" on reports;
 drop policy if exists "reports_update_owner" on reports;
 create policy "reports_update_owner" on reports for update using (auth.uid() = user_id);
 
+-- Borrar la propia publicación (botón "Eliminar publicación") — mismo
+-- chequeo de dueño que el update de arriba. No existía ninguna política de
+-- DELETE hasta ahora, así que sin esto el borrado queda denegado por RLS
+-- aunque el código del cliente lo intente.
+drop policy if exists "reports_delete_owner" on reports;
+create policy "reports_delete_owner" on reports for delete using (auth.uid() = user_id);
+
 drop policy if exists "contributors_select_all" on contributors;
 create policy "contributors_select_all" on contributors for select using (true);
 
