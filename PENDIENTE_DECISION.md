@@ -6,6 +6,36 @@ externa, o una decisión de producto/negocio.
 
 ---
 
+## 0. Borrar una publicación de prueba que quedó en la base real (2026-07-30)
+
+**Qué pasó:** mientras diagnosticaba el bug de "no se puede publicar" (ver
+más abajo, ya resuelto), probé el flujo completo contra la base de datos
+real para reproducir el error exacto. Uno de esos reportes de prueba se
+insertó con éxito, y cuando intenté borrarlo automáticamente el borrado
+falló en silencio: como el reporte se creó sin usuario logueado
+(`user_id = null`), la policy de RLS que protege el borrado
+(`auth.uid() = user_id`) nunca puede dar verdadero para una fila así —
+ni siquiera usando la key pública sin sesión. No es un bug nuevo, es una
+limitación ya existente: **los reportes de invitado (sin login) no se
+pueden borrar por este mecanismo, ni por mí ni por su autor.**
+
+**Por qué no lo pude arreglar yo:** borrar esa fila requiere la clave
+`service_role` de Supabase (que bypasea RLS) o hacerlo a mano desde el SQL
+Editor — no tengo ninguna de las dos.
+
+**Qué hay que borrar:** un reporte de mascota "Negro" (perro), apodo
+`DiagBot`, zona "Zona de diagnostico", descripción "Prueba de diagnostico
+automatizada, ignorar / borrar." — visible ahora mismo en Explorar.
+
+**Cómo borrarlo (30 segundos):** en el SQL Editor de Supabase, ejecutá:
+
+```sql
+delete from storage.objects where name = 'diag-1785431328791.png' and bucket_id = 'felpus-photos';
+delete from reports where id = 'diag-1785431328791';
+```
+
+---
+
 ## 1. Autocompletado de zona roto — falta habilitar "Places API (New)" en Google Cloud
 
 **Estado actual (2026-07-30):** ya arreglaste el problema de la key

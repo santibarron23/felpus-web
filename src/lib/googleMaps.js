@@ -1,17 +1,18 @@
 let mapsLoadingPromise = null;
 
-// Carga el script de Google Maps (con la librería "places", para el
+// Carga el script de Google Maps (con las librerías "places", para el
 // autocompletado de zona vía PlaceAutocompleteElement — la API nueva, no la
-// legacy que rompía toda la sesión compartida) una sola vez y la comparte
-// entre todos los componentes que la necesiten (MapPicker, ReportsMap,
-// ZonaAutocomplete, etc).
+// legacy que rompía toda la sesión compartida — y "marker", para los
+// AdvancedMarkerElement con foto de mascota en ReportsMap) una sola vez y la
+// comparte entre todos los componentes que la necesiten (MapPicker,
+// ReportsMap, ZonaAutocomplete, etc).
 export function loadGoogleMaps(apiKey) {
   if (typeof window === "undefined") return Promise.reject(new Error("no window"));
-  if (window.google?.maps?.places) return Promise.resolve(window.google.maps);
+  if (window.google?.maps?.places && window.google?.maps?.marker) return Promise.resolve(window.google.maps);
   if (mapsLoadingPromise) return mapsLoadingPromise;
   mapsLoadingPromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places,marker`;
     script.async = true;
     script.onload = () => resolve(window.google.maps);
     script.onerror = () => reject(new Error("No se pudo cargar el script de Google Maps."));

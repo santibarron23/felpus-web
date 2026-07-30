@@ -441,6 +441,25 @@ export function getBadges(contributor) {
 
 // El input de fecha guarda "AAAA-MM-DD" (formato nativo de <input type="date">).
 // Para mostrarla usamos el formato argentino DD/MM/AAAA.
+// Tiempo relativo corto en español ("hace 3 días") para mostrar cuánto
+// hace que se confirmó un reencuentro, sin depender de una librería externa.
+export function timeAgo(ms) {
+  if (!ms) return "";
+  const diff = Math.max(0, Date.now() - ms);
+  const min = Math.floor(diff / 60000);
+  if (min < 60) return min <= 1 ? "hace un momento" : `hace ${min} minutos`;
+  const hs = Math.floor(min / 60);
+  if (hs < 24) return hs === 1 ? "hace 1 hora" : `hace ${hs} horas`;
+  const dias = Math.floor(hs / 24);
+  if (dias < 7) return dias === 1 ? "hace 1 día" : `hace ${dias} días`;
+  const semanas = Math.floor(dias / 7);
+  if (semanas < 5) return semanas === 1 ? "hace 1 semana" : `hace ${semanas} semanas`;
+  const meses = Math.floor(dias / 30);
+  if (meses < 12) return meses === 1 ? "hace 1 mes" : `hace ${meses} meses`;
+  const anios = Math.floor(dias / 365);
+  return anios === 1 ? "hace 1 año" : `hace ${anios} años`;
+}
+
 export function formatFechaAR(fecha) {
   if (!fecha) return "";
   const [y, m, d] = fecha.split("-");

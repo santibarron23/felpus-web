@@ -37,6 +37,7 @@ function rowToReport(row) {
     resuelto: row.resuelto,
     resueltoPor: row.resuelto_por,
     resueltoPorUserId: row.resuelto_por_user_id || null,
+    resueltoEn: row.resuelto_en ? new Date(row.resuelto_en).getTime() : null,
     creadoEn: new Date(row.creado_en).getTime(),
   };
 }

@@ -49,6 +49,7 @@ import {
   getBadges,
   isRecent,
   formatFechaAR,
+  timeAgo,
   buildShareText,
   emptyForm,
   MAX_FOTOS,
@@ -1450,6 +1451,9 @@ export default function FelpusMatcher() {
 
   const activeReports = reports.filter((r) => !r.resuelto);
   const resueltas = reports.filter((r) => r.resuelto);
+  const happyReunions = [...resueltas]
+    .sort((a, b) => (b.resueltoEn || b.creadoEn) - (a.resueltoEn || a.creadoEn))
+    .slice(0, 10);
   let filteredReports = activeReports.filter((r) => {
     if (filterTipo !== "todos" && r.tipo !== filterTipo) return false;
     if (filterEspecie !== "todos" && r.especie !== filterEspecie) return false;
@@ -1801,6 +1805,52 @@ export default function FelpusMatcher() {
               </div>
               <ChevronRight className="w-4 h-4 text-white/60 shrink-0" />
             </button>
+
+            {/* Reencuentros felices — historias reales de la comunidad (reportes
+                que alguien marcó como reencontrados), no reseñas inventadas:
+                no tenemos un sistema de calificaciones, así que en vez de
+                simular estrellas se muestra el final feliz real de cada caso. */}
+            {happyReunions.length > 0 && (
+              <div>
+                <h2 className="felpus-display text-lg mb-0.5" style={{ color: C.text }}>
+                  Reencuentros felices
+                </h2>
+                <p className="text-xs mb-3" style={{ color: C.muted }}>
+                  Historias reales de la comunidad — mascotas que volvieron a casa gracias a Felpus.
+                </p>
+                <div className="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4 snap-x snap-mandatory">
+                  {happyReunions.map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => setDetailReport(r)}
+                      className="felpus-card-hover shrink-0 w-44 snap-start text-left rounded-2xl p-3.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D31C22]/40"
+                      style={{ background: "#FBEAE2" }}
+                    >
+                      <div className="relative w-12 h-12 mb-2">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={r.foto} alt="" className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm" />
+                        <span
+                          className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-white border-2 border-white"
+                          style={{ background: C.green }}
+                        >
+                          <Heart className="w-2.5 h-2.5" fill="currentColor" />
+                        </span>
+                      </div>
+                      <p className="text-sm font-bold truncate" style={{ color: C.text }}>
+                        {r.nombre || (r.especie === "gato" ? "Gatito/a" : r.especie === "perro" ? "Perrito/a" : "Mascota")}
+                      </p>
+                      <p className="text-[11px] font-semibold mb-1.5" style={{ color: C.greenDark }}>
+                        {r.resueltoEn ? `Reencontrada ${timeAgo(r.resueltoEn)}` : "Reencontrada"}
+                      </p>
+                      <p className="text-[11px] line-clamp-2" style={{ color: C.muted }}>
+                        {r.descripcion}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
