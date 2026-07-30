@@ -125,13 +125,62 @@ pide setup interactivo — nunca se corrió).
   instalar y configurar todo eso de cero sin riesgo de dejarlo a medias.
   Ver `PENDIENTE_DECISION.md` #5.
 
-### AUD-007 — Sin ESLint configurado (P2, documentado, no implementado)
+### AUD-007 — Sin ESLint configurado (P2, corregido)
 - **Categoría:** Calidad y mantenibilidad.
-- **Descripción:** `next lint` pide un setup interactivo la primera vez
-  (nunca se corrió). No lo configuré automáticamente para no instalar
-  dependencias nuevas sin necesidad clara dentro de esta sesión — el código
-  se revisó igual manualmente (grep dirigido + lectura de los flujos
-  críticos) en lugar de depender de lint.
+- **Descripción:** `next lint` pedía un setup interactivo (nunca se había
+  corrido). Se configuró (`.eslintrc.json`, `next/core-web-vitals`) y se
+  corrigió todo lo que encontró: 2 errores de JSX (comillas sin escapar en
+  `FelpusMatcher.jsx` y `MapPicker.jsx`) y 2 warnings de
+  `react-hooks/exhaustive-deps`.
+- **Hallazgo colateral importante:** al resolver uno de los warnings
+  (agregar `pushToast` al array de dependencias del efecto de racha diaria),
+  apareció un **bug real que no existía antes**: `pushToast` se declaraba
+  más abajo en el archivo que ese efecto. Un array de dependencias se evalúa
+  de forma síncrona en cada render (a diferencia del cuerpo del efecto, que
+  corre después) — evaluarlo antes de la declaración de `pushToast` rompía
+  con `ReferenceError: Cannot access 'pushToast' before initialization` en
+  producción de verdad (Fast Refresh lo enmascaraba en desarrollo). Se
+  corrigió moviendo la declaración de `pushToast` junto a los demás hooks de
+  estado, antes de cualquier efecto que la use.
+- **Riesgo:** bajo — dependencias oficiales de Next.js, sin impacto en el
+  bundle de producción.
+- **Verificación:** `npm run lint` limpio, `npm run build` limpio, los 4
+  flujos principales navegados en una pestaña nueva del navegador sin
+  errores de consola. Commit `[ID 007]`.
+
+### AUD-010 — Next.js 14.2.5 con una vulnerabilidad crítica real (P0, corregido)
+- **Categoría:** Seguridad — dependencias vulnerables.
+- **Severidad:** Crítica.
+- **Descripción:** `npm audit` (corrido por primera vez al instalar ESLint,
+  ver AUD-007) reveló que la versión de Next.js **ya en uso en producción**
+  (14.2.5) tiene una vulnerabilidad crítica —
+  [GHSA-gp8f-8m3g-qvj9](https://github.com/advisories/GHSA-gp8f-8m3g-qvj9)
+  (Cache Poisoning) — dentro de una lista larga de ~30 CVEs más de la misma
+  serie 14.x: bypass de autorización en Middleware, SSRF vía Server Actions,
+  XSS con nonces de CSP, varios de Denial of Service, etc. Todas corregidas
+  en 14.2.35.
+- **Archivos:** `package.json`, `package-lock.json`.
+- **Impacto:** el más alto de toda la sesión — una vulnerabilidad de
+  seguridad crítica confirmada en el framework, ya desplegada.
+- **Solución implementada:** bump de `next` de `14.2.5` a `14.2.35` — parche
+  dentro del mismo rango `14.2.x`, no un cambio de versión mayor ni de
+  framework (no viola la restricción de "no cambiar de framework").
+- **Riesgo de la solución:** bajo — es un parche de seguridad dentro del
+  mismo minor, sin cambios de API.
+- **Verificación:** `npm audit` deja de listar la vulnerabilidad crítica
+  (queda solo el resto, todas en la cadena de dependencias de ESLint,
+  herramienta de desarrollo que nunca corre en producción — ver más abajo).
+  `npm run build` limpio, los 4 flujos principales verificados en el
+  navegador después del upgrade. Commit `[ID 009]`.
+- **Nota sobre las 16 vulnerabilidades "high" restantes:** todas están en la
+  cadena de dependencias de `eslint`/`eslint-config-next` (`brace-expansion`,
+  `minimatch`, `glob`, etc.) — son herramientas de desarrollo que solo
+  corren localmente al ejecutar `next lint`, nunca se empaquetan ni se
+  sirven a usuarios reales. Resolverlas del todo requeriría un bump mayor de
+  ESLint (`eslint@10`) que rompería la configuración actual — no lo hice
+  para no ampliar el alcance de esta sesión con un cambio de mayor riesgo
+  por un beneficio de seguridad real pero acotado (superficie de ataque
+  solo en máquinas de desarrolladores, no en producción).
 
 ### AUD-008 — Datos de contacto no se anonimizan al resolver un reporte (P2, decisión de producto — ver PENDIENTE_DECISION.md #2)
 

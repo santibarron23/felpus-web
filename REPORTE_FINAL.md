@@ -7,13 +7,18 @@ tu revisión).
 ## 1. Resumen ejecutivo
 
 Se hizo una auditoría real del repositorio (no una lista de sugerencias
-genéricas) y se implementaron 4 correcciones verificables, todas de
-prioridad P0/P1: el build local estaba roto, el autocompletado de zona
-estaba bloqueado por la política de seguridad del sitio, el mapa se veía
-cortado por un bug de re-medición, y el formulario de publicar un reporte
-tenía un problema real de accesibilidad. Además se documentaron 5 mejoras
-adicionales que requieren una decisión tuya o acceso a un servicio externo
-(Google Cloud), sin implementarlas a medias ni asumir la decisión por vos.
+genéricas) y se implementaron 7 correcciones verificables. La más
+importante, de lejos: **Next.js, en la versión que ya está corriendo en
+producción, tiene una vulnerabilidad crítica real** — apareció al correr
+`npm audit` por primera vez (nunca se había corrido), no estaba en el plan
+original de la noche. Además se arregló el build local (roto por completo),
+el CSP que bloqueaba el autocompletado de zona, un bug visual real del
+mapa, un problema serio de accesibilidad en el formulario principal, y se
+configuró ESLint (que de paso encontró y ayudó a corregir un bug propio
+introducido en la misma sesión, antes de que llegara a vos). Se
+documentaron 4 mejoras adicionales que requieren una decisión tuya o acceso
+a un servicio externo, sin implementarlas a medias ni asumir la decisión
+por vos.
 
 ## 2. Estado inicial
 
@@ -24,6 +29,8 @@ adicionales que requieren una decisión tuya o acceso a un servicio externo
 - El mapa del formulario de Reportar se veía "mitad gris, mitad mapa" en
   algunas capturas.
 - Sin ESLint configurado, sin infraestructura de testing.
+- **Sin saberlo, con una vulnerabilidad crítica en Next.js ya en
+  producción** (esto no era visible hasta correr `npm audit`).
 
 ## 3. Mejoras implementadas
 
@@ -33,22 +40,28 @@ adicionales que requieren una decisión tuya o acceso a un servicio externo
 | 001 | CSP bloqueaba `places.googleapis.com` en silencio → agregado a `connect-src` | P0 |
 | 002 | Mapa no se re-medía al cambiar de tamaño su contenedor → `ResizeObserver` compartido | P1 |
 | 003 | 12/13 labels del formulario de Reportar sin asociar a su campo → `id`/`htmlFor`/`aria-label` | P1 |
+| 007 | ESLint configurado y corregido lo que encontró (incluye un bug propio detectado y arreglado en la sesión) | P2 → P1 |
+| 009 | **Next.js 14.2.5 → 14.2.35 — vulnerabilidad crítica real, ya en producción** | **P0** |
 
 ## 4. Bugs corregidos
 
-Los mismos 4 de arriba. Ver `AUDITORIA.md` para el detalle técnico completo
+Los mismos 6 de arriba (ID 001 es CSP, no un bug de comportamiento en sí,
+pero desbloqueó uno). Ver `AUDITORIA.md` para el detalle técnico completo
 de cada uno (causa raíz, evidencia, verificación) y `PROGRESO.md` para el
 detalle de qué se probó en cada commit.
 
 ## 5. Archivos modificados
 
 ```
+.eslintrc.json                      (nuevo)
 AUDITORIA.md                        (nuevo)
 PENDIENTE_DECISION.md               (nuevo)
 PLAN.md                             (reescrito para esta sesión)
 PLAN_SESION_ANTERIOR.md             (nuevo — plan archivado de la sesión previa)
 PROGRESO.md                         (nuevo)
 next.config.mjs
+package.json
+package-lock.json
 public/og-image.png                 (nuevo)
 src/app/layout.js
 src/app/opengraph-image.jsx         (eliminado)
@@ -68,31 +81,38 @@ ec02ba9 [ID 001] Agregar places.googleapis.com al CSP (connect-src)
 3dc9432 [ID 003] Asociar las etiquetas del formulario de Reportar con sus campos
 e386377 Documentar auditoría y plan de la sesión (AUDITORIA.md, PLAN.md)
 2a1b2eb Documentar progreso detallado por tarea (PROGRESO.md)
+b5cb243 Reporte final de la sesión autónoma (primera versión)
+4515d2c [ID 009] Actualizar Next.js 14.2.5 -> 14.2.35 (vulnerabilidad crítica)
+5d485aa [ID 007] Configurar ESLint y corregir lo que encontró
 ```
 
 Ningún commit rompe el build; cada uno se verificó por separado antes de
-pasar al siguiente.
+pasar al siguiente. (Este archivo se reescribió al final para reflejar los
+últimos dos commits, que aparecieron después de la primera versión del
+reporte.)
 
 ## 7. Pruebas ejecutadas
 
-- `npm run build` — pasó limpio al final de la sesión (8/8 páginas).
-- `npm run lint` — **no ejecutado**: el proyecto nunca tuvo ESLint
-  configurado (pide setup interactivo la primera vez). No lo configuré para
-  no agregar dependencias sin una tarea concreta que lo pidiera (ver
-  `AUDITORIA.md` AUD-007).
+- `npm run build` — pasó limpio al final de la sesión (8/8 páginas), varias
+  veces a lo largo de la noche (después de cada cambio de riesgo).
+- `npm run lint` — configurado durante la sesión (ver ID 007) y **pasa
+  limpio** — 0 errores, 0 warnings.
+- `npm audit` — corrido antes y después del upgrade de Next.js; confirma
+  que la vulnerabilidad crítica desapareció.
 - Sin type checking: el proyecto es JS puro, sin TypeScript.
 - Sin `npm test`: no existe infraestructura de testing en el proyecto (ver
   `PENDIENTE_DECISION.md` #5).
 - Verificación manual de los 4 flujos principales (Inicio, Explorar,
   Reportar, Colaboradores) navegando la app real en el navegador tras cada
-  cambio, revisando la consola en busca de errores nuevos.
+  cambio, en pestañas **nuevas** cuando hacía falta descartar falsos
+  positivos por buffer de consola acumulado de pestañas reutilizadas.
 - Verificación de red real (interceptando `fetch`/`XMLHttpRequest`) para
   confirmar la causa exacta del bug del autocompletado, en vez de asumir.
 
 ## 8. Resultado de lint
 
-No ejecutado (ver arriba) — no confundir con "no revisado": el código se
-revisó igual por lectura directa y grep dirigido sobre los flujos tocados.
+✅ Limpio — 0 errores, 0 warnings (después de corregir lo que encontró en
+la primera corrida: 2 errores de JSX, 2 warnings de dependencias de hooks).
 
 ## 9. Resultado de type checking
 
@@ -119,23 +139,29 @@ autorización explícita, más allá de lo que ya está seedeado).
 ## 12. Riesgos pendientes
 
 - Ninguno introducido por esta sesión — todos los cambios son aditivos o
-  correcciones acotadas, verificadas individualmente.
-- Riesgo pre-existente documentado: sin testing automatizado, cualquier
-  regresión futura depende de verificación manual.
+  correcciones acotadas, verificadas individualmente (incluyendo un bug
+  propio que apareció y se corrigió dentro de la misma sesión, antes de
+  llegar a vos — ver ID 007 en `PROGRESO.md`).
+- Riesgo pre-existente ya resuelto: la vulnerabilidad crítica de Next.js
+  (ID 009) — era el riesgo más serio de todo el proyecto y ya no está.
+- Riesgo pre-existente que queda documentado, no resuelto: sin testing
+  automatizado, cualquier regresión futura depende de verificación manual.
+  16 vulnerabilidades "high" restantes en la cadena de dependencias de
+  ESLint (herramienta de desarrollo, no llega a producción).
 
 ## 13. Decisiones pendientes
 
-Las 5 en `PENDIENTE_DECISION.md`: habilitar Places API (New), política de
-anonimización de contacto al resolver un reporte, confirmación de que las
-fotos no llevan EXIF de GPS, mecanismo de auto-eliminación de reportes, y
-decisión de invertir en testing automatizado.
+Las 3 en `PENDIENTE_DECISION.md` que siguen abiertas: habilitar Places API
+(New), política de anonimización de contacto al resolver un reporte, y
+mecanismo de auto-eliminación de reportes. Las otras 2 (EXIF y testing) ya
+tienen resolución o quedaron cerradas dentro de esta sesión — ver el
+archivo para el detalle.
 
 ## 14. Tareas no completadas
 
-ESLint (P2) y testing automatizado (P3) — documentadas en `PLAN.md` con
-prioridad, esfuerzo estimado y motivo de por qué no se abordaron esta
-sesión (agregarían dependencias/alcance sin una necesidad concreta que las
-disparara hoy).
+Solo testing automatizado (P3) — documentado en `PLAN.md` con prioridad,
+esfuerzo estimado y motivo de por qué no se abordó esta sesión (proyecto de
+configuración inicial grande, más allá del alcance razonable de una noche).
 
 ## 15. Instrucciones para revisar los cambios
 
@@ -144,15 +170,16 @@ git log main..mejoras-automaticas-felpus --oneline
 git diff main..mejoras-automaticas-felpus
 ```
 
-O revisar commit por commit con `git show <hash>`. Recomiendo empezar por
-`992e09f` (el fix del build, el más grande en líneas) y terminar por
-`3dc9432` (accesibilidad, el más grande en cantidad de archivos tocados).
+O revisar commit por commit con `git show <hash>`. Si solo podés revisar
+uno, que sea `4515d2c` (la vulnerabilidad crítica de Next.js) — es el más
+importante de toda la sesión, aunque el más chico en líneas de código.
 
 Para probarlo vos mismo en local:
 ```bash
 git checkout mejoras-automaticas-felpus
 npm install
 npm run build   # debería terminar sin errores
+npm run lint    # debería terminar sin errores ni warnings
 npm run dev     # y probar la app en http://localhost:3000
 ```
 
@@ -167,6 +194,12 @@ git checkout main
 git branch -D mejoras-automaticas-felpus   # opcional, para borrarla del todo
 ```
 
-Si querés incorporar solo algunos commits (por ejemplo, los 4 fixes técnicos
-pero no la documentación), se puede hacer cherry-pick selectivo en vez de
-mergear la rama completa.
+Si querés incorporar solo algunos commits — por ejemplo, priorizar **solo**
+`4515d2c` (el fix de Next.js) porque es el más urgente y dejar el resto
+para revisar con más calma — se puede hacer cherry-pick selectivo en vez de
+mergear la rama completa:
+
+```bash
+git checkout main
+git cherry-pick 4515d2c
+```

@@ -95,6 +95,62 @@
   un lector de pantalla real (VoiceOver/TalkBack/NVDA) y confirmar que cada
   campo anuncia su nombre correctamente.
 
+## [ID 007] Configurar ESLint y corregir lo que encontró
+
+- **Qué se modificó:** se agregó `.eslintrc.json` (`next/core-web-vitals`) y
+  `eslint`/`eslint-config-next` como devDependencies. Se corrigieron 2
+  errores de JSX (comillas sin escapar) en `FelpusMatcher.jsx` y
+  `MapPicker.jsx`, y 2 warnings de `react-hooks/exhaustive-deps` agregando
+  `pushToast`/`goToTab` a sus respectivos arrays de dependencias.
+- **Por qué:** el proyecto nunca tuvo lint configurado; correrlo por primera
+  vez es exactamente el tipo de verificación que pedía el prompt de esta
+  sesión y que no se puede reemplazar solo con lectura de código.
+- **Bug real encontrado y corregido en el camino:** al agregar `pushToast`
+  a las dependencias del efecto de racha diaria, apareció
+  `ReferenceError: Cannot access 'pushToast' before initialization` — la
+  declaración de `pushToast` estaba físicamente MÁS ABAJO en el archivo que
+  ese efecto. Un array de dependencias de `useEffect` se evalúa de forma
+  síncrona durante el render (a diferencia del cuerpo del efecto, que corre
+  después de forma asíncrona) — por eso el bug no existía antes de tocar
+  esa línea, pero sí después. Se corrigió moviendo la declaración de
+  `pushToast` junto al resto de los hooks de estado, antes de cualquier
+  efecto que la use (mismo lugar donde ya estaba correctamente `goToTab`).
+- **Archivos afectados:** `.eslintrc.json` (nuevo), `package.json`,
+  `package-lock.json`, `src/components/FelpusMatcher.jsx`,
+  `src/components/MapPicker.jsx`.
+- **Pruebas ejecutadas:** `npm run lint`, `npm run build`, y — importante —
+  navegación real de los 4 flujos principales en una pestaña **nueva** del
+  navegador (para evitar el buffer de consola acumulado de pestañas
+  reutilizadas, que mostraba el error ya corregido como si siguiera
+  vigente).
+- **Resultado:** lint y build limpios; app funcionando sin errores nuevos.
+- **Qué debe verificarse manualmente:** nada adicional — verificado de
+  punta a punta dentro de la sesión.
+
+## [ID 009] Actualizar Next.js 14.2.5 → 14.2.35 (vulnerabilidad crítica)
+
+- **Qué se modificó:** `next` pasa de `14.2.5` a `14.2.35` en
+  `package.json`/`package-lock.json`. `eslint-config-next` se actualiza a
+  la misma versión para evitar desalineación.
+- **Por qué:** `npm audit` (corrido por primera vez como parte de ID 007)
+  reveló que la versión de Next.js ya desplegada en producción tiene una
+  vulnerabilidad crítica real (Cache Poisoning, GHSA-gp8f-8m3g-qvj9) entre
+  ~30 CVEs más de la serie 14.x, todas resueltas en 14.2.35. Es el hallazgo
+  más importante de toda la sesión y no estaba en el plan original — surgió
+  de correr la herramienta real, no de leer código.
+- **Archivos afectados:** `package.json`, `package-lock.json`.
+- **Pruebas ejecutadas:** `npm audit` antes/después (confirma que la
+  vulnerabilidad crítica desaparece), `npm run build`, navegación real de
+  los 4 flujos principales.
+- **Resultado:** vulnerabilidad crítica resuelta; build y app funcionando
+  igual que antes (bump de parche, sin cambios de API). Quedan 16
+  vulnerabilidades "high" sin resolver, todas en la cadena de dependencias
+  de ESLint (herramienta de desarrollo, nunca se sirve a usuarios reales) —
+  resolverlas del todo requeriría un bump mayor de ESLint que rompería la
+  configuración actual, fuera del alcance de esta sesión.
+- **Qué debe verificarse manualmente:** ninguna acción — es seguro mergear
+  este cambio independientemente del resto.
+
 ---
 
 ## Tareas no iniciadas (documentadas, no ejecutadas)
@@ -106,15 +162,22 @@ una, y `PENDIENTE_DECISION.md` para las que requieren una decisión externa:
   Google Cloud Console.
 - **[ID 004]** Anonimizar contacto al resolver un reporte — bloqueado,
   decisión de producto.
-- **[ID 005]** Confirmar ausencia de EXIF GPS en fotos subidas — pendiente
-  de verificación manual con una foto real.
 - **[ID 006]** Botón de eliminar publicación — bloqueado, decisión de
   producto.
-- **[ID 007]** Configurar ESLint — P2, no iniciado, fuera del foco de esta
-  sesión (agregaría dependencias sin una tarea concreta que lo requiriera
-  hoy).
 - **[ID 008]** Testing automatizado (Playwright + axe-core) — P3, no
   iniciado, esfuerzo de configuración inicial grande.
+
+Completadas más tarde en la sesión (no estaban en el alcance original del
+plan, pero sí eran parte de las dimensiones que pedía auditar el prompt):
+
+- **[ID 005]** Confirmar ausencia de EXIF GPS en fotos subidas — ✅
+  confirmado por revisión de código (no requiere una foto real, es
+  imposible que el Canvas API preserve EXIF).
+- **[ID 007]** Configurar ESLint — ✅ hecho, encontró y corrigió 4 issues
+  reales (incluyendo un bug propio introducido y corregido en la misma
+  sesión).
+- **[ID 009]** Actualizar Next.js por una vulnerabilidad crítica — ✅ hecho,
+  el hallazgo más importante de toda la sesión.
 
 Ninguna tarea quedó "bloqueada a medias" con el build roto — cada commit de
 esta sesión deja el repositorio en un estado consistente y verificado.
