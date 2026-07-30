@@ -880,6 +880,18 @@ export default function FelpusMatcher() {
   const [filterRadioKm, setFilterRadioKm] = useState(null);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [exploreView, setExploreView] = useState("lista");
+  // En desktop (lg+) el mapa de Explorar se muestra siempre, lado a lado con
+  // la lista, en vez de detrás del toggle Lista/Mapa. Se rastrea con JS (no
+  // solo CSS) para no montar el mapa —y su costo de llamadas a la API de
+  // Google— en mobile cuando la persona nunca lo abre.
+  const [isDesktop, setIsDesktop] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    setIsDesktop(mq.matches);
+    const handler = (e) => setIsDesktop(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
   const [heartedIds, setHeartedIds] = useState([]);
   const [poppingHeartId, setPoppingHeartId] = useState(null);
   const [matchesSeenAt, setMatchesSeenAt] = useState(0);
@@ -1516,8 +1528,10 @@ export default function FelpusMatcher() {
   const hasAdvancedFilters =
     filterTamano !== "todos" || filterColor !== "todos" || filterFecha !== "todos" || filterRadioKm != null;
 
-  const activeReports = reports.filter((r) => !r.resuelto);
-  const resueltas = reports.filter((r) => r.resuelto);
+  // Memoizados por la misma razón que filteredReports más abajo: reports
+  // solo cambia cuando de verdad llega data nueva, no en cada render.
+  const activeReports = useMemo(() => reports.filter((r) => !r.resuelto), [reports]);
+  const resueltas = useMemo(() => reports.filter((r) => r.resuelto), [reports]);
   const happyReunions = [...resueltas]
     .sort((a, b) => (b.resueltoEn || b.creadoEn) - (a.resueltoEn || a.creadoEn))
     .slice(0, 10);
@@ -1525,35 +1539,56 @@ export default function FelpusMatcher() {
   // simulados) derivados de los reportes ya cargados, para transmitir que
   // hay gente usando la app ahora mismo sin inventar datos.
   const last24hCount = reports.filter(isRecent).length;
-  let filteredReports = activeReports.filter((r) => {
-    if (filterTipo !== "todos" && r.tipo !== filterTipo) return false;
-    if (filterEspecie !== "todos" && r.especie !== filterEspecie) return false;
-    if (filterTamano !== "todos" && r.tamano !== filterTamano) return false;
-    if (filterColor !== "todos" && r.color !== filterColor) return false;
-    if (filterFecha !== "todos" && Date.now() - r.creadoEn > FECHA_LIMITES_MS[filterFecha]) return false;
-    if (normalizedQuery) {
-      const haystack = normalizeText(
-        [r.zona, r.nombre, r.color, r.colorOtro, r.descripcion].filter(Boolean).join(" ")
-      );
-      if (!haystack.includes(normalizedQuery)) return false;
-    }
-    return true;
-  });
+  // Memoizado: sin esto, esta lista se recalculaba (con una referencia de
+  // array NUEVA) en cada render de todo el componente, sin importar si algo
+  // relevante había cambiado. Eso hacía que ReportsMap reconstruyera todos
+  // sus marcadores todo el tiempo, no solo cuando la lista filtrada
+  // realmente cambiaba — carísimo, y encima expuso un crash real cuando el
+  // mapa estaba en un estado roto (ver ReportsMap.jsx).
+  const filteredReports = useMemo(() => {
+    let list = activeReports.filter((r) => {
+      if (filterTipo !== "todos" && r.tipo !== filterTipo) return false;
+      if (filterEspecie !== "todos" && r.especie !== filterEspecie) return false;
+      if (filterTamano !== "todos" && r.tamano !== filterTamano) return false;
+      if (filterColor !== "todos" && r.color !== filterColor) return false;
+      if (filterFecha !== "todos" && Date.now() - r.creadoEn > FECHA_LIMITES_MS[filterFecha]) return false;
+      if (normalizedQuery) {
+        const haystack = normalizeText(
+          [r.zona, r.nombre, r.color, r.colorOtro, r.descripcion].filter(Boolean).join(" ")
+        );
+        if (!haystack.includes(normalizedQuery)) return false;
+      }
+      return true;
+    });
 
-  if (myLocation) {
-    filteredReports = filteredReports.map((r) => ({
-      ...r,
-      _dist: r.lat != null && r.lng != null ? haversineKm(myLocation.lat, myLocation.lng, r.lat, r.lng) : Infinity,
-    }));
-  }
-  if (filterRadioKm != null && myLocation) {
-    filteredReports = filteredReports.filter((r) => r._dist <= filterRadioKm);
-  }
-  if (sortBy === "cercania" && myLocation) {
-    filteredReports = [...filteredReports].sort((a, b) => a._dist - b._dist);
-  } else {
-    filteredReports = [...filteredReports].sort((a, b) => b.creadoEn - a.creadoEn);
-  }
+    if (myLocation) {
+      list = list.map((r) => ({
+        ...r,
+        _dist: r.lat != null && r.lng != null ? haversineKm(myLocation.lat, myLocation.lng, r.lat, r.lng) : Infinity,
+      }));
+    }
+    if (filterRadioKm != null && myLocation) {
+      list = list.filter((r) => r._dist <= filterRadioKm);
+    }
+    if (sortBy === "cercania" && myLocation) {
+      list = [...list].sort((a, b) => a._dist - b._dist);
+    } else {
+      list = [...list].sort((a, b) => b.creadoEn - a.creadoEn);
+    }
+    return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    activeReports,
+    filterTipo,
+    filterEspecie,
+    filterTamano,
+    filterColor,
+    filterFecha,
+    normalizedQuery,
+    myLocation,
+    filterRadioKm,
+    sortBy,
+  ]);
 
   const myTier = getTier(myRank?.points || 0, C);
 
@@ -1783,10 +1818,10 @@ export default function FelpusMatcher() {
         )}
       </div>
 
-      <main className="max-w-2xl mx-auto px-4 py-4 pb-28">
+      <main className="px-4 py-4 pb-28">
         {/* INICIO */}
         {activeTab === "inicio" && (
-          <div key="inicio" className="space-y-5 felpus-fadein">
+          <div key="inicio" className="max-w-2xl mx-auto space-y-5 felpus-fadein">
             <div className="bg-white rounded-2xl border overflow-hidden shadow-sm" style={{ borderColor: C.border }}>
               <div className="p-5 text-center">
                 <div
@@ -1951,7 +1986,7 @@ export default function FelpusMatcher() {
 
         {/* REPORTAR */}
         {activeTab === "reportar" && (
-          <form key="reportar" onSubmit={handleSubmit} className="space-y-4 felpus-fadein">
+          <form key="reportar" onSubmit={handleSubmit} className="max-w-2xl mx-auto space-y-4 felpus-fadein">
             <div className="flex gap-2 bg-white p-1 rounded-xl border" style={{ borderColor: C.border }}>
               {["perdida", "encontrada"].map((k) => (
                 <button
@@ -2342,7 +2377,7 @@ export default function FelpusMatcher() {
 
         {/* RESULTADO */}
         {activeTab === "resultado" && (
-          <div key="resultado" className="space-y-4 felpus-fadein">
+          <div key="resultado" className="max-w-2xl mx-auto space-y-4 felpus-fadein">
             <button onClick={() => goToTab("explorar")} className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: C.muted }}>
               <ArrowLeft className="w-3.5 h-3.5" /> Volver a explorar
             </button>
@@ -2465,7 +2500,7 @@ export default function FelpusMatcher() {
 
         {/* EXPLORAR */}
         {activeTab === "explorar" && (
-          <div key="explorar" className="space-y-4 felpus-fadein">
+          <div key="explorar" className="max-w-2xl lg:max-w-6xl mx-auto space-y-4 felpus-fadein">
             <div className="relative">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: C.muted }} />
               <input
@@ -2520,7 +2555,10 @@ export default function FelpusMatcher() {
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
+            {/* En desktop (lg+) la lista y el mapa se muestran lado a lado
+                (ver más abajo), así que este toggle deja de tener sentido —
+                aprovecha el espacio ancho en vez de forzar a elegir una vista. */}
+            <div className="flex items-center gap-2 lg:hidden">
               <button
                 type="button"
                 onClick={() => setExploreView("lista")}
@@ -2578,35 +2616,29 @@ export default function FelpusMatcher() {
               </p>
             )}
 
-            {loadingReports && exploreView === "lista" && (
-              <div className="space-y-3">
-                <SkeletonCard />
-                <SkeletonCard />
-                <SkeletonCard />
-              </div>
-            )}
-
-            {!loadingReports && exploreView === "lista" && filteredReports.length === 0 && (
-              <div className="bg-white rounded-2xl p-6 text-center text-sm border" style={{ color: C.muted, borderColor: C.border }}>
-                <Mascot mood="searching" size={88} className="mx-auto mb-2" />
-                <p className="font-semibold" style={{ color: C.text }}>Todavía no hay reportes por acá.</p>
-                <p className="mt-1">Probá con otros filtros, o sé la primera persona en publicar uno.</p>
-              </div>
-            )}
-
-            {!loadingReports && exploreView === "mapa" && (
-              <div className="space-y-2">
-                <ReportsMap reports={filteredReports} onSelectReport={setDetailReport} center={myLocation} />
-                {filteredReports.some((r) => r.lat == null || r.lng == null) && (
-                  <p className="text-[11px]" style={{ color: C.muted }}>
-                    Algunos reportes no tienen ubicación exacta marcada en el mapa y no aparecen acá — probá la
-                    vista de lista para verlos todos.
-                  </p>
+            {/* Desde lg (escritorio) la lista y el mapa se muestran siempre
+                lado a lado — abajo de eso, cada columna respeta el toggle
+                Lista/Mapa como antes. El mapa además solo se monta si está
+                activo o si ya estamos en desktop, para no gastar llamadas a
+                la API de Google en mobile cuando nunca se abre esa vista. */}
+            <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:gap-5 lg:items-start">
+              <div className={exploreView === "lista" ? "" : "hidden lg:block"}>
+                {loadingReports && (
+                  <div className="space-y-3">
+                    <SkeletonCard />
+                    <SkeletonCard />
+                    <SkeletonCard />
+                  </div>
                 )}
-              </div>
-            )}
 
-            {exploreView === "lista" && (
+                {!loadingReports && filteredReports.length === 0 && (
+                  <div className="bg-white rounded-2xl p-6 text-center text-sm border" style={{ color: C.muted, borderColor: C.border }}>
+                    <Mascot mood="searching" size={88} className="mx-auto mb-2" />
+                    <p className="font-semibold" style={{ color: C.text }}>Todavía no hay reportes por acá.</p>
+                    <p className="mt-1">Probá con otros filtros, o sé la primera persona en publicar uno.</p>
+                  </div>
+                )}
+
             <div className="space-y-3">
               {filteredReports.map((r) => (
                 <ReportCard key={r.id} report={r} onOpenDetail={setDetailReport}>
@@ -2683,7 +2715,22 @@ export default function FelpusMatcher() {
                 </ReportCard>
               ))}
             </div>
-            )}
+              </div>
+
+              <div className={exploreView === "mapa" ? "" : "hidden lg:block"}>
+                {!loadingReports && (exploreView === "mapa" || isDesktop) && (
+                  <div className="space-y-2">
+                    <ReportsMap reports={filteredReports} onSelectReport={setDetailReport} center={myLocation} />
+                    {filteredReports.some((r) => r.lat == null || r.lng == null) && (
+                      <p className="text-[11px]" style={{ color: C.muted }}>
+                        Algunos reportes no tienen ubicación exacta marcada en el mapa y no aparecen acá — probá la
+                        vista de lista para verlos todos.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
 
             {resueltas.length > 0 && (
               <div className="pt-2">
@@ -2711,7 +2758,7 @@ export default function FelpusMatcher() {
 
         {/* RANKING */}
         {activeTab === "ranking" && (
-          <div key="ranking" className="space-y-3 felpus-fadein">
+          <div key="ranking" className="max-w-2xl mx-auto space-y-3 felpus-fadein">
             <div className="bg-white rounded-2xl p-4 border" style={{ borderColor: C.border }}>
               <h2 className="felpus-display text-xl mb-1 flex items-center gap-2" style={{ color: C.text }}>
                 <Crown className="w-5 h-5" style={{ color: C.orange }} /> Mayores colaboradores

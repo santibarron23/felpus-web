@@ -36,8 +36,17 @@ export function observeMapResize(map, container) {
     lastCenter = map.getCenter();
   });
   const observer = new ResizeObserver(() => {
-    window.google.maps.event.trigger(map, "resize");
-    if (lastCenter) map.setCenter(lastCenter);
+    // Si el mapa nunca terminó de inicializarse bien (ej. la key rechazada
+    // por dominio no autorizado), disparar "resize" sobre ese objeto roto
+    // puede tirar una excepción interna de la librería de Google y voltear
+    // toda la página. Un resize fallido no es crítico — se ignora en vez de
+    // dejar que reviente el árbol de React entero.
+    try {
+      window.google.maps.event.trigger(map, "resize");
+      if (lastCenter) map.setCenter(lastCenter);
+    } catch (e) {
+      console.error("No se pudo re-medir el mapa tras un resize", e);
+    }
   });
   observer.observe(container);
   return () => {

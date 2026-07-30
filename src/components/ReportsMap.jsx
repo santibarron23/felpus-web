@@ -62,31 +62,42 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
     markersRef.current = reports
       .filter((r) => r.lat != null && r.lng != null)
       .map((r) => {
-        const color = r.tipo === "perdida" ? "#D31C22" : "#E36525";
-        const pin = document.createElement("div");
-        pin.style.cssText = `
-          width: 40px; height: 40px; border-radius: 9999px; overflow: hidden;
-          border: 3px solid ${color}; background: #fff; cursor: pointer;
-          box-shadow: 0 2px 6px rgba(0,0,0,0.35);
-        `;
-        const img = document.createElement("img");
-        img.src = r.foto;
-        img.alt = "";
-        img.style.cssText = "width: 100%; height: 100%; object-fit: cover; display: block;";
-        img.onerror = () => {
-          pin.style.background = color;
-        };
-        pin.appendChild(img);
+        // Si el mapa quedó en un estado internamente roto (ej. la key
+        // rechazada por dominio no autorizado) aunque nuestro propio status
+        // diga "ready", instanciar un AdvancedMarkerElement puede tirar una
+        // excepción interna de la librería de Google. Se aísla por marcador
+        // para que un pin roto no tumbe el resto del mapa ni la página.
+        try {
+          const color = r.tipo === "perdida" ? "#D31C22" : "#E36525";
+          const pin = document.createElement("div");
+          pin.style.cssText = `
+            width: 40px; height: 40px; border-radius: 9999px; overflow: hidden;
+            border: 3px solid ${color}; background: #fff; cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+          `;
+          const img = document.createElement("img");
+          img.src = r.foto;
+          img.alt = "";
+          img.style.cssText = "width: 100%; height: 100%; object-fit: cover; display: block;";
+          img.onerror = () => {
+            pin.style.background = color;
+          };
+          pin.appendChild(img);
 
-        const marker = new window.google.maps.marker.AdvancedMarkerElement({
-          position: { lat: r.lat, lng: r.lng },
-          map: mapObjRef.current,
-          title: `${r.tipo === "perdida" ? "Perdida" : "Encontrada"} · ${r.zona}`,
-          content: pin,
-        });
-        marker.addListener("gmp-click", () => onSelectRef.current?.(r));
-        return marker;
-      });
+          const marker = new window.google.maps.marker.AdvancedMarkerElement({
+            position: { lat: r.lat, lng: r.lng },
+            map: mapObjRef.current,
+            title: `${r.tipo === "perdida" ? "Perdida" : "Encontrada"} · ${r.zona}`,
+            content: pin,
+          });
+          marker.addListener("gmp-click", () => onSelectRef.current?.(r));
+          return marker;
+        } catch (e) {
+          console.error("No se pudo crear el marcador del mapa para un reporte", e);
+          return null;
+        }
+      })
+      .filter(Boolean);
   }, [reports, status]);
 
   if (!apiKey) {
