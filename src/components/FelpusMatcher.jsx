@@ -271,13 +271,22 @@ function DetailModal({ report, onClose, onResolve, confirming, onConfirm, onCanc
   const [generatingFlyer, setGeneratingFlyer] = useState(false);
   const [deleteConfirming, setDeleteConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   useEffect(() => {
     setActiveIndex(0);
     setDeleteConfirming(false);
+    setLightboxOpen(false);
   }, [report?.id]);
   if (!report) return null;
   const fotos = report.fotos?.length ? report.fotos : [{ url: report.foto }];
   const activeFoto = fotos[Math.min(activeIndex, fotos.length - 1)];
+  // Con lat/lng manda directo al pin exacto; si el reporte no tiene
+  // ubicación precisa (no todos la tienen), cae a una búsqueda por nombre
+  // de zona — siempre abre algo útil, nunca un link roto.
+  const mapsUrl =
+    report.lat != null && report.lng != null
+      ? `https://www.google.com/maps?q=${report.lat},${report.lng}`
+      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(report.zona)}`;
 
   async function handleDownloadFlyer() {
     setGeneratingFlyer(true);
@@ -299,14 +308,28 @@ function DetailModal({ report, onClose, onResolve, confirming, onConfirm, onCanc
     }
   }
   return (
+    <>
     <div className="fixed inset-0 bg-black/50 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
       <div
         className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="relative">
+        <div className="relative h-56 overflow-hidden bg-[#F6EEE1]">
+          {/* Fondo desenfocado con la misma foto, recortado a propósito —
+              rellena el marco sin dejar franjas vacías. Encima, la foto
+              real entra completa (object-contain) para no cortarle la
+              cabeza o las patas a mascotas en fotos verticales (9:16). */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={activeFoto.url} alt={report.especie} className="w-full h-56 object-cover bg-[#F6EEE1]" />
+          <img src={activeFoto.url} alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover blur-2xl scale-125 opacity-50" />
+          <button
+            type="button"
+            onClick={() => setLightboxOpen(true)}
+            aria-label="Ver foto en tamaño completo"
+            className="absolute inset-0 w-full h-full focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={activeFoto.url} alt={report.especie} className="relative w-full h-full object-contain" />
+          </button>
           <button
             onClick={onClose}
             aria-label="Cerrar"
@@ -354,10 +377,17 @@ function DetailModal({ report, onClose, onResolve, confirming, onConfirm, onCanc
             </p>
           </div>
           <div className="grid grid-cols-2 gap-2 text-sm">
-            <div className="bg-[#FBF7F0] rounded-lg p-2.5">
-              <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Zona</p>
-              <p style={{ color: C.text }}>{report.zona}</p>
-            </div>
+            <a
+              href={mapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="felpus-input bg-[#FBF7F0] rounded-lg p-2.5 hover:bg-[#F0E7D8] transition-colors focus:outline-none"
+            >
+              <p className="text-[10px] uppercase font-bold flex items-center gap-1" style={{ color: C.muted }}>
+                <MapPin className="w-3 h-3" /> Zona
+              </p>
+              <p className="underline" style={{ color: C.text }}>{report.zona}</p>
+            </a>
             <div className="bg-[#FBF7F0] rounded-lg p-2.5">
               <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Fecha</p>
               <p style={{ color: C.text }}>{formatFechaAR(report.fecha)}</p>
@@ -511,6 +541,31 @@ function DetailModal({ report, onClose, onResolve, confirming, onConfirm, onCanc
         </div>
       </div>
     </div>
+    {lightboxOpen &&
+      createPortal(
+        <div
+          className="fixed inset-0 bg-black/90 z-[80] flex items-center justify-center p-4"
+          onClick={() => setLightboxOpen(false)}
+        >
+          <button
+            type="button"
+            onClick={() => setLightboxOpen(false)}
+            aria-label="Cerrar"
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/15 text-white flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={activeFoto.url}
+            alt={report.especie}
+            className="max-w-full max-h-full object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>,
+        document.body
+      )}
+    </>
   );
 }
 
