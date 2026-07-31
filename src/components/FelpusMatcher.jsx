@@ -490,7 +490,7 @@ function DetailModal({ report, onClose, onResolve, confirming, onConfirm, onCanc
                     type="button"
                     onClick={() => setDeleteConfirming(false)}
                     disabled={deleting}
-                    className="text-xs font-semibold"
+                    className="text-xs font-semibold disabled:opacity-60"
                     style={{ color: C.muted }}
                   >
                     Cancelar
@@ -753,7 +753,7 @@ function FilterSheet({
             <select
               value={filterTamano}
               onChange={(e) => setFilterTamano(e.target.value)}
-              className="flex-1 border rounded-lg px-3 py-2 text-sm bg-white"
+              className="felpus-input flex-1 border rounded-lg px-3 py-2 text-sm bg-white"
               style={{ borderColor: C.border, color: C.text }}
             >
               <option value="todos">Cualquier tamaño</option>
@@ -764,7 +764,7 @@ function FilterSheet({
             <select
               value={filterColor}
               onChange={(e) => setFilterColor(e.target.value)}
-              className="flex-1 border rounded-lg px-3 py-2 text-sm bg-white"
+              className="felpus-input flex-1 border rounded-lg px-3 py-2 text-sm bg-white"
               style={{ borderColor: C.border, color: C.text }}
             >
               <option value="todos">Cualquier color</option>
@@ -809,7 +809,7 @@ function FilterSheet({
                 if (val != null && !myLocation) handleLocateMe();
                 setFilterRadioKm(val);
               }}
-              className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+              className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-white"
               style={{ borderColor: C.border, color: C.text }}
             >
               <option value="todos">Cualquier distancia</option>
@@ -1994,7 +1994,7 @@ export default function FelpusMatcher() {
                   type="button"
                   key={k}
                   onClick={() => setReportKind(k)}
-                  className="flex-1 py-2 rounded-lg text-sm font-bold transition-colors"
+                  className="flex-1 py-2 rounded-lg text-sm font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D31C22]/50"
                   style={reportKind === k ? { background: k === "perdida" ? C.red : C.orangeInk, color: "#fff" } : { color: C.muted }}
                 >
                   {k === "perdida" ? "Perdí una mascota" : "Encontré una mascota"}
@@ -2107,7 +2107,7 @@ export default function FelpusMatcher() {
                     id="form-especie"
                     value={form.especie}
                     onChange={(e) => setForm((f) => ({ ...f, especie: e.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
+                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
                     style={{ borderColor: C.border, color: C.text }}
                   >
                     <option value="perro">Perro</option>
@@ -2121,7 +2121,7 @@ export default function FelpusMatcher() {
                     id="form-tamano"
                     value={form.tamano}
                     onChange={(e) => setForm((f) => ({ ...f, tamano: e.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
+                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
                     style={{ borderColor: C.border, color: C.text }}
                   >
                     <option value="chico">Chico</option>
@@ -2139,7 +2139,7 @@ export default function FelpusMatcher() {
                   id="form-sexo"
                   value={form.sexo}
                   onChange={(e) => setForm((f) => ({ ...f, sexo: e.target.value }))}
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
+                  className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
                   style={{ borderColor: C.border, color: C.text }}
                 >
                   <option value="">Elegir sexo...</option>
@@ -2159,7 +2159,7 @@ export default function FelpusMatcher() {
                     onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
                     maxLength={60}
                     placeholder="Opcional"
-                    className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
+                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
                     style={{ borderColor: C.border, color: C.text }}
                   />
                 </div>
@@ -2171,7 +2171,7 @@ export default function FelpusMatcher() {
                     id="form-color"
                     value={form.color}
                     onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
+                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
                     style={{ borderColor: C.border, color: C.text }}
                   >
                     <option value="">Elegir color...</option>
@@ -2192,7 +2192,7 @@ export default function FelpusMatcher() {
                     onChange={(e) => setForm((f) => ({ ...f, colorOtro: e.target.value }))}
                     maxLength={60}
                     placeholder="Ej: tricolor, manchas naranjas..."
-                    className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
+                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
                     style={{ borderColor: C.border, color: C.text }}
                   />
                 </div>
@@ -2205,7 +2205,7 @@ export default function FelpusMatcher() {
                     id="form-edad"
                     value={form.edad}
                     onChange={(e) => setForm((f) => ({ ...f, edad: e.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
+                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
                     style={{ borderColor: C.border, color: C.text }}
                   >
                     <option value="">Elegir edad...</option>
@@ -2220,7 +2220,7 @@ export default function FelpusMatcher() {
                     id="form-peso"
                     value={form.peso}
                     onChange={(e) => setForm((f) => ({ ...f, peso: e.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
+                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
                     style={{ borderColor: C.border, color: C.text }}
                   >
                     <option value="">Elegir peso...</option>
@@ -2255,13 +2255,13 @@ export default function FelpusMatcher() {
                     }}
                     maxLength={100}
                     placeholder="Ej: Palermo, cerca de Plaza Serrano"
-                    className="flex-1 border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
+                    className="felpus-input flex-1 border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
                     style={{ borderColor: C.border, color: C.text }}
                   />
                   <button
                     type="button"
                     onClick={handleUseLocation}
-                    className="shrink-0 flex items-center gap-1.5 px-3 rounded-lg border text-xs font-semibold bg-[#FBF7F0]"
+                    className="shrink-0 flex items-center gap-1.5 px-3 rounded-lg border text-xs font-semibold bg-[#FBF7F0] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D31C22]/50"
                     style={{ borderColor: C.border, color: C.text }}
                   >
                     {geoStatus === "locating" ? (
@@ -2299,7 +2299,7 @@ export default function FelpusMatcher() {
                   type="date"
                   value={form.fecha}
                   onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))}
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
+                  className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
                   style={{ borderColor: C.border, color: C.text }}
                 />
               </div>
@@ -2315,7 +2315,7 @@ export default function FelpusMatcher() {
                   rows={3}
                   maxLength={600}
                   placeholder="Señas particulares, collar, comportamiento, dónde exactamente..."
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] resize-none"
+                  className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] resize-none"
                   style={{ borderColor: C.border, color: C.text }}
                 />
               </div>
@@ -2337,7 +2337,7 @@ export default function FelpusMatcher() {
                     onChange={(e) => setForm((f) => ({ ...f, contactoWhatsapp: e.target.value }))}
                     maxLength={25}
                     placeholder="WhatsApp: +54 9 11 1234-5678"
-                    className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
+                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
                     style={{ borderColor: C.border, color: C.text }}
                   />
                   <input
@@ -2348,7 +2348,7 @@ export default function FelpusMatcher() {
                     onChange={(e) => setForm((f) => ({ ...f, contactoEmail: e.target.value }))}
                     maxLength={120}
                     placeholder="Email"
-                    className="w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
+                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
                     style={{ borderColor: C.border, color: C.text }}
                   />
                 </div>
@@ -2509,7 +2509,7 @@ export default function FelpusMatcher() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Buscar por zona, nombre, color o descripción..."
-                className="w-full border rounded-lg pl-9 pr-3 py-2 text-sm bg-white"
+                className="felpus-input w-full border rounded-lg pl-9 pr-3 py-2 text-sm bg-white"
                 style={{ borderColor: C.border, color: C.text }}
               />
             </div>
@@ -2518,7 +2518,7 @@ export default function FelpusMatcher() {
               <select
                 value={filterTipo}
                 onChange={(e) => setFilterTipo(e.target.value)}
-                className="flex-1 border rounded-lg px-3 py-2 text-sm bg-white"
+                className="felpus-input flex-1 border rounded-lg px-3 py-2 text-sm bg-white"
                 style={{ borderColor: C.border, color: C.text }}
               >
                 <option value="todos">Perdidas y encontradas</option>
@@ -2528,7 +2528,7 @@ export default function FelpusMatcher() {
               <select
                 value={filterEspecie}
                 onChange={(e) => setFilterEspecie(e.target.value)}
-                className="flex-1 border rounded-lg px-3 py-2 text-sm bg-white"
+                className="felpus-input flex-1 border rounded-lg px-3 py-2 text-sm bg-white"
                 style={{ borderColor: C.border, color: C.text }}
               >
                 <option value="todos">Todas las especies</option>
@@ -2541,14 +2541,14 @@ export default function FelpusMatcher() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setSortBy("recientes")}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold border"
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D31C22]/50"
                 style={sortBy === "recientes" ? { background: C.ink, color: "#fff", borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: "#fff" }}
               >
                 Más recientes
               </button>
               <button
                 onClick={() => (myLocation ? setSortBy("cercania") : handleLocateMe())}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold border"
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D31C22]/50"
                 style={sortBy === "cercania" ? { background: C.ink, color: "#fff", borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: "#fff" }}
               >
                 {locatingMe ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Navigation className="w-3.5 h-3.5" />}
@@ -2563,7 +2563,7 @@ export default function FelpusMatcher() {
               <button
                 type="button"
                 onClick={() => setExploreView("lista")}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold border"
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D31C22]/50"
                 style={exploreView === "lista" ? { background: C.ink, color: "#fff", borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: "#fff" }}
               >
                 Lista
@@ -2571,7 +2571,7 @@ export default function FelpusMatcher() {
               <button
                 type="button"
                 onClick={() => setExploreView("mapa")}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold border"
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D31C22]/50"
                 style={exploreView === "mapa" ? { background: C.ink, color: "#fff", borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: "#fff" }}
               >
                 <MapPin className="w-3.5 h-3.5" /> Mapa
@@ -2917,7 +2917,7 @@ export default function FelpusMatcher() {
                         onClick={() => handleSendHeart(u)}
                         disabled={alreadyHearted}
                         aria-label={alreadyHearted ? "Ya le mandaste un corazón" : `Mandarle un corazón a ${u.nickname}`}
-                        className="absolute -top-2 -right-2 flex items-center gap-1 bg-white border rounded-full px-2 py-1 shadow-sm"
+                        className="absolute -top-2 -right-2 flex items-center gap-1 bg-white border rounded-full px-2 py-1 shadow-sm disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D31C22]/50"
                         style={{ borderColor: C.border }}
                       >
                         <Heart
