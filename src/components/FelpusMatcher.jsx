@@ -29,6 +29,7 @@ import {
   Lock,
   Copy,
   Facebook,
+  Instagram,
   Twitter,
   Heart,
   MessageCircle,
@@ -227,8 +228,8 @@ function ReportCard({ report, onOpenDetail, children }) {
           <div className="flex items-center gap-2 flex-wrap mb-1">
             {resuelto ? (
               <span
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase text-white"
-                style={{ background: C.green }}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase"
+                style={{ background: "#EAF3EC", color: C.greenDark }}
               >
                 🎉 Reencontrada
               </span>
@@ -340,8 +341,8 @@ function DetailModal({ report, onClose, onResolve, confirming, onConfirm, onCanc
           <div className="absolute top-3 left-3">
             {report.resuelto ? (
               <span
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase text-white"
-                style={{ background: C.green }}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase"
+                style={{ background: "#EAF3EC", color: C.greenDark }}
               >
                 🎉 Reencontrada
               </span>
@@ -575,8 +576,14 @@ function ShareButton({ report, className, style, children, wrapperClassName = "r
   const [menuPos, setMenuPos] = useState(null);
   const btnRef = useRef(null);
 
-  const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/?r=${encodeURIComponent(report.id)}` : "";
+  // /r/<id> (no /?r=<id>) — esa ruta genera meta etiquetas Open Graph del
+  // lado del servidor con la foto real de ESTA mascota, para que
+  // WhatsApp/Facebook/X armen la vista previa con la imagen correcta en vez
+  // del banner genérico de la marca (que es lo único que puede leer un
+  // crawler desde la SPA, ya que no ejecuta JavaScript).
+  const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/r/${encodeURIComponent(report.id)}` : "";
   const shareText = buildShareText(report);
+  const [sharingInstagram, setSharingInstagram] = useState(false);
   const MENU_WIDTH = 192; // w-48
 
   function toggleOpen() {
@@ -605,6 +612,36 @@ function ShareButton({ report, className, style, children, wrapperClassName = "r
     }
   }
 
+  // Instagram no tiene una URL web pública para mandar directo a "Historias"
+  // con una imagen — la única forma real de lograrlo desde un sitio es el
+  // selector nativo del celular (Web Share API con archivos), donde
+  // Instagram ya aparece como una opción y ahí sí ofrece "Agregar a tu
+  // historia". En desktop (sin ese selector) se abre la foto en una
+  // pestaña nueva para guardarla y subirla a mano.
+  async function shareToInstagram() {
+    setSharingInstagram(true);
+    try {
+      const res = await fetch(report.foto);
+      const blob = await res.blob();
+      const file = new File([blob], "felpus-mascota.jpg", { type: blob.type || "image/jpeg" });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], text: shareText });
+        setOpen(false);
+        return;
+      }
+    } catch (e) {
+      if (e?.name === "AbortError") {
+        setOpen(false);
+        return;
+      }
+      console.error("No se pudo compartir a Instagram", e);
+    } finally {
+      setSharingInstagram(false);
+    }
+    window.open(report.foto, "_blank", "noopener,noreferrer");
+    setOpen(false);
+  }
+
   return (
     <div className={wrapperClassName}>
       <button ref={btnRef} type="button" onClick={toggleOpen} className={className} style={style}>
@@ -620,7 +657,7 @@ function ShareButton({ report, className, style, children, wrapperClassName = "r
               style={{ borderColor: "#F0E7D8", top: menuPos.top, left: menuPos.left, width: MENU_WIDTH }}
             >
             <button
-              onClick={() => openWindow(`https://wa.me/?text=${encodeURIComponent(shareText)}`)}
+              onClick={() => openWindow(`https://wa.me/?text=${encodeURIComponent(`${shareText}\n${shareUrl}`)}`)}
               className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[#FBF7F0] font-semibold"
               style={{ color: C.text }}
             >
@@ -645,6 +682,14 @@ function ShareButton({ report, className, style, children, wrapperClassName = "r
               style={{ color: C.text }}
             >
               <Twitter className="w-3.5 h-3.5" /> X / Twitter
+            </button>
+            <button
+              onClick={shareToInstagram}
+              disabled={sharingInstagram}
+              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[#FBF7F0] font-semibold disabled:opacity-60"
+              style={{ color: C.text }}
+            >
+              {sharingInstagram ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Instagram className="w-3.5 h-3.5" />} Instagram
             </button>
             <button
               onClick={copyLink}
@@ -2501,7 +2546,7 @@ export default function FelpusMatcher() {
                           <img src={m.report.foto} alt="" className="w-16 h-16 rounded-xl object-cover bg-[#F6EEE1] shrink-0" />
                           <div className="min-w-0 flex-1">
                             {m.report.resuelto ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase text-white" style={{ background: C.green }}>
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase" style={{ background: "#EAF3EC", color: C.greenDark }}>
                                 🎉 Reencontrada
                               </span>
                             ) : (
