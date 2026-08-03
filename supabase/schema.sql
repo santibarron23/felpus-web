@@ -192,3 +192,42 @@ drop policy if exists "felpus_photos_public_insert" on storage.objects;
 create policy "felpus_photos_public_insert"
   on storage.objects for insert
   with check (bucket_id = 'felpus-photos');
+
+-- ---------------------------------------------------------------------------
+-- Webhook: avisa a /api/notify-match cada vez que se publica un reporte
+-- nuevo, para que calcule coincidencias y mande el email correspondiente.
+-- Usa pg_net (async, no bloquea el insert) y atrapa cualquier error propio
+-- para que un problema con la notificación nunca rompa la publicación real
+-- del reporte. El secreto compartido tiene que coincidir con la variable
+-- NOTIFY_WEBHOOK_SECRET configurada en Vercel.
+-- ---------------------------------------------------------------------------
+create extension if not exists pg_net with schema extensions;
+
+create or replace function public.notify_new_report()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+begin
+  begin
+    perform net.http_post(
+      url := 'https://felpus-web.vercel.app/api/notify-match',
+      headers := jsonb_build_object(
+        'Content-Type', 'application/json',
+        'x-webhook-secret', '5ed9356ebaa806f62f203bb3cdf02b8ba2a5fd93d4f5372f'
+      ),
+      body := jsonb_build_object('type', 'INSERT', 'table', 'reports', 'record', to_jsonb(NEW))
+    );
+  exception when others then
+    null;
+  end;
+  return NEW;
+end;
+$$;
+
+drop trigger if exists trg_notify_new_report on public.reports;
+create trigger trg_notify_new_report
+  after insert on public.reports
+  for each row
+  execute function public.notify_new_report();
