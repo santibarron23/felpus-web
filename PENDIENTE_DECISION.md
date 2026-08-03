@@ -6,58 +6,58 @@ externa, o una decisión de producto/negocio.
 
 ---
 
-## -1. Activar el email de "posible coincidencia" (2026-07-31)
+## -1. Activar el email de "posible coincidencia" (2026-07-31, secreto rotado el 2026-08-03)
 
 **Qué hace:** cuando alguien publica un reporte nuevo, el servidor calcula
 coincidencias con el mismo algoritmo que ya usa la app (color, forma de la
 foto, zona/distancia) y le manda un email a los dueños de los reportes que
 matchean con probabilidad media/alta (40%+), con un link directo a la
-publicación nueva. Ya está codeado y desplegado (`/api/notify-match`), pero
-necesita 2 pasos tuyos para activarse — sin ellos, el endpoint existe pero
-nadie lo llama y no manda nada.
+publicación nueva.
 
-**Por qué no lo pude activar yo:** requiere crear una cuenta en un servicio
-de email (no puedo crear cuentas de terceros) y configurar un webhook desde
-el dashboard de Supabase (no tengo acceso).
+**⚠️ Incidente de seguridad ya corregido:** el primer secreto que generé
+para este webhook quedó escrito literal en `schema.sql`, que está en el
+repo **público** de GitHub — GitGuardian lo detectó y te avisó por mail.
+Ese secreto ya no se usa: reescribí el trigger para que lea el valor desde
+una variable de configuración de la base en vez de tenerlo escrito en un
+archivo versionado, así no puede volver a pasar. Los pasos de abajo ya
+usan el mecanismo nuevo — si ya habías hecho el Paso 1/2 antes, repetilos
+con el secreto nuevo.
 
-**Paso 1 — cuenta de Resend (gratis, ~2 min):**
+**Paso 1 — cuenta de Resend (gratis, ~2 min) — salteá si ya la creaste:**
 1. Andá a [resend.com](https://resend.com) y creá una cuenta gratis (no pide
-   tarjeta). El plan free da 3.000 emails/mes — de sobra para el volumen
-   actual de Felpus.
-2. En el dashboard, generá una **API Key**.
-3. En Vercel → tu proyecto → Settings → Environment Variables, agregá:
-   - `RESEND_API_KEY` = la key que generaste.
-   - `NOTIFY_WEBHOOK_SECRET` = `5ed9356ebaa806f62f203bb3cdf02b8ba2a5fd93d4f5372f`
-     (lo generé yo al azar — usalo tal cual, o cambialo por otro valor
-     propio siempre que uses el mismo en el paso 2).
-4. Redeploy para que tomen las variables nuevas.
+   tarjeta). El plan free da 3.000 emails/mes.
+2. En el dashboard, generá una **API Key** con permiso **"Sending access"**
+   (no "Full access").
+
+**Paso 2 — variables en Vercel:**
+1. Vercel → tu proyecto → Settings → Environment Variables:
+   - `RESEND_API_KEY` = la key de Resend.
+   - `NOTIFY_WEBHOOK_SECRET` = `29e162951637def7afc9bdaf0b0caa5e2ae4545c3f232a88`
+     (nuevo secreto, generado ahora — el anterior queda inválido).
+2. Redeploy.
+
+**Paso 3 — configurar el secreto en Supabase (SQL Editor):**
+Pegá y ejecutá esto (con TU secreto, el mismo del paso 2 — este comando no
+se guarda en ningún archivo del repo, corré esta única línea a mano):
+```sql
+alter database postgres set app.notify_webhook_secret = '29e162951637def7afc9bdaf0b0caa5e2ae4545c3f232a88';
+```
+Después, volvé a pegar y correr todo `supabase/schema.sql` completo — ahí
+está la versión nueva de la función `notify_new_report()` que ya no tiene
+ningún secreto escrito adentro, solo lee la variable que acabás de
+configurar.
 
 **⚠️ Limitación de Resend sin dominio propio verificado:** hasta que
 verifiques un dominio (agregando unos registros DNS), Resend en modo
 sandbox **solo entrega emails a la casilla con la que creaste la cuenta**
-— cualquier otro destinatario no va a recibir nada, aunque el envío
-"funcione" del lado del código. Para que le llegue a usuarios reales hace
-falta verificar un dominio en Resend (Settings → Domains) — no es
-obligatorio para probarlo, pero sí para que sea útil en producción.
-
-**Paso 2 — webhook en Supabase (~2 min):**
-1. En el dashboard de Supabase → **Database → Webhooks** → "Create a new
-   webhook".
-2. Configurá:
-   - **Table:** `reports`
-   - **Events:** solo `Insert`
-   - **Type:** `HTTP Request`
-   - **URL:** `https://felpus-web.vercel.app/api/notify-match`
-   - **HTTP Headers:** agregá `x-webhook-secret` con el mismo valor que
-     pusiste en `NOTIFY_WEBHOOK_SECRET` en Vercel.
-3. Guardá.
+(`santiagobarronlf@gmail.com`) — para otros destinatarios no va a llegar
+nada, aunque el envío "funcione" del lado del código.
 
 **Cómo probarlo:** publicá un reporte de prueba desde una cuenta logueada
-con la MISMA casilla que usaste para crear la cuenta de Resend como
-`contacto_email` en un reporte "opuesto" ya existente (ej. si publicás una
-"perdida", el reporte "encontrada" con el que debería matchear tiene que
-tener esa casilla en su contacto) — así el email cae dentro del límite del
-modo sandbox.
+con `santiagobarronlf@gmail.com` como `contacto_email` en un reporte
+"opuesto" ya existente (ej. si publicás una "perdida", el reporte
+"encontrada" con el que debería matchear tiene que tener esa casilla en su
+contacto).
 
 ---
 

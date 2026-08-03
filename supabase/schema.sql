@@ -198,8 +198,14 @@ create policy "felpus_photos_public_insert"
 -- nuevo, para que calcule coincidencias y mande el email correspondiente.
 -- Usa pg_net (async, no bloquea el insert) y atrapa cualquier error propio
 -- para que un problema con la notificación nunca rompa la publicación real
--- del reporte. El secreto compartido tiene que coincidir con la variable
--- NOTIFY_WEBHOOK_SECRET configurada en Vercel.
+-- del reporte.
+--
+-- El secreto compartido NUNCA va literal acá (este archivo se sube a un
+-- repo público) — se lee de un GUC de la base que se configura UNA sola vez
+-- a mano en el SQL Editor, fuera de cualquier archivo versionado:
+--   alter database postgres set app.notify_webhook_secret = '<tu secreto>';
+-- Tiene que ser el mismo valor que NOTIFY_WEBHOOK_SECRET en Vercel. Si no
+-- está configurado, la función no manda nada (no rompe el insert).
 -- ---------------------------------------------------------------------------
 create extension if not exists pg_net with schema extensions;
 
@@ -209,13 +215,19 @@ language plpgsql
 security definer
 set search_path = public, extensions
 as $$
+declare
+  webhook_secret text;
 begin
   begin
+    webhook_secret := current_setting('app.notify_webhook_secret', true);
+    if webhook_secret is null or webhook_secret = '' then
+      return NEW;
+    end if;
     perform net.http_post(
       url := 'https://felpus-web.vercel.app/api/notify-match',
       headers := jsonb_build_object(
         'Content-Type', 'application/json',
-        'x-webhook-secret', '5ed9356ebaa806f62f203bb3cdf02b8ba2a5fd93d4f5372f'
+        'x-webhook-secret', webhook_secret
       ),
       body := jsonb_build_object('type', 'INSERT', 'table', 'reports', 'record', to_jsonb(NEW))
     );
