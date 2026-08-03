@@ -1979,18 +1979,57 @@ export default function FelpusMatcher() {
                 volvieron a casa gracias a la comunidad. */}
             <div className="grid grid-cols-3 gap-2.5">
               {[
-                { value: activeReports.length, label: "Reportes activos", color: C.red },
-                { value: last24hCount, label: "Últimas 24hs", color: C.orangeInk },
-                { value: resueltas.length, label: "Reencontradas", color: C.green },
+                {
+                  value: activeReports.length,
+                  label: "Reportes activos",
+                  color: C.red,
+                  onClick: () => {
+                    setFilterTipo("todos");
+                    setFilterFecha("todos");
+                    setExploreView("lista");
+                    setShowResueltas(false);
+                    goToTab("explorar");
+                  },
+                },
+                {
+                  value: last24hCount,
+                  label: "Últimas 24hs",
+                  color: C.orangeInk,
+                  onClick: () => {
+                    setFilterTipo("todos");
+                    setFilterFecha("24h");
+                    setExploreView("lista");
+                    setShowResueltas(false);
+                    goToTab("explorar");
+                  },
+                },
+                {
+                  value: resueltas.length,
+                  label: "Reencontradas",
+                  color: C.green,
+                  onClick: () => {
+                    setShowResueltas(true);
+                    goToTab("explorar");
+                  },
+                },
               ].map((s, i) => (
-                <div key={i} className="bg-white rounded-xl border shadow-sm p-3 text-center" style={{ borderColor: C.border }}>
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => {
+                    playTap();
+                    s.onClick();
+                  }}
+                  className="felpus-card-hover bg-white rounded-xl border shadow-sm p-3 text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D31C22]/40"
+                  style={{ borderColor: C.border }}
+                >
                   <p className="felpus-mono text-xl font-bold" style={{ color: s.color }}>
                     <AnimatedNumber value={s.value} />
                   </p>
                   <p className="text-[10px] font-semibold leading-tight mt-0.5" style={{ color: C.muted }}>
                     {s.label}
                   </p>
-                </div>
+                </button>
               ))}
             </div>
 
