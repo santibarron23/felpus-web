@@ -37,15 +37,23 @@ con el secreto nuevo.
 2. Redeploy.
 
 **Paso 3 — configurar el secreto en Supabase (SQL Editor):**
-Pegá y ejecutá esto (con TU secreto, el mismo del paso 2 — este comando no
-se guarda en ningún archivo del repo, corré esta única línea a mano):
+
+`alter database ... set` no funciona desde el SQL Editor de Supabase (tira
+"permission denied" — el rol que usa el editor no tiene ese permiso). En
+su lugar se usa **Vault**, el mecanismo que Supabase da para esto mismo.
+Pegá y ejecutá (con TU secreto, el mismo del paso 2 — este comando no se
+guarda en ningún archivo del repo, corré esta única línea a mano):
 ```sql
-alter database postgres set app.notify_webhook_secret = '29e162951637def7afc9bdaf0b0caa5e2ae4545c3f232a88';
+select vault.create_secret('29e162951637def7afc9bdaf0b0caa5e2ae4545c3f232a88', 'notify_webhook_secret');
+```
+Si en algún momento necesitás cambiarlo de nuevo, no se puede volver a
+crear con el mismo nombre — hay que borrar el anterior primero:
+```sql
+select vault.update_secret(id, '<secreto nuevo>') from vault.decrypted_secrets where name = 'notify_webhook_secret';
 ```
 Después, volvé a pegar y correr todo `supabase/schema.sql` completo — ahí
-está la versión nueva de la función `notify_new_report()` que ya no tiene
-ningún secreto escrito adentro, solo lee la variable que acabás de
-configurar.
+está la versión nueva de la función `notify_new_report()`, que lee el
+secreto desde Vault en vez de tenerlo escrito adentro.
 
 **⚠️ Limitación de Resend sin dominio propio verificado:** hasta que
 verifiques un dominio (agregando unos registros DNS), Resend en modo

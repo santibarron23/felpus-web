@@ -201,25 +201,31 @@ create policy "felpus_photos_public_insert"
 -- del reporte.
 --
 -- El secreto compartido NUNCA va literal acá (este archivo se sube a un
--- repo público) — se lee de un GUC de la base que se configura UNA sola vez
--- a mano en el SQL Editor, fuera de cualquier archivo versionado:
---   alter database postgres set app.notify_webhook_secret = '<tu secreto>';
+-- repo público) — se guarda con Vault, el mecanismo propio de Supabase para
+-- esto (a diferencia de "alter database ... set", que el rol usado por el
+-- SQL Editor no tiene permiso para ejecutar). Se configura UNA sola vez a
+-- mano, fuera de cualquier archivo versionado:
+--   select vault.create_secret('<tu secreto>', 'notify_webhook_secret');
 -- Tiene que ser el mismo valor que NOTIFY_WEBHOOK_SECRET en Vercel. Si no
 -- está configurado, la función no manda nada (no rompe el insert).
 -- ---------------------------------------------------------------------------
 create extension if not exists pg_net with schema extensions;
+create extension if not exists supabase_vault;
 
 create or replace function public.notify_new_report()
 returns trigger
 language plpgsql
 security definer
-set search_path = public, extensions
+set search_path = public, extensions, vault
 as $$
 declare
   webhook_secret text;
 begin
   begin
-    webhook_secret := current_setting('app.notify_webhook_secret', true);
+    select decrypted_secret into webhook_secret
+      from vault.decrypted_secrets
+      where name = 'notify_webhook_secret'
+      limit 1;
     if webhook_secret is null or webhook_secret = '' then
       return NEW;
     end if;
