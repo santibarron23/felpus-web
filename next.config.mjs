@@ -19,8 +19,13 @@ const csp = [
   // Places) para sus pedidos de sugerencias — sin esto en connect-src, el
   // CSP bloquea esos pedidos en silencio (queda como "xhr error" genérico,
   // sin ningún mensaje de CSP explícito en la consola).
+  // data: hace falta porque uploadPhoto() (src/lib/store.js) convierte la
+  // foto ya redimensionada con fetch(dataUrl) antes de subirla a Storage —
+  // sin "data:" acá, el navegador bloquea ESE fetch puntual (no el de
+  // Supabase) y toda la publicación se cae con un error genérico de red,
+  // sin ningún aviso de CSP visible salvo en la consola.
   // ws://localhost solo en desarrollo: el socket de hot-reload de Next.js.
-  `connect-src 'self' https://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://places.googleapis.com${isDev ? " ws://localhost:* http://localhost:*" : ""}`,
+  `connect-src 'self' data: https://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://places.googleapis.com${isDev ? " ws://localhost:* http://localhost:*" : ""}`,
   "frame-src 'self' https://accounts.google.com",
   "object-src 'none'",
   "base-uri 'self'",
