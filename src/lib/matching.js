@@ -49,6 +49,46 @@ export const EDAD_OPTIONS = [
 
 export const PESO_OPTIONS = ["Menos de 5 kg", "5 a 10 kg", "10 a 20 kg", "20 a 30 kg", "Más de 30 kg", "No sé"];
 
+// Sugerencias para el <datalist> de raza (no un <select> cerrado: hay
+// cientos de razas y mezclas reales, forzar una lista fija excluiría a la
+// mayoría de las mascotas mestizas). "Mestizo/a" va primero a propósito —
+// es, de lejos, la respuesta más común, y no debería quedar escondida
+// abajo de una lista larga de razas puras.
+export const RAZA_OPTIONS_PERRO = [
+  "Mestizo/a",
+  "Labrador",
+  "Golden Retriever",
+  "Caniche/Poodle",
+  "Salchicha/Dachshund",
+  "Bulldog Francés",
+  "Bulldog Inglés",
+  "Pastor Alemán",
+  "Chihuahua",
+  "Boxer",
+  "Rottweiler",
+  "Beagle",
+  "Cocker Spaniel",
+  "Husky Siberiano",
+  "Yorkshire Terrier",
+  "Schnauzer",
+  "Pitbull/American Staffordshire",
+  "Dálmata",
+  "Border Collie",
+  "Doberman",
+  "San Bernardo",
+  "Shih Tzu",
+];
+export const RAZA_OPTIONS_GATO = [
+  "Mestizo/a (común europeo)",
+  "Siamés",
+  "Persa",
+  "Angora",
+  "Maine Coon",
+  "Bengalí",
+  "Ragdoll",
+  "Esfinge/Sphynx",
+];
+
 const STOPWORDS = new Set([
   "de", "la", "el", "en", "un", "una", "con", "sin", "por", "que", "es",
   "su", "al", "y", "del", "las", "los", "se", "lo", "muy", "esta", "este",
@@ -301,6 +341,22 @@ function colorOtroSimilarity(colorOtroA, colorOtroB) {
   return jaccard(tokenize(colorOtroA), tokenize(colorOtroB));
 }
 
+// La raza es texto libre con autocompletado (no un <select> cerrado — ver
+// RAZA_OPTIONS_PERRO/GATO), así que se compara como texto: igual o una
+// contiene a la otra ("Pitbull" vs "Pitbull/American Staffordshire") cuenta
+// como coincidencia. "Mestizo/a" queda afuera a propósito: es, de lejos, la
+// respuesta más común — que dos reportes coincidan en "es mestizo" no dice
+// casi nada sobre si son la misma mascota, muy distinto a que coincidan en
+// "es un Golden Retriever". Devuelve null (se excluye del promedio, mismo
+// patrón que "No sé" en sexo/edad/peso) en vez de 0, que sí penalizaría.
+function razaSimilarity(razaA, razaB) {
+  const ra = normalizeText(razaA).trim();
+  const rb = normalizeText(razaB).trim();
+  if (!ra || !rb || ra.includes("mestizo") || rb.includes("mestizo")) return null;
+  if (ra === rb || ra.includes(rb) || rb.includes(ra)) return 1;
+  return 0;
+}
+
 // Compara los campos estructurados (color, tamaño, edad, peso) en vez de
 // meterlos en la misma bolsa de palabras que la descripción libre. Dos
 // reportes de la misma mascota casi siempre coinciden en estos campos (son
@@ -316,6 +372,11 @@ function structuredFieldSimilarity(a, b) {
       a.color !== b.color ? 0 : a.color === "Otro color" ? colorOtroSimilarity(a.colorOtro, b.colorOtro) : 1;
     parts.push({ weight: 0.35, value: colorMatch });
   }
+  // Peso alto (a la par de color): cuando ambos lados la completan con una
+  // raza real (no "mestizo/a"), es de las señales más fuertes que hay para
+  // saber si dos reportes son la misma mascota.
+  const razaSim = razaSimilarity(a.raza, b.raza);
+  if (razaSim != null) parts.push({ weight: 0.3, value: razaSim });
   // El sexo es un dato biológico estable (a diferencia del peso, que varía
   // con el tiempo) — casi tan confiable como el color para descartar o
   // confirmar. "No sé" no aporta señal y queda afuera del promedio.
@@ -548,7 +609,11 @@ export function composeDescripcionBase(form) {
   if (!form) return "";
   const especieLabel = form.especie === "perro" ? "un perro" : form.especie === "gato" ? "un gato" : "una mascota";
   const colorTxt = form.color === "Otro color" ? form.colorOtro : form.color;
-  const parts = [`Es ${especieLabel}`];
+  // "Mestizo/a" no se suma a la frase — decir "es un perro mestizo/a" no
+  // aporta nada que "es un perro" no dijera ya (mismo criterio que en
+  // razaSimilarity, más arriba: es la respuesta más común, no distingue).
+  const razaTxt = form.raza && !normalizeText(form.raza).includes("mestizo") ? form.raza.trim() : "";
+  const parts = [`Es ${especieLabel}${razaTxt ? ` ${razaTxt}` : ""}`];
   if (form.tamano) parts.push(`de tamaño ${form.tamano}`);
   if (colorTxt) parts.push(`color ${colorTxt.toLowerCase()}`);
   if (form.edad && form.edad !== "No sé") parts.push(form.edad.replace(/\s*\([^)]*\)/, "").toLowerCase());
@@ -567,15 +632,32 @@ export function composeChipSentence(prefix, chips) {
   return `${prefix} ${joined}.`;
 }
 
+// Distinto de composeChipSentence: ese arma UNA frase compartida con un
+// solo molde ("Tenía X, Y y Z") — funciona porque collar/arnés/etc. son
+// todos sustantivos que encajan ahí. El comportamiento no: "Sociable" es
+// un adjetivo ("Es sociable") pero "Se deja agarrar" ya es una oración
+// propia — meterlos en el mismo molde daba frases rotas ("Es se deja
+// agarrar"). Acá cada chip trae su propia oración ya armada, y esto solo
+// las une con punto y espacio.
+export function composeClauses(clauses) {
+  if (!clauses || clauses.length === 0) return "";
+  return clauses
+    .filter(Boolean)
+    .map((c) => (c.trim().endsWith(".") ? c.trim() : `${c.trim()}.`))
+    .join(" ");
+}
+
 export function buildShareText(report) {
   const tipoTxt = report.tipo === "perdida" ? "PERDIDA" : "ENCONTRADA";
   const nombreTxt = report.nombre ? `${report.nombre} — ` : "";
-  return `🐾 Mascota ${tipoTxt}: ${nombreTxt}${report.especie}, color ${report.color}, tamaño ${report.tamano}.\nZona: ${report.zona}.\n${report.descripcion}\n\n¿La reconocés? Ayudemos a reencontrarla. Publicado en Felpus.`;
+  const razaTxt = report.raza && !normalizeText(report.raza).includes("mestizo") ? ` (${report.raza})` : "";
+  return `🐾 Mascota ${tipoTxt}: ${nombreTxt}${report.especie}${razaTxt}, color ${report.color}, tamaño ${report.tamano}.\nZona: ${report.zona}.\n${report.descripcion}\n\n¿La reconocés? Ayudemos a reencontrarla. Publicado en Felpus.`;
 }
 
 export function emptyForm() {
   return {
     especie: "perro",
+    raza: "",
     nombre: "",
     color: "",
     colorOtro: "",

@@ -75,6 +75,13 @@ alter table contributors add column if not exists last_active_date date;
 -- login, también tiene que poder recibir avisos). Formato: el objeto
 -- PushSubscription tal cual lo devuelve pushManager.subscribe() en JSON.
 alter table reports add column if not exists push_subscription jsonb;
+-- Raza: opcional a propósito (mucha gente no la sabe, sobre todo con
+-- mascotas encontradas o mestizas) pero es una señal fuerte para el
+-- matching cuando ambos lados la completan — ver structuredFieldSimilarity
+-- en matching.js.
+alter table reports add column if not exists raza text;
+alter table reports drop constraint if exists reports_raza_len;
+alter table reports add constraint reports_raza_len check (raza is null or char_length(raza) <= 60) not valid;
 
 -- ---------------------------------------------------------------------------
 -- Límites de longitud a nivel de base de datos: el formulario ya los aplica

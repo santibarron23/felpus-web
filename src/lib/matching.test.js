@@ -21,6 +21,7 @@ import {
   sanitizePhoneForWhatsapp,
   composeDescripcionBase,
   composeChipSentence,
+  composeClauses,
   SCORE_MINIMO,
 } from "./matching";
 
@@ -187,6 +188,20 @@ describe("scoreMatch", () => {
     expect(score).toBeGreaterThanOrEqual(0);
     expect(score).toBeLessThanOrEqual(1);
   });
+
+  it("misma raza real sube el score respecto a razas distintas", () => {
+    const base = makeReport({ raza: "Labrador" });
+    const mismaRaza = scoreMatch(base, makeReport({ id: "r2", raza: "Labrador" })).score;
+    const otraRaza = scoreMatch(base, makeReport({ id: "r3", raza: "Chihuahua" })).score;
+    expect(mismaRaza).toBeGreaterThan(otraRaza);
+  });
+
+  it("coincidir en 'Mestizo/a' no aporta score extra (no es una señal real)", () => {
+    const base = makeReport({ raza: "" });
+    const sinRaza = scoreMatch(base, makeReport({ id: "r2", raza: "" })).score;
+    const dosMestizos = scoreMatch(makeReport({ raza: "Mestizo/a" }), makeReport({ id: "r3", raza: "Mestizo/a" })).score;
+    expect(dosMestizos).toBe(sinRaza);
+  });
 });
 
 describe("findMatches", () => {
@@ -317,6 +332,15 @@ describe("buildShareText", () => {
     const texto = buildShareText(makeReport({ nombre: "" }));
     expect(texto).not.toContain(" — ");
   });
+
+  it("suma la raza entre paréntesis cuando no es 'Mestizo/a'", () => {
+    expect(buildShareText(makeReport({ raza: "Labrador" }))).toContain("perro (Labrador)");
+  });
+
+  it("no muestra la raza si es 'Mestizo/a' o está vacía", () => {
+    expect(buildShareText(makeReport({ raza: "Mestizo/a" }))).not.toContain("(");
+    expect(buildShareText(makeReport({ raza: "" }))).not.toContain("(");
+  });
 });
 
 describe("composeDescripcionBase", () => {
@@ -330,6 +354,16 @@ describe("composeDescripcionBase", () => {
       sexo: "Macho",
     });
     expect(texto).toBe("Es un perro, de tamaño mediano, color negro, adulto, macho.");
+  });
+
+  it("suma la raza justo después de la especie, si se completó", () => {
+    const texto = composeDescripcionBase({ especie: "perro", raza: "Labrador", tamano: "mediano", color: "", colorOtro: "", edad: "", sexo: "" });
+    expect(texto).toBe("Es un perro Labrador, de tamaño mediano.");
+  });
+
+  it("no suma 'Mestizo/a' a la frase (no aporta nada nuevo)", () => {
+    const texto = composeDescripcionBase({ especie: "gato", raza: "Mestizo/a", tamano: "chico", color: "", colorOtro: "", edad: "", sexo: "" });
+    expect(texto).toBe("Es un gato, de tamaño chico.");
   });
 
   it("usa colorOtro cuando el color es 'Otro color'", () => {
@@ -381,6 +415,23 @@ describe("composeChipSentence", () => {
   it("devuelve cadena vacía si no hay chips seleccionados", () => {
     expect(composeChipSentence("Tenía", [])).toBe("");
     expect(composeChipSentence("Tenía", null)).toBe("");
+  });
+});
+
+describe("composeClauses", () => {
+  it("une varias oraciones ya armadas, agregando el punto si falta", () => {
+    expect(composeClauses(["Es sociable", "Se deja agarrar sin problema"])).toBe(
+      "Es sociable. Se deja agarrar sin problema."
+    );
+  });
+
+  it("no duplica el punto si la oración ya termina en uno", () => {
+    expect(composeClauses(["Responde a su nombre."])).toBe("Responde a su nombre.");
+  });
+
+  it("devuelve cadena vacía sin oraciones", () => {
+    expect(composeClauses([])).toBe("");
+    expect(composeClauses(null)).toBe("");
   });
 });
 

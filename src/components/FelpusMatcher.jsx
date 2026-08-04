@@ -51,8 +51,11 @@ import {
   sanitizePhoneForWhatsapp,
   EDAD_OPTIONS,
   PESO_OPTIONS,
+  RAZA_OPTIONS_PERRO,
+  RAZA_OPTIONS_GATO,
   composeDescripcionBase,
   composeChipSentence,
+  composeClauses,
   PUNTOS_PERDIDA,
   PUNTOS_ENCONTRADA,
   PUNTOS_REENCUENTRO,
@@ -149,7 +152,50 @@ const SCAN_STEPS = [
 // sí varía persona a persona (cicatrices, le falta una oreja, etc.) queda
 // en el campo de texto de abajo, ahora acotado a "algo más" en vez de "todo".
 const COLLAR_CHIPS = ["Collar", "Arnés", "Chapita con nombre", "Pañuelo", "Sin nada puesto"];
-const COMPORTAMIENTO_CHIPS = ["Sociable", "Miedoso/a", "Se deja agarrar", "No se acerca a desconocidos", "Ladra/marca territorio"];
+// Cada chip trae su propia oración ya armada (campo "clause") en vez de un
+// adjetivo suelto — "Sociable" encaja en el molde "Es X", pero "Se deja
+// agarrar" o "Responde a su nombre" ya son oraciones propias; forzarlas al
+// mismo molde daba frases rotas ("Es se deja agarrar"). Ver composeClauses
+// en matching.js. Agrupado en 3 categorías cortas (en vez de una sola lista
+// larga) para que se pueda escanear de un vistazo aunque haya más opciones.
+const COMPORTAMIENTO_GROUPS = [
+  {
+    title: "Con personas",
+    chips: [
+      { label: "Sociable", clause: "Es sociable" },
+      { label: "Tímido/a con extraños", clause: "Es tímido/a con extraños" },
+      { label: "Se deja agarrar", clause: "Se deja agarrar sin problema" },
+      { label: "No se acerca a desconocidos", clause: "No se acerca a desconocidos" },
+      { label: "Bueno con niños", clause: "Es bueno con los niños" },
+      { label: "Puede reaccionar mal si lo asustan", clause: "Puede asustarse o reaccionar mal si lo agarran de golpe" },
+    ],
+  },
+  {
+    title: "Con otros animales",
+    chips: [
+      { label: "Se lleva bien con otros animales", clause: "Se lleva bien con otros animales" },
+      { label: "No le gustan otros animales", clause: "No se lleva bien con otros animales" },
+    ],
+  },
+  {
+    title: "Otras características",
+    chips: [
+      { label: "Escapista", clause: "Es escapista, se escapa fácil" },
+      { label: "Muy activo/a", clause: "Es muy activo/a e inquieto/a" },
+      { label: "Tranquilo/a", clause: "Es tranquilo/a, casi no se mueve" },
+      { label: "Ladra/maúlla mucho", clause: "Ladra o maúlla mucho" },
+      { label: "Casi no hace ruido", clause: "Casi no hace ruido" },
+      { label: "Responde a su nombre", clause: "Responde a su nombre" },
+      { label: "Sordo/a", clause: "Es sordo/a" },
+      { label: "Ciego/a", clause: "Es ciego/a" },
+    ],
+  },
+];
+// Mapa plano label -> oración, para componer el texto sin recorrer los
+// grupos cada vez (ver el useEffect que arma form.descripcion).
+const COMPORTAMIENTO_CLAUSE_BY_LABEL = Object.fromEntries(
+  COMPORTAMIENTO_GROUPS.flatMap((g) => g.chips.map((c) => [c.label, c.clause]))
+);
 // Frases de un toque para el campo de texto libre — cubren las señas más
 // comunes que la gente típicamente tiene que parar a pensar cómo redactar.
 // Tocar una la agrega al final del texto; la persona puede seguir
@@ -430,11 +476,11 @@ export default function FelpusMatcher() {
     const collarSentence = collarChips.includes("Sin nada puesto")
       ? "No tenía nada puesto."
       : composeChipSentence("Tenía", collarChips);
-    const comportamientoSentence = composeChipSentence("Es", comportamientoChips);
+    const comportamientoSentence = composeClauses(comportamientoChips.map((label) => COMPORTAMIENTO_CLAUSE_BY_LABEL[label]));
     const composed = [base, collarSentence, comportamientoSentence, senasText.trim()].filter(Boolean).join(" ");
     setForm((f) => (f.descripcion === composed ? f : { ...f, descripcion: composed }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.especie, form.tamano, form.color, form.colorOtro, form.edad, form.sexo, collarChips, comportamientoChips, senasText]);
+  }, [form.especie, form.raza, form.tamano, form.color, form.colorOtro, form.edad, form.sexo, collarChips, comportamientoChips, senasText]);
 
   function toggleCollarChip(label) {
     playTap();
@@ -972,6 +1018,7 @@ export default function FelpusMatcher() {
         id,
         tipo: reportKind,
         especie: form.especie,
+        raza: form.raza.trim(),
         nombre: form.nombre.trim(),
         color: form.color.trim(),
         colorOtro: form.colorOtro.trim(),
@@ -1774,6 +1821,36 @@ export default function FelpusMatcher() {
               </div>
 
               <div>
+                <label htmlFor="form-raza" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
+                  Raza (si la sabés)
+                </label>
+                {/* <input list> en vez de <select>: a diferencia de color/
+                    tamaño, hay cientos de razas y mezclas reales — un
+                    desplegable cerrado dejaría afuera a la mayoría. El
+                    <datalist> sugiere las más comunes según la especie
+                    elegida arriba, pero acepta escribir cualquier cosa. */}
+                <input
+                  id="form-raza"
+                  type="text"
+                  list="form-raza-options"
+                  value={form.raza}
+                  onChange={(e) => setForm((f) => ({ ...f, raza: e.target.value }))}
+                  maxLength={60}
+                  placeholder={form.especie === "otro" ? "Opcional" : "Ej: Mestizo/a, Labrador..."}
+                  className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
+                  style={{ borderColor: C.border, color: C.text }}
+                />
+                <datalist id="form-raza-options">
+                  {(form.especie === "perro" ? RAZA_OPTIONS_PERRO : form.especie === "gato" ? RAZA_OPTIONS_GATO : []).map((r) => (
+                    <option key={r} value={r} />
+                  ))}
+                </datalist>
+                <p className="text-[11px] mt-1" style={{ color: C.muted }}>
+                  Si no la sabés, dejalo en blanco — no es obligatorio.
+                </p>
+              </div>
+
+              <div>
                 <label htmlFor="form-sexo" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
                   Sexo <span style={{ color: C.red }}>*</span>
                 </label>
@@ -1998,23 +2075,32 @@ export default function FelpusMatcher() {
                 </div>
 
                 <div>
-                  <p className="text-xs font-bold mb-1.5" style={{ color: C.text }}>¿Cómo se comporta? (opcional, podés elegir varias)</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {COMPORTAMIENTO_CHIPS.map((chip) => {
-                      const selected = comportamientoChips.includes(chip);
-                      return (
-                        <button
-                          key={chip}
-                          type="button"
-                          onClick={() => toggleComportamientoChip(chip)}
-                          aria-pressed={selected}
-                          className="rounded-full px-3 py-1.5 text-xs font-semibold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
-                          style={selected ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
-                        >
-                          {chip}
-                        </button>
-                      );
-                    })}
+                  <p className="text-xs font-bold mb-2" style={{ color: C.text }}>¿Cómo se comporta? (opcional, podés elegir varias)</p>
+                  <div className="space-y-2.5">
+                    {COMPORTAMIENTO_GROUPS.map((group) => (
+                      <div key={group.title}>
+                        <p className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: C.muted }}>
+                          {group.title}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {group.chips.map(({ label }) => {
+                            const selected = comportamientoChips.includes(label);
+                            return (
+                              <button
+                                key={label}
+                                type="button"
+                                onClick={() => toggleComportamientoChip(label)}
+                                aria-pressed={selected}
+                                className="rounded-full px-3 py-1.5 text-xs font-semibold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                                style={selected ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
