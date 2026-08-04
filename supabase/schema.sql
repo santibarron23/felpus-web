@@ -153,6 +153,72 @@ drop policy if exists "reports_delete_owner" on reports;
 create policy "reports_delete_owner" on reports for delete using (auth.uid() = user_id);
 
 -- ---------------------------------------------------------------------------
+-- Contacto (WhatsApp/email): reports_select_all de arriba es "using (true)"
+-- — controla FILAS, no columnas. Antes de esto, cualquiera con la anon key
+-- (pública, está en el bundle del navegador de toda la app) podía pedir
+-- "select=contacto_whatsapp,contacto_email" directo a la API REST y
+-- llevarse el contacto de TODOS los reportes en un solo pedido, sin pasar
+-- por fetchReportContact ni por ningún código del cliente — el hecho de que
+-- el listado general no pidiera esas columnas era una convención del
+-- frontend, no una restricción real. Esto revoca el SELECT de esas dos
+-- columnas puntuales a nivel de Postgres (no de RLS) para anon/authenticated,
+-- y deja como único camino esta función: rate-limitada por IP, con su propio
+-- cupo (no comparte el de report_submissions — navegar varios detalles de
+-- reportes en una sesión es normal y no debería competir con publicar
+-- reportes o activar notificaciones push).
+-- ---------------------------------------------------------------------------
+revoke select (contacto_whatsapp, contacto_email) on reports from anon, authenticated;
+
+create table if not exists contact_requests (
+  ip text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists contact_requests_ip_created_idx on contact_requests (ip, created_at);
+alter table contact_requests enable row level security;
+-- Sin políticas: nadie (anon ni authenticated) puede leer ni escribir esta
+-- tabla directamente vía la API — solo la toca la función de abajo.
+
+create or replace function public.get_report_contact(p_report_id text)
+returns table(contacto_whatsapp text, contacto_email text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  client_ip text;
+  recent_count integer;
+begin
+  begin
+    client_ip := nullif(trim(split_part(current_setting('request.headers', true)::json->>'x-forwarded-for', ',', 1)), '');
+  exception when others then
+    client_ip := null;
+  end;
+
+  -- Sin x-forwarded-for (llamado servidor-a-servidor, ej. el webhook de
+  -- notify-match, o desde el SQL Editor) se deja pasar sin contar, mismo
+  -- criterio que enforce_report_rate_limit más abajo.
+  if client_ip is not null then
+    delete from contact_requests where created_at < now() - interval '1 day';
+
+    select count(*) into recent_count
+      from contact_requests
+      where ip = client_ip and created_at > now() - interval '1 hour';
+
+    if recent_count >= 30 then
+      raise exception 'Demasiadas consultas de contacto desde esta conexión. Probá de nuevo más tarde.';
+    end if;
+
+    insert into contact_requests (ip) values (client_ip);
+  end if;
+
+  return query select r.contacto_whatsapp, r.contacto_email from reports r where r.id = p_report_id;
+end;
+$$;
+
+revoke all on function public.get_report_contact(text) from public;
+grant execute on function public.get_report_contact(text) to anon, authenticated;
+
+-- ---------------------------------------------------------------------------
 -- Rate limiting de creación de reportes: la política de arriba (with check
 -- (true)) permite insertar sin límite a cualquiera, logueado o no — sin esto,
 -- un script puede crear reportes (y fotos en Storage, con su costo) sin

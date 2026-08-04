@@ -38,7 +38,6 @@ function rowToMatchable(row) {
     lat: row.lat,
     lng: row.lng,
     descripcion: row.descripcion,
-    contactoEmail: row.contacto_email || "",
     pushSubscription: row.push_subscription || null,
     fotos,
     hist: fotos[0]?.hist,
@@ -47,6 +46,15 @@ function rowToMatchable(row) {
   };
 }
 
+// Columnas explícitas, SIN contacto_whatsapp/contacto_email: esas dos
+// tienen el SELECT revocado a nivel de Postgres para la key acá usada
+// (NEXT_PUBLIC_SUPABASE_ANON_KEY — ver schema.sql), así que un "select=*"
+// directamente fallaría por completo. El email de la coincidencia que
+// termina superando el umbral se pide aparte, recién cuando hace falta
+// (ver fetchReportContactServer más abajo).
+const CANDIDATE_COLUMNS =
+  "id,tipo,especie,raza,nombre,color,color_otro,tamano,sexo,edad,peso,zona,lat,lng,descripcion,push_subscription,foto_url,hist,embedding,foto_urls,hists,embeddings,creado_en";
+
 async function fetchCandidates(supabaseUrl, apiKey, newReport) {
   const opuesto = newReport.tipo === "perdida" ? "encontrada" : "perdida";
   const params = new URLSearchParams({
@@ -54,7 +62,7 @@ async function fetchCandidates(supabaseUrl, apiKey, newReport) {
     especie: `eq.${newReport.especie}`,
     resuelto: "eq.false",
     id: `neq.${newReport.id}`,
-    select: "*",
+    select: CANDIDATE_COLUMNS,
     limit: "200",
   });
   const res = await fetch(`${supabaseUrl}/rest/v1/reports?${params.toString()}`, {
@@ -62,6 +70,23 @@ async function fetchCandidates(supabaseUrl, apiKey, newReport) {
   });
   if (!res.ok) return [];
   return res.json();
+}
+
+// Mismo camino que usa el navegador (get_report_contact en schema.sql), pero
+// llamado servidor-a-servidor: sin x-forwarded-for en este fetch interno, la
+// función no lo cuenta contra el cupo de 30/hora por IP (ver el comentario
+// junto a esa función) — no compite con gente real abriendo detalles de
+// reportes. Se pide solo para las coincidencias que ya superaron el umbral,
+// nunca en bloque para los 200 candidatos.
+async function fetchReportContactServer(supabaseUrl, apiKey, reportId) {
+  const res = await fetch(`${supabaseUrl}/rest/v1/rpc/get_report_contact`, {
+    method: "POST",
+    headers: { apikey: apiKey, Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ p_report_id: reportId }),
+  });
+  if (!res.ok) return "";
+  const rows = await res.json();
+  return (Array.isArray(rows) ? rows[0]?.contacto_email : null) || "";
 }
 
 async function sendMatchEmail({ resendKey, toEmail, matchedReport, newReport, score }) {
@@ -142,19 +167,29 @@ export async function POST(request) {
   const candidateRows = await fetchCandidates(supabaseUrl, supabaseKey, row);
   const candidates = candidateRows.map(rowToMatchable);
 
-  // Mismo umbral y tope para los dos canales — un push es tan intrusivo
-  // como un email (o más, en el momento), así que no tiene sentido ser más
-  // permisivo con uno que con otro.
-  const matches = findMatches(newReport, candidates)
-    .filter((m) => m.score >= EMAIL_SCORE_THRESHOLD && (m.report.contactoEmail || m.report.pushSubscription))
-    .slice(0, MAX_EMAILS_PER_REPORT);
+  // Mismo umbral para los dos canales — un push es tan intrusivo como un
+  // email (o más, en el momento), así que no tiene sentido ser más
+  // permisivo con uno que con otro. limit:10 acota cuántos candidatos se
+  // van a considerar (y, por lo tanto, cuántas veces como máximo se llama a
+  // fetchReportContactServer) sin depender de que ya traigan el email —eso
+  // ahora se pide aparte, ver más abajo.
+  const matches = findMatches(newReport, candidates, { limit: 10 }).filter((m) => m.score >= EMAIL_SCORE_THRESHOLD);
 
   let notified = 0;
   for (const m of matches) {
+    if (notified >= MAX_EMAILS_PER_REPORT) break;
     let sentSomething = false;
-    if (m.report.contactoEmail) {
+
+    let contactoEmail = "";
+    try {
+      contactoEmail = await fetchReportContactServer(supabaseUrl, supabaseKey, m.report.id);
+    } catch (e) {
+      logError("No se pudo obtener el email de contacto para la coincidencia", e);
+    }
+
+    if (contactoEmail) {
       try {
-        await sendMatchEmail({ resendKey, toEmail: m.report.contactoEmail, matchedReport: m.report, newReport, score: m.score });
+        await sendMatchEmail({ resendKey, toEmail: contactoEmail, matchedReport: m.report, newReport, score: m.score });
         sentSomething = true;
       } catch (e) {
         logError("No se pudo mandar el email de coincidencia", e);

@@ -1,5 +1,57 @@
 # Decisiones pendientes — requieren acción o información tuya
 
+## -7. Cerrar el hueco real del contacto (WhatsApp/email) (2026-08-05) — requiere 1 paso tuyo
+
+**Qué pasó:** al revisar `schema.sql` a fondo encontré que la protección de
+contacto de la sesión anterior ("el listado general no trae WhatsApp/email")
+era solo una convención del código del cliente, no una restricción real de
+la base. La política de lectura de `reports` es `using (true)` —controla
+FILAS, no columnas— así que cualquiera con la anon key (pública, está en el
+bundle del navegador de toda la app, no es un secreto) podía pedir
+`select=contacto_whatsapp,contacto_email` directo a la API REST de Supabase
+y llevarse el contacto de TODOS los reportes activos en un solo pedido, sin
+pasar por ningún código de la app.
+
+**Qué hice:** revoqué el SELECT de esas dos columnas puntuales a nivel de
+Postgres para `anon`/`authenticated` (`revoke select (...) on reports from
+anon, authenticated`) — ya no hay ningún SELECT directo, desde donde sea,
+que pueda traerlas. El único camino que queda es una función nueva
+(`get_report_contact`), rate-limitada a 30 consultas por hora por IP, con
+su propio cupo separado del de publicar reportes. Actualicé:
+- `fetchReportContact` en `src/lib/store.js` para llamar a esa función en
+  vez de un `.select()` directo.
+- El webhook `src/app/api/notify-match/route.js`, que usa la anon key y
+  antes pedía `select=*` (incluía el email de los ~200 candidatos en
+  bloque) — ahora pide columnas explícitas sin contacto, y recién pide el
+  email puntual de cada coincidencia que ya superó el umbral de aviso.
+
+**Lo que esto NO resuelve (limitación real, no un descuido):** una vez que
+una persona real abre el detalle y ve el WhatsApp, ese número tiene que
+llegar al navegador para armar el link `wa.me/<numero>` — no hay forma de
+"proxyearlo" sin la API oficial de WhatsApp Business (cuenta aprobada,
+costo, infraestructura propia). Es un riesgo residual aceptado, mismo
+nivel que otros ya documentados en este archivo. Si en algún momento
+importa más el email que el WhatsApp, existe una versión que nunca expone
+la dirección (un botón "Enviar mensaje" que pega a una API route propia
+que manda el email por vos) — quedó anotado como mejora futura, no
+implementado todavía.
+
+**Paso pendiente — correr la migración de schema.sql:**
+1. Abrí el SQL Editor de tu proyecto Supabase.
+2. Pegá y ejecutá todo `supabase/schema.sql` de nuevo (revoca las columnas,
+   crea `contact_requests` y la función `get_report_contact`).
+
+**Mientras no corras el paso de abajo:** el `revoke`/la función nueva no
+existen todavía del lado de la base. `fetchReportContact` lo detecta (mismo
+patrón que raza/detalles) y cae solo al SELECT directo de siempre, así que
+ver el contacto en el detalle de un reporte sigue andando igual — el hueco
+simplemente sigue abierto hasta que corras la migración. Lo único que sí
+pausa mientras tanto: los emails automáticos de "posible coincidencia"
+(webhook `notify-match`) — dejan de mandarse hasta que exista la función
+(el push, si lo tenés configurado, sigue funcionando igual).
+
+---
+
 ## -6. Rediseño de "Detalles para reconocerlo" (2026-08-05) — requiere 1 paso tuyo
 
 **Qué hace:** la sección que antes era "¿Tenía algo puesto? / ¿Cómo se

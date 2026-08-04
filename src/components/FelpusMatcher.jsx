@@ -392,8 +392,11 @@ export default function FelpusMatcher() {
 
   // El listado general (reports) ya no trae contacto_whatsapp/contacto_email
   // (ver fetchReports en lib/store.js) — se piden recién acá, al abrir el
-  // detalle de ESE reporte puntual, así un scraper que solo lee la lista no
-  // se lleva el contacto de nadie sin abrir cada publicación una por una.
+  // detalle de ESE reporte puntual, vía una función rate-limitada
+  // (fetchReportContact -> RPC get_report_contact, ver schema.sql). Esas dos
+  // columnas tienen el SELECT revocado a nivel de Postgres para
+  // anon/authenticated, así que ya no hay ningún SELECT directo —ni desde
+  // acá ni desde afuera de la app— que pueda traer el contacto en bloque.
   async function openReportDetail(report) {
     setDetailReport(report);
     if (!report || report.resuelto) return; // resuelto: la base ya lo borró, no hay nada que pedir
