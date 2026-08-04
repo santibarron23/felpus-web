@@ -1,5 +1,45 @@
 # Decisiones pendientes — requieren acción o información tuya
 
+## -6. Rediseño de "Detalles para reconocerlo" (2026-08-05) — requiere 1 paso tuyo
+
+**Qué hace:** la sección que antes era "¿Tenía algo puesto? / ¿Cómo se
+comporta? / Algo más para identificarla / Así se va a ver la descripción" se
+rediseñó completa:
+- **¿Tenía algo puesto?** — mismos chips, con "Nada" en vez de "Sin nada puesto".
+- **¿Cómo reacciona con desconocidos?** — reemplaza al "¿Cómo se comporta?"
+  de 16 opciones en 3 categorías por 6 opciones puntuales y accionables (Se
+  acerca, Se deja agarrar, Es miedoso/a, Puede escapar, Ladra o gruñe, No sé).
+- **¿Tiene algo que lo haga fácil de reconocer?** — reemplaza al textarea
+  libre por chips (mancha, cicatriz, le falta una oreja/pata, cojea, ojos de
+  distinto color, muy peludo/a, otro). Elegir "Mancha particular" despliega
+  una pregunta más (dónde) y, opcionalmente, de qué color — sin saltos
+  bruscos de layout.
+- El texto libre pasa a ser sólo "¿Querés agregar algo más?" (con Dictar por
+  voz), para lo que de verdad no entra en ningún chip.
+- La vista previa ("Vista previa", antes "Así se va a ver la descripción")
+  ahora es compacta y sólo aparece cuando hay algo que mostrar.
+
+Además de seguir armando `descripcion` en texto (como antes), ahora también
+se guarda un objeto **estructurado** (`accesorios`, `comportamientos`,
+`marca_distintiva`, `ubicacion_marca`, `color_marca` — ver
+`buildDetallesEstructurados` en `src/lib/matching.js`) en una columna nueva,
+`detalles` (jsonb). El matching ya lo usa como una señal más (ver
+`detallesSimilarity`), con peso moderado.
+
+**Mientras no corras el paso de abajo:** todo funciona igual —la app
+detecta que la columna no existe todavía y sigue publicando/cargando
+reportes con normalidad—, simplemente ese dato estructurado no se guarda (ni
+suma al matching) hasta que se corra la migración. Es el mismo mecanismo de
+respaldo que ya se usa para `raza` (ver `fetchReports`/`createReport` en
+`src/lib/store.js`).
+
+**Paso pendiente — correr la migración de schema.sql:**
+1. Abrí el SQL Editor de tu proyecto Supabase.
+2. Pegá y ejecutá todo `supabase/schema.sql` de nuevo (agrega la columna
+   `detalles` a `reports`).
+
+---
+
 ## -5. Notificaciones push del navegador (2026-08-04) — requiere 2 pasos tuyos
 
 **Qué hace:** además del email, ahora se puede activar un aviso push del

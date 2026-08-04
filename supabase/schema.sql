@@ -82,6 +82,14 @@ alter table reports add column if not exists push_subscription jsonb;
 alter table reports add column if not exists raza text;
 alter table reports drop constraint if exists reports_raza_len;
 alter table reports add constraint reports_raza_len check (raza is null or char_length(raza) <= 60) not valid;
+-- "Detalles para reconocerlo": accesorio, reacción con desconocidos y marca
+-- distintiva, en forma estructurada (ids fijos, ver ACCESORIO_OPTIONS/
+-- REACCION_OPTIONS/MARCA_OPTIONS en matching.js) además de la frase que ya
+-- se arma sola dentro de "descripcion" — pensado para pesar en el matching
+-- (ver detallesSimilarity) sin depender de comparar texto libre.
+alter table reports add column if not exists detalles jsonb;
+alter table reports drop constraint if exists reports_detalles_len;
+alter table reports add constraint reports_detalles_len check (detalles is null or char_length(detalles::text) <= 2000) not valid;
 
 -- ---------------------------------------------------------------------------
 -- Límites de longitud a nivel de base de datos: el formulario ya los aplica

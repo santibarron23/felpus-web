@@ -16,6 +16,10 @@ function rowToReport(row) {
     tipo: row.tipo,
     especie: row.especie,
     raza: row.raza || "",
+    // "Detalles para reconocerlo" (accesorio/reacción con desconocidos/marca
+    // distintiva) — ver buildDetallesEstructurados en matching.js. Objeto
+    // vacío por defecto para reportes viejos que no lo tienen.
+    detalles: row.detalles || {},
     nombre: row.nombre || "",
     color: row.color,
     colorOtro: row.color_otro || "",
@@ -92,33 +96,52 @@ export async function deleteReport(reportId, ownerUserId, fotoUrls) {
 // activas de una sola vez. Ahora hay que abrir cada reporte puntual (ver
 // fetchReportContact) — no es un límite duro (la key sigue siendo pública),
 // pero saca el "un pedido, todos los contactos" más obvio.
-const REPORT_LIST_COLUMNS =
-  "id,tipo,especie,raza,nombre,color,color_otro,tamano,sexo,edad,peso,zona,lat,lng,fecha,descripcion,foto_url,hist,embedding,foto_urls,hists,embeddings,nickname,resuelto,resuelto_por,resuelto_por_user_id,resuelto_en,creado_en,user_id";
-// Antes de correr la migración que agrega la columna "raza" (ver
-// PENDIENTE_DECISION.md), pedirla acá tira un error de PostgREST que
-// tumbaba TODA la lista de reportes — a diferencia de otras columnas
-// nuevas de esta sesión (push_subscription, etc.), esta sí vive en el
-// select principal, así que un despliegue sin la migración corrida
-// dejaría la app entera sin poder cargar reportes. Este fallback reintenta
-// sin "raza" específicamente ante ese error, para que la lista siga
-// funcionando (sin raza) hasta que se corra la migración.
-const REPORT_LIST_COLUMNS_SIN_RAZA = REPORT_LIST_COLUMNS.replace("especie,raza,", "especie,");
+const REPORT_LIST_BASE_FIELDS = [
+  "id", "tipo", "especie", "nombre", "color", "color_otro", "tamano", "sexo", "edad", "peso",
+  "zona", "lat", "lng", "fecha", "descripcion", "foto_url", "hist", "embedding", "foto_urls",
+  "hists", "embeddings", "nickname", "resuelto", "resuelto_por", "resuelto_por_user_id",
+  "resuelto_en", "creado_en", "user_id",
+];
+// Columnas agregadas en migraciones posteriores a la primera versión de
+// schema.sql (ver PENDIENTE_DECISION.md) que todavía pueden no existir en un
+// despliegue que no corrió la última migración. Pedir una columna que no
+// existe tira un error de PostgREST que tumba TODA la lista de reportes —a
+// diferencia de columnas como push_subscription, que no viven en este
+// select— así que fetchReports/createReport reintentan automáticamente sin
+// la columna puntual que falte, en vez de dejar la app entera sin poder
+// cargar/publicar reportes hasta que se corra la migración.
+const REPORT_LIST_OPTIONAL_COLUMNS = ["raza", "detalles"];
 
-async function queryReportList(columns) {
-  return supabase.from(REPORTS_TABLE).select(columns).order("creado_en", { ascending: false });
+function reportListColumns(excluded) {
+  const fields = [...REPORT_LIST_BASE_FIELDS];
+  const insertAt = fields.indexOf("especie") + 1;
+  const optional = REPORT_LIST_OPTIONAL_COLUMNS.filter((c) => !excluded.has(c));
+  fields.splice(insertAt, 0, ...optional);
+  return fields.join(",");
+}
+
+// Detecta si un error de PostgREST es por una columna puntual que no existe
+// todavía (42703 undefined_column), y de ser así, cuál de las opcionales es.
+function missingOptionalColumn(error, candidates) {
+  if (!error) return null;
+  const text = `${error.message || ""} ${error.code || ""}`;
+  if (!text.includes("42703") && !/does not exist/i.test(text)) return null;
+  return candidates.find((c) => new RegExp(`\\b${c}\\b`, "i").test(text)) || null;
 }
 
 export async function fetchReports() {
-  const first = await queryReportList(REPORT_LIST_COLUMNS);
-  const result = isMissingRazaColumnError(first.error) ? await queryReportList(REPORT_LIST_COLUMNS_SIN_RAZA) : first;
-  if (result.error) throw result.error;
-  return (result.data || []).map(rowToReport);
-}
-
-function isMissingRazaColumnError(error) {
-  if (!error) return false;
-  const text = `${error.message || ""} ${error.code || ""}`;
-  return text.includes("42703") || /raza.*does not exist|does not exist.*raza/i.test(text);
+  const excluded = new Set();
+  for (let attempt = 0; attempt <= REPORT_LIST_OPTIONAL_COLUMNS.length; attempt++) {
+    const columns = reportListColumns(excluded);
+    const result = await supabase.from(REPORTS_TABLE).select(columns).order("creado_en", { ascending: false });
+    const missing = missingOptionalColumn(result.error, REPORT_LIST_OPTIONAL_COLUMNS);
+    if (!missing || excluded.has(missing)) {
+      if (result.error) throw result.error;
+      return (result.data || []).map(rowToReport);
+    }
+    excluded.add(missing);
+  }
+  throw new Error("No se pudo cargar el listado de reportes.");
 }
 
 // Se pide recién cuando alguien abre el detalle de ESE reporte puntual.
@@ -155,6 +178,7 @@ export async function createReport(report) {
     tipo: report.tipo,
     especie: report.especie,
     raza: report.raza || null,
+    detalles: report.detalles && Object.keys(report.detalles).length ? report.detalles : null,
     nombre: report.nombre || null,
     color: report.color,
     color_otro: report.colorOtro || null,
@@ -180,17 +204,24 @@ export async function createReport(report) {
     resuelto: false,
   };
 
-  const first = await supabase.from(REPORTS_TABLE).insert(row);
   // Mismo motivo que en fetchReports: antes de correr la migración que
-  // agrega "raza" (ver PENDIENTE_DECISION.md), publicar un reporte nuevo
-  // fallaría por completo si esa columna no existe todavía. Reintenta sin
-  // ese campo específico — la persona pierde solo el dato de raza hasta que
-  // se corra la migración, no la posibilidad de publicar.
-  let finalError = first.error;
-  if (isMissingRazaColumnError(first.error)) {
-    const { raza, ...rowSinRaza } = row;
-    const retry = await supabase.from(REPORTS_TABLE).insert(rowSinRaza);
-    finalError = retry.error;
+  // agrega "raza"/"detalles" (ver PENDIENTE_DECISION.md), publicar un
+  // reporte nuevo fallaría por completo si alguna de esas columnas no existe
+  // todavía. Reintenta sin el campo puntual que falte — la persona pierde
+  // sólo ese dato hasta que se corra la migración, no la posibilidad de
+  // publicar.
+  let attemptRow = row;
+  let finalError = null;
+  for (let attempt = 0; attempt <= REPORT_LIST_OPTIONAL_COLUMNS.length; attempt++) {
+    const result = await supabase.from(REPORTS_TABLE).insert(attemptRow);
+    const missing = missingOptionalColumn(result.error, REPORT_LIST_OPTIONAL_COLUMNS);
+    if (!missing || !(missing in attemptRow)) {
+      finalError = result.error;
+      break;
+    }
+    const { [missing]: _omit, ...rest } = attemptRow;
+    attemptRow = rest;
+    finalError = result.error;
   }
   if (finalError) throw finalError;
   return { ...report, foto: uploaded[0].url, fotos: uploaded };

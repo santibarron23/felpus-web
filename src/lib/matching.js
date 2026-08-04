@@ -89,6 +89,63 @@ export const RAZA_OPTIONS_GATO = [
   "Esfinge/Sphynx",
 ];
 
+// ---------------------------------------------------------------------------
+// "Detalles para reconocerlo": accesorio, reacción con desconocidos y marca
+// distintiva. Cada opción usa un id estable (snake_case) — es lo que se
+// guarda tal cual en el objeto "detalles" del reporte (ver
+// buildDetallesEstructurados) y en el matching (ver detallesSimilarity); el
+// label es sólo lo que se muestra en el chip y puede cambiar de redacción
+// sin romper reportes ya guardados.
+// ---------------------------------------------------------------------------
+export const ACCESORIO_OPTIONS = [
+  { id: "collar", label: "Collar" },
+  { id: "arnes", label: "Arnés" },
+  { id: "chapita", label: "Chapita identificatoria" },
+  { id: "panuelo", label: "Pañuelo" },
+  { id: "nada", label: "Nada" },
+];
+
+// A diferencia del "¿Cómo se comporta?" genérico de antes, esto pregunta
+// puntualmente por la reacción con desconocidos: lo único de esto que de
+// verdad es accionable para quien encuentra a la mascota (¿conviene
+// acercarse? ¿hay riesgo de que se escape?). "no_se" es mutuamente
+// excluyente con el resto (ver toggleReaccionChip en FelpusMatcher.jsx),
+// igual que "nada" en accesorios — por eso no aporta clause.
+export const REACCION_OPTIONS = [
+  { id: "se_acerca", label: "Se acerca", clause: "Se acerca a los desconocidos" },
+  { id: "se_deja_agarrar", label: "Se deja agarrar", clause: "Se deja agarrar sin problema" },
+  { id: "miedoso", label: "Es miedoso/a", clause: "Es miedoso/a con los desconocidos" },
+  { id: "puede_escapar", label: "Puede escapar", clause: "Puede escaparse o alejarse corriendo" },
+  { id: "ladra_gruñe", label: "Ladra o gruñe", clause: "Ladra o gruñe si se le acercan" },
+  { id: "no_se", label: "No sé", clause: "" },
+];
+
+// "Mancha particular" es la única que abre una pregunta más (ubicación y,
+// opcionalmente, color — ver MANCHA_UBICACION_OPTIONS/MANCHA_COLOR_OPTIONS y
+// composeMarcaSentence). "otro" no compone ninguna frase — cualquier clause
+// prearmada para "otro" sería tan genérica que no sumaría nada; en cambio
+// enfoca el campo de texto libre de abajo (ver FelpusMatcher.jsx).
+export const MARCA_OPTIONS = [
+  { id: "mancha", label: "Mancha particular", clause: "" },
+  { id: "cicatriz", label: "Cicatriz", clause: "Tiene una cicatriz visible" },
+  { id: "falta_miembro", label: "Le falta una oreja o una pata", clause: "Le falta una oreja o una pata" },
+  { id: "cojea", label: "Cojea", clause: "Cojea" },
+  { id: "ojos_distintos", label: "Ojos de distinto color", clause: "Tiene los ojos de distinto color" },
+  { id: "peludo", label: "Muy peludo/a", clause: "Es muy peludo/a" },
+  { id: "otro", label: "Otro", clause: "" },
+];
+
+export const MANCHA_UBICACION_OPTIONS = [
+  { id: "cara", label: "Cara", prep: "en la cara" },
+  { id: "pecho", label: "Pecho", prep: "en el pecho" },
+  { id: "lomo", label: "Lomo", prep: "en el lomo" },
+  { id: "panza", label: "Panza", prep: "en la panza" },
+  { id: "patas", label: "Patas", prep: "en las patas" },
+  { id: "otro", label: "Otro", prep: "" },
+];
+
+export const MANCHA_COLOR_OPTIONS = ["Blanca", "Negra", "Marrón", "Dorada", "Gris", "Otro color"];
+
 const STOPWORDS = new Set([
   "de", "la", "el", "en", "un", "una", "con", "sin", "por", "que", "es",
   "su", "al", "y", "del", "las", "los", "se", "lo", "muy", "esta", "este",
@@ -357,6 +414,47 @@ function razaSimilarity(razaA, razaB) {
   return 0;
 }
 
+// Bono de matching a partir del objeto "detalles" estructurado (accesorio/
+// reacción/marca distintiva — ver buildDetallesEstructurados). Deliberadamente
+// modesto: son datos nuevos y opcionales, con catálogos todavía chicos, a
+// diferencia de color/tamaño que son campos "cerrados" desde el principio.
+// "no_se"/"nada"/"otro" se excluyen de la comparación: no aportan señal real
+// (mismo criterio que "No sé" en sexo/edad/peso, o "mestizo/a" en raza).
+const DETALLE_IDS_SIN_SENAL = new Set(["no_se", "nada", "otro"]);
+function detalleIdsSignal(ids) {
+  return (ids || []).filter((id) => !DETALLE_IDS_SIN_SENAL.has(id));
+}
+function detallesSimilarity(a, b) {
+  const da = a?.detalles || {};
+  const db = b?.detalles || {};
+  const parts = [];
+
+  const accA = detalleIdsSignal(da.accesorios);
+  const accB = detalleIdsSignal(db.accesorios);
+  if (accA.length && accB.length) parts.push({ weight: 0.3, value: jaccard(accA, accB) });
+
+  const comA = detalleIdsSignal(da.comportamientos);
+  const comB = detalleIdsSignal(db.comportamientos);
+  if (comA.length && comB.length) parts.push({ weight: 0.3, value: jaccard(comA, comB) });
+
+  const marA = detalleIdsSignal(da.marca_distintiva);
+  const marB = detalleIdsSignal(db.marca_distintiva);
+  if (marA.length && marB.length) {
+    let value = jaccard(marA, marB);
+    // Bono extra si además coincide la ubicación de la mancha — mismo
+    // criterio que colorOtroSimilarity: un detalle puntual que coincide es
+    // una señal más fuerte que la categoría genérica sola.
+    if (marA.includes("mancha") && marB.includes("mancha") && da.ubicacion_marca && da.ubicacion_marca === db.ubicacion_marca) {
+      value = Math.min(1, value + 0.25);
+    }
+    parts.push({ weight: 0.4, value });
+  }
+
+  if (parts.length === 0) return null;
+  const totalWeight = parts.reduce((s, p) => s + p.weight, 0);
+  return parts.reduce((s, p) => s + p.weight * p.value, 0) / totalWeight;
+}
+
 // Compara los campos estructurados (color, tamaño, edad, peso) en vez de
 // meterlos en la misma bolsa de palabras que la descripción libre. Dos
 // reportes de la misma mascota casi siempre coinciden en estos campos (son
@@ -377,6 +475,12 @@ function structuredFieldSimilarity(a, b) {
   // saber si dos reportes son la misma mascota.
   const razaSim = razaSimilarity(a.raza, b.raza);
   if (razaSim != null) parts.push({ weight: 0.3, value: razaSim });
+  // "Detalles para reconocerlo" (accesorio/reacción/marca distintiva) — ver
+  // detallesSimilarity más abajo. Peso moderado: son datos nuevos y
+  // opcionales, con catálogos todavía chicos, así que no deberían pesar más
+  // que color o raza.
+  const detallesSim = detallesSimilarity(a, b);
+  if (detallesSim != null) parts.push({ weight: 0.2, value: detallesSim });
   // El sexo es un dato biológico estable (a diferencia del peso, que varía
   // con el tiempo) — casi tan confiable como el color para descartar o
   // confirmar. "No sé" no aporta señal y queda afuera del promedio.
@@ -645,6 +749,63 @@ export function composeClauses(clauses) {
     .filter(Boolean)
     .map((c) => (c.trim().endsWith(".") ? c.trim() : `${c.trim()}.`))
     .join(" ");
+}
+
+// Las 3 preguntas de "Detalles para reconocerlo" (ver ACCESORIO_OPTIONS/
+// REACCION_OPTIONS/MARCA_OPTIONS más arriba), cada una como función pura que
+// recibe los ids seleccionados y devuelve la frase lista para sumar a
+// form.descripcion — mismo patrón que composeDescripcionBase.
+export function composeAccesorioSentence(ids) {
+  if (!ids || ids.length === 0) return "";
+  if (ids.includes("nada")) return "No tenía nada puesto.";
+  const labels = ids.map((id) => ACCESORIO_OPTIONS.find((o) => o.id === id)?.label).filter(Boolean);
+  return composeChipSentence("Tenía", labels);
+}
+
+export function composeReaccionSentence(ids) {
+  if (!ids || ids.length === 0) return "";
+  const clauses = ids
+    .filter((id) => id !== "no_se")
+    .map((id) => REACCION_OPTIONS.find((o) => o.id === id)?.clause)
+    .filter(Boolean);
+  return composeClauses(clauses);
+}
+
+// La mancha es la única marca con datos propios (ubicación + color
+// opcional) — el resto son clauses fijas que ya vienen armadas en
+// MARCA_OPTIONS. "otro" nunca aporta clause (ver comentario junto a
+// MARCA_OPTIONS).
+export function composeMarcaSentence(ids, { manchaUbicacion, manchaColor } = {}) {
+  if (!ids || ids.length === 0) return "";
+  const clauses = [];
+  if (ids.includes("mancha")) {
+    const colorTxt = manchaColor && manchaColor !== "Otro color" ? ` ${manchaColor.toLowerCase()}` : "";
+    const ubicacionOpt = MANCHA_UBICACION_OPTIONS.find((o) => o.id === manchaUbicacion);
+    const prep = ubicacionOpt?.prep ? ` ${ubicacionOpt.prep}` : "";
+    clauses.push(`Tiene una mancha${colorTxt} particular${prep}`);
+  }
+  ids
+    .filter((id) => id !== "mancha" && id !== "otro")
+    .forEach((id) => {
+      const clause = MARCA_OPTIONS.find((o) => o.id === id)?.clause;
+      if (clause) clauses.push(clause);
+    });
+  return composeClauses(clauses);
+}
+
+// Todo lo seleccionado en "Detalles para reconocerlo" queda además en un
+// objeto estructurado (no sólo concatenado en form.descripcion) — hoy se usa
+// para un bono de matching (ver detallesSimilarity) y deja la puerta abierta
+// a pesarlo más el día que el catálogo de opciones crezca. Se omiten los
+// campos vacíos para no guardar ruido en la base.
+export function buildDetallesEstructurados({ accesorios, comportamientos, marcaDistintiva, ubicacionMarca, colorMarca } = {}) {
+  const out = {};
+  if (accesorios?.length) out.accesorios = accesorios;
+  if (comportamientos?.length) out.comportamientos = comportamientos;
+  if (marcaDistintiva?.length) out.marca_distintiva = marcaDistintiva;
+  if (ubicacionMarca) out.ubicacion_marca = ubicacionMarca;
+  if (colorMarca) out.color_marca = colorMarca;
+  return out;
 }
 
 export function buildShareText(report) {

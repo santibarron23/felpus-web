@@ -22,6 +22,10 @@ import {
   composeDescripcionBase,
   composeChipSentence,
   composeClauses,
+  composeAccesorioSentence,
+  composeReaccionSentence,
+  composeMarcaSentence,
+  buildDetallesEstructurados,
   SCORE_MINIMO,
 } from "./matching";
 
@@ -201,6 +205,26 @@ describe("scoreMatch", () => {
     const sinRaza = scoreMatch(base, makeReport({ id: "r2", raza: "" })).score;
     const dosMestizos = scoreMatch(makeReport({ raza: "Mestizo/a" }), makeReport({ id: "r3", raza: "Mestizo/a" })).score;
     expect(dosMestizos).toBe(sinRaza);
+  });
+
+  it("coincidir en detalles estructurados (accesorio/comportamiento/marca) sube el score", () => {
+    const detallesA = { accesorios: ["collar"], comportamientos: ["miedoso"], marca_distintiva: ["mancha"], ubicacion_marca: "pecho" };
+    const base = makeReport({ detalles: detallesA });
+    const coincide = scoreMatch(base, makeReport({ id: "r2", detalles: detallesA })).score;
+    const noCoincide = scoreMatch(
+      base,
+      makeReport({ id: "r3", detalles: { accesorios: ["panuelo"], comportamientos: ["se_acerca"], marca_distintiva: ["cojea"] } })
+    ).score;
+    expect(coincide).toBeGreaterThan(noCoincide);
+  });
+
+  it("'no_se'/'nada'/'otro' en detalles no aportan señal (ni a favor ni en contra)", () => {
+    const sinDetalles = scoreMatch(makeReport({ detalles: {} }), makeReport({ id: "r2", detalles: {} })).score;
+    const soloRuido = scoreMatch(
+      makeReport({ detalles: { accesorios: ["nada"], comportamientos: ["no_se"] } }),
+      makeReport({ id: "r3", detalles: { accesorios: ["nada"], comportamientos: ["no_se"] } })
+    ).score;
+    expect(soloRuido).toBe(sinDetalles);
   });
 });
 
@@ -432,6 +456,100 @@ describe("composeClauses", () => {
   it("devuelve cadena vacía sin oraciones", () => {
     expect(composeClauses([])).toBe("");
     expect(composeClauses(null)).toBe("");
+  });
+});
+
+describe("composeAccesorioSentence", () => {
+  it("arma la frase a partir de los ids seleccionados", () => {
+    expect(composeAccesorioSentence(["collar"])).toBe("Tenía collar.");
+    expect(composeAccesorioSentence(["collar", "chapita"])).toBe("Tenía collar y chapita identificatoria.");
+  });
+
+  it("'nada' da una frase propia y excluye cualquier otro accesorio", () => {
+    expect(composeAccesorioSentence(["nada"])).toBe("No tenía nada puesto.");
+    expect(composeAccesorioSentence(["collar", "nada"])).toBe("No tenía nada puesto.");
+  });
+
+  it("devuelve cadena vacía sin selección", () => {
+    expect(composeAccesorioSentence([])).toBe("");
+    expect(composeAccesorioSentence(null)).toBe("");
+  });
+});
+
+describe("composeReaccionSentence", () => {
+  it("arma una oración por cada reacción seleccionada", () => {
+    expect(composeReaccionSentence(["se_acerca"])).toBe("Se acerca a los desconocidos.");
+    expect(composeReaccionSentence(["miedoso", "puede_escapar"])).toBe(
+      "Es miedoso/a con los desconocidos. Puede escaparse o alejarse corriendo."
+    );
+  });
+
+  it("'no_se' no aporta ninguna oración (mismo criterio que 'Mestizo/a' en raza)", () => {
+    expect(composeReaccionSentence(["no_se"])).toBe("");
+    expect(composeReaccionSentence(["no_se", "se_acerca"])).toBe("Se acerca a los desconocidos.");
+  });
+
+  it("devuelve cadena vacía sin selección", () => {
+    expect(composeReaccionSentence([])).toBe("");
+    expect(composeReaccionSentence(null)).toBe("");
+  });
+});
+
+describe("composeMarcaSentence", () => {
+  it("arma una oración por cada marca fija seleccionada", () => {
+    expect(composeMarcaSentence(["cicatriz"])).toBe("Tiene una cicatriz visible.");
+    expect(composeMarcaSentence(["cojea", "peludo"])).toBe("Cojea. Es muy peludo/a.");
+  });
+
+  it("'mancha' sin ubicación ni color da una frase genérica", () => {
+    expect(composeMarcaSentence(["mancha"])).toBe("Tiene una mancha particular.");
+  });
+
+  it("'mancha' con ubicación agrega la preposición correcta", () => {
+    expect(composeMarcaSentence(["mancha"], { manchaUbicacion: "pecho" })).toBe("Tiene una mancha particular en el pecho.");
+    expect(composeMarcaSentence(["mancha"], { manchaUbicacion: "cara" })).toBe("Tiene una mancha particular en la cara.");
+    expect(composeMarcaSentence(["mancha"], { manchaUbicacion: "patas" })).toBe("Tiene una mancha particular en las patas.");
+  });
+
+  it("'mancha' con ubicación y color arma la frase completa", () => {
+    expect(composeMarcaSentence(["mancha"], { manchaUbicacion: "pecho", manchaColor: "Blanca" })).toBe(
+      "Tiene una mancha blanca particular en el pecho."
+    );
+  });
+
+  it("'otro' no aporta ninguna oración propia", () => {
+    expect(composeMarcaSentence(["otro"])).toBe("");
+    expect(composeMarcaSentence(["cojea", "otro"])).toBe("Cojea.");
+  });
+
+  it("devuelve cadena vacía sin selección", () => {
+    expect(composeMarcaSentence([])).toBe("");
+    expect(composeMarcaSentence(null)).toBe("");
+  });
+});
+
+describe("buildDetallesEstructurados", () => {
+  it("arma el objeto con lo seleccionado, omitiendo campos vacíos", () => {
+    expect(
+      buildDetallesEstructurados({
+        accesorios: ["collar"],
+        comportamientos: ["miedoso", "puede_escapar"],
+        marcaDistintiva: ["mancha"],
+        ubicacionMarca: "pecho",
+        colorMarca: "Blanca",
+      })
+    ).toEqual({
+      accesorios: ["collar"],
+      comportamientos: ["miedoso", "puede_escapar"],
+      marca_distintiva: ["mancha"],
+      ubicacion_marca: "pecho",
+      color_marca: "Blanca",
+    });
+  });
+
+  it("devuelve un objeto vacío sin ninguna selección", () => {
+    expect(buildDetallesEstructurados()).toEqual({});
+    expect(buildDetallesEstructurados({ accesorios: [], comportamientos: [], marcaDistintiva: [], ubicacionMarca: "", colorMarca: "" })).toEqual({});
   });
 });
 

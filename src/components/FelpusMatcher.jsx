@@ -53,9 +53,16 @@ import {
   PESO_OPTIONS,
   RAZA_OPTIONS_PERRO,
   RAZA_OPTIONS_GATO,
+  ACCESORIO_OPTIONS,
+  REACCION_OPTIONS,
+  MARCA_OPTIONS,
+  MANCHA_UBICACION_OPTIONS,
+  MANCHA_COLOR_OPTIONS,
   composeDescripcionBase,
-  composeChipSentence,
-  composeClauses,
+  composeAccesorioSentence,
+  composeReaccionSentence,
+  composeMarcaSentence,
+  buildDetallesEstructurados,
   PUNTOS_PERDIDA,
   PUNTOS_ENCONTRADA,
   PUNTOS_REENCUENTRO,
@@ -145,69 +152,17 @@ const SCAN_STEPS = [
   "Buscando reportes cercanos...",
 ];
 
-// Rediseño de "Descripción" (ver composeDescripcionBase/composeChipSentence
-// en matching.js): en vez de una hoja en blanco pidiendo señas + collar +
-// comportamiento a la vez, esto son botones de un solo toque para las dos
-// preguntas que casi siempre se pueden contestar sin escribir nada. Lo que
-// sí varía persona a persona (cicatrices, le falta una oreja, etc.) queda
-// en el campo de texto de abajo, ahora acotado a "algo más" en vez de "todo".
-const COLLAR_CHIPS = ["Collar", "Arnés", "Chapita con nombre", "Pañuelo", "Sin nada puesto"];
-// Cada chip trae su propia oración ya armada (campo "clause") en vez de un
-// adjetivo suelto — "Sociable" encaja en el molde "Es X", pero "Se deja
-// agarrar" o "Responde a su nombre" ya son oraciones propias; forzarlas al
-// mismo molde daba frases rotas ("Es se deja agarrar"). Ver composeClauses
-// en matching.js. Agrupado en 3 categorías cortas (en vez de una sola lista
-// larga) para que se pueda escanear de un vistazo aunque haya más opciones.
-const COMPORTAMIENTO_GROUPS = [
-  {
-    title: "Con personas",
-    chips: [
-      { label: "Sociable", clause: "Es sociable" },
-      { label: "Tímido/a con extraños", clause: "Es tímido/a con extraños" },
-      { label: "Se deja agarrar", clause: "Se deja agarrar sin problema" },
-      { label: "No se acerca a desconocidos", clause: "No se acerca a desconocidos" },
-      { label: "Bueno con niños", clause: "Es bueno con los niños" },
-      { label: "Puede reaccionar mal si lo asustan", clause: "Puede asustarse o reaccionar mal si lo agarran de golpe" },
-    ],
-  },
-  {
-    title: "Con otros animales",
-    chips: [
-      { label: "Se lleva bien con otros animales", clause: "Se lleva bien con otros animales" },
-      { label: "No le gustan otros animales", clause: "No se lleva bien con otros animales" },
-    ],
-  },
-  {
-    title: "Otras características",
-    chips: [
-      { label: "Escapista", clause: "Es escapista, se escapa fácil" },
-      { label: "Muy activo/a", clause: "Es muy activo/a e inquieto/a" },
-      { label: "Tranquilo/a", clause: "Es tranquilo/a, casi no se mueve" },
-      { label: "Ladra/maúlla mucho", clause: "Ladra o maúlla mucho" },
-      { label: "Casi no hace ruido", clause: "Casi no hace ruido" },
-      { label: "Responde a su nombre", clause: "Responde a su nombre" },
-      { label: "Sordo/a", clause: "Es sordo/a" },
-      { label: "Ciego/a", clause: "Es ciego/a" },
-    ],
-  },
-];
-// Mapa plano label -> oración, para componer el texto sin recorrer los
-// grupos cada vez (ver el useEffect que arma form.descripcion).
-const COMPORTAMIENTO_CLAUSE_BY_LABEL = Object.fromEntries(
-  COMPORTAMIENTO_GROUPS.flatMap((g) => g.chips.map((c) => [c.label, c.clause]))
-);
-// Frases de un toque para el campo de texto libre — cubren las señas más
-// comunes que la gente típicamente tiene que parar a pensar cómo redactar.
-// Tocar una la agrega al final del texto; la persona puede seguir
-// escribiendo o borrar lo que no aplique.
-const SENAS_QUICK_PHRASES = [
-  "Tiene una cicatriz visible",
-  "Le falta una oreja o una pata",
-  "Cojea",
-  "Ojos de distinto color",
-  "Muy peludo/a",
-  "Recién bañado/a",
-];
+// Rediseño de "Detalles para reconocerlo" (ver ACCESORIO_OPTIONS/
+// REACCION_OPTIONS/MARCA_OPTIONS + composeAccesorioSentence/
+// composeReaccionSentence/composeMarcaSentence en matching.js): 3 preguntas
+// cortas, casi todas de un toque, en vez de una hoja en blanco pidiendo
+// señas + accesorio + comportamiento a la vez. Lo que sí varía persona a
+// persona y no entra en ningún chip queda en el campo de texto de abajo.
+// Clase compartida por todos los chips de esta sección — min-h-[38px]
+// (además del padding) para que el área táctil en mobile quede cómoda,
+// hover/active discretos, y el mismo anillo de foco que el resto del form.
+const CHIP_BTN_CLASS =
+  "min-h-[38px] rounded-full px-3.5 py-2 text-xs font-semibold border flex items-center gap-1 transition-colors hover:opacity-80 active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40";
 
 // El error crudo de Supabase (ej. violación de un CHECK constraint de largo
 // máximo) nunca llegaba a mostrarse — todo caía en el mismo "Algo falló,
@@ -252,14 +207,22 @@ export default function FelpusMatcher() {
   const [scanStep, setScanStep] = useState(0);
   const [matchResult, setMatchResult] = useState(null);
   const [pushSubState, setPushSubState] = useState("idle"); // idle | loading | active | error
-  // Estado del rediseño de "Descripción" — ver comentario junto a
-  // COLLAR_CHIPS más arriba. form.descripcion sigue siendo el único campo
-  // que se manda a la base (nada cambia ahí); estos 3 son las piezas que se
-  // combinan para armarlo, así que separarlos evita tener que hacer cirugía
-  // de texto sobre un string cada vez que alguien toca/destoca un chip.
-  const [collarChips, setCollarChips] = useState([]);
-  const [comportamientoChips, setComportamientoChips] = useState([]);
-  const [senasText, setSenasText] = useState("");
+  // Estado del rediseño de "Detalles para reconocerlo" — ver comentario
+  // junto a CHIP_BTN_CLASS más arriba. form.descripcion sigue siendo el
+  // único campo de texto que se manda a la base (nada cambia ahí); estas
+  // piezas se combinan para armarlo Y además viajan aparte como objeto
+  // estructurado en el submit (ver buildDetallesEstructurados) — separarlas
+  // evita tener que hacer cirugía de texto sobre un string cada vez que
+  // alguien toca/destoca un chip.
+  const [accesorioChips, setAccesorioChips] = useState([]);
+  const [reaccionChips, setReaccionChips] = useState([]);
+  const [marcaChips, setMarcaChips] = useState([]);
+  // Sub-preguntas de "Mancha particular" — sólo tienen sentido mientras ese
+  // chip esté seleccionado (ver toggleMarcaChip, que las limpia si se
+  // destilda).
+  const [manchaUbicacion, setManchaUbicacion] = useState("");
+  const [manchaColor, setManchaColor] = useState("");
+  const [detalleLibre, setDetalleLibre] = useState("");
   const [dictating, setDictating] = useState(false);
   const [geoStatus, setGeoStatus] = useState("idle");
   // El mapa interactivo no se monta hasta que la persona lo pide — antes
@@ -465,43 +428,76 @@ export default function FelpusMatcher() {
   }, [reports, user, matchesSeenAt]);
   const newMatchesCount = newMatchItems.length;
 
-  // Rediseño de "Descripción" (ver COLLAR_CHIPS/composeDescripcionBase más
-  // arriba): form.descripcion ya no es un campo que el usuario edita
-  // directamente, se recompone acá cada vez que cambia alguna de sus 3
-  // fuentes (los campos estructurados de arriba, los chips, o el texto
-  // libre) — evita tener que hacer cirugía de texto sobre un string cada
-  // vez que se toca/destoca un chip.
+  // Rediseño de "Detalles para reconocerlo" (ver CHIP_BTN_CLASS/
+  // composeDescripcionBase más arriba): form.descripcion ya no es un campo
+  // que el usuario edita directamente, se recompone acá cada vez que cambia
+  // alguna de sus fuentes (los campos estructurados de arriba, los chips de
+  // esta sección, o el texto libre) — evita tener que hacer cirugía de
+  // texto sobre un string cada vez que se toca/destoca un chip.
   useEffect(() => {
     const base = composeDescripcionBase(form);
-    const collarSentence = collarChips.includes("Sin nada puesto")
-      ? "No tenía nada puesto."
-      : composeChipSentence("Tenía", collarChips);
-    const comportamientoSentence = composeClauses(comportamientoChips.map((label) => COMPORTAMIENTO_CLAUSE_BY_LABEL[label]));
-    const composed = [base, collarSentence, comportamientoSentence, senasText.trim()].filter(Boolean).join(" ");
+    const accesorioSentence = composeAccesorioSentence(accesorioChips);
+    const reaccionSentence = composeReaccionSentence(reaccionChips);
+    const marcaSentence = composeMarcaSentence(marcaChips, { manchaUbicacion, manchaColor });
+    const composed = [base, accesorioSentence, reaccionSentence, marcaSentence, detalleLibre.trim()]
+      .filter(Boolean)
+      .join(" ");
     setForm((f) => (f.descripcion === composed ? f : { ...f, descripcion: composed }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.especie, form.raza, form.tamano, form.color, form.colorOtro, form.edad, form.sexo, collarChips, comportamientoChips, senasText]);
+  }, [
+    form.especie,
+    form.raza,
+    form.tamano,
+    form.color,
+    form.colorOtro,
+    form.edad,
+    form.sexo,
+    accesorioChips,
+    reaccionChips,
+    marcaChips,
+    manchaUbicacion,
+    manchaColor,
+    detalleLibre,
+  ]);
 
-  function toggleCollarChip(label) {
+  function toggleAccesorioChip(id) {
     playTap();
-    setCollarChips((prev) => {
-      if (label === "Sin nada puesto") return prev.includes(label) ? [] : ["Sin nada puesto"];
-      const withoutNada = prev.filter((c) => c !== "Sin nada puesto");
-      return withoutNada.includes(label) ? withoutNada.filter((c) => c !== label) : [...withoutNada, label];
+    setAccesorioChips((prev) => {
+      if (id === "nada") return prev.includes(id) ? [] : ["nada"];
+      const withoutNada = prev.filter((c) => c !== "nada");
+      return withoutNada.includes(id) ? withoutNada.filter((c) => c !== id) : [...withoutNada, id];
     });
   }
 
-  function toggleComportamientoChip(label) {
+  function toggleReaccionChip(id) {
     playTap();
-    setComportamientoChips((prev) => (prev.includes(label) ? prev.filter((c) => c !== label) : [...prev, label]));
+    setReaccionChips((prev) => {
+      if (id === "no_se") return prev.includes(id) ? [] : ["no_se"];
+      const withoutNoSe = prev.filter((c) => c !== "no_se");
+      return withoutNoSe.includes(id) ? withoutNoSe.filter((c) => c !== id) : [...withoutNoSe, id];
+    });
   }
 
-  function addSenasPhrase(phrase) {
+  // "Mancha particular" es la única marca con sub-preguntas (ubicación +
+  // color, ver JSX) — si se destilda, se limpian también, para no guardar
+  // una ubicación/color "huérfana" de una marca que ya no está tildada.
+  // "Otro" no tiene una frase propia (ver MARCA_OPTIONS en matching.js): al
+  // tildarlo, llevamos el foco directo al campo de texto libre, que es
+  // donde ese detalle realmente va a quedar escrito.
+  function toggleMarcaChip(id) {
     playTap();
-    setSenasText((prev) => (prev.trim() ? `${prev.trim()} ${phrase}.` : `${phrase}.`));
+    const turningOn = !marcaChips.includes(id);
+    setMarcaChips((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));
+    if (id === "mancha" && !turningOn) {
+      setManchaUbicacion("");
+      setManchaColor("");
+    }
+    if (id === "otro" && turningOn) {
+      focusField("form-detalle-libre");
+    }
   }
 
-  // Dictado por voz para "algo más para identificarla" — Web Speech API,
+  // Dictado por voz para "¿Querés agregar algo más?" — Web Speech API,
   // nativa del navegador (Chrome/Edge/Safari en mobile), sin dependencias
   // ni costo. Se degrada con gracia: si el navegador no la soporta (ej.
   // Firefox), el botón de mic directamente no se muestra (ver JSX).
@@ -514,7 +510,7 @@ export default function FelpusMatcher() {
     recognition.maxAlternatives = 1;
     recognition.onresult = (e) => {
       const transcript = e.results?.[0]?.[0]?.transcript?.trim();
-      if (transcript) setSenasText((prev) => (prev.trim() ? `${prev.trim()} ${transcript}` : transcript));
+      if (transcript) setDetalleLibre((prev) => (prev.trim() ? `${prev.trim()} ${transcript}` : transcript));
     };
     recognition.onerror = () => {
       setDictating(false);
@@ -529,6 +525,15 @@ export default function FelpusMatcher() {
   // en que handleSubmit los valida — sirve para la barra de progreso que
   // motiva a completar todo antes de publicar (menos fricción, más feedback
   // inmediato, en línea con la filosofía de gamificación del proyecto).
+  // Si "¿Cómo reacciona con desconocidos?" sólo tiene tildado "No sé", no
+  // cuenta como un dato extra aportado (mismo criterio que "Nada" en
+  // accesorios: no suma señal). Se usa tanto para el checklist de progreso
+  // como para decidir si mostrar la vista previa (ver JSX más abajo).
+  const hasMeaningfulDetails = useMemo(() => {
+    const reaccionAporta = reaccionChips.length > 0 && !(reaccionChips.length === 1 && reaccionChips[0] === "no_se");
+    return accesorioChips.length > 0 || reaccionAporta || marcaChips.length > 0 || !!detalleLibre.trim();
+  }, [accesorioChips, reaccionChips, marcaChips, detalleLibre]);
+
   const reportChecklist = useMemo(() => {
     const whatsappDigits = sanitizePhoneForWhatsapp(form.contactoWhatsapp);
     const colorOk = form.color.trim() && (form.color !== "Otro color" || form.colorOtro.trim());
@@ -542,11 +547,11 @@ export default function FelpusMatcher() {
       // que estaría siempre "lista" sin que la persona hiciera nada — este
       // paso pasa a medir si sumó algún detalle EXTRA (chip o texto propio)
       // más allá de esa base automática.
-      { id: "descripcion", label: "Detalles", done: collarChips.length > 0 || comportamientoChips.length > 0 || !!senasText.trim() },
+      { id: "descripcion", label: "Detalles", done: hasMeaningfulDetails },
       { id: "sexo", label: "Sexo", done: !!form.sexo },
       { id: "contacto", label: "Contacto", done: !!whatsappDigits || !!form.contactoEmail.trim() },
     ];
-  }, [nickname, form.fotos.length, form.zona, form.color, form.colorOtro, form.sexo, form.contactoWhatsapp, form.contactoEmail, collarChips, comportamientoChips, senasText]);
+  }, [nickname, form.fotos.length, form.zona, form.color, form.colorOtro, form.sexo, form.contactoWhatsapp, form.contactoEmail, hasMeaningfulDetails]);
   const reportProgressDone = reportChecklist.filter((s) => s.done).length;
   const reportProgressPct = Math.round((reportProgressDone / reportChecklist.length) * 100);
 
@@ -621,12 +626,12 @@ export default function FelpusMatcher() {
           const file = new File([blob], "compartida.jpg", { type: blob.type || "image/jpeg" });
           setReportKind("encontrada");
           await processPhotoFile(file);
-          // A senasText, no a form.descripcion directo: ese campo ahora se
+          // A detalleLibre, no a form.descripcion directo: ese campo ahora se
           // recompone solo a partir de los campos estructurados + chips +
           // este texto (ver el useEffect de más abajo) — escribirlo acá
           // quedaría pisado en el próximo render.
           const text = textRes ? (await textRes.text()).trim() : "";
-          if (text) setSenasText((prev) => (prev.trim() ? prev : text.slice(0, 600)));
+          if (text) setDetalleLibre((prev) => (prev.trim() ? prev : text.slice(0, 600)));
           goToTab("reportar");
           pushToast("success", "📸 Foto cargada — completá los datos y publicá el reporte.");
         }
@@ -1031,6 +1036,20 @@ export default function FelpusMatcher() {
         lng: form.lng,
         fecha: form.fecha,
         descripcion: form.descripcion.trim(),
+        // "Detalles para reconocerlo" en forma estructurada (ver
+        // buildDetallesEstructurados en matching.js) — además de la frase ya
+        // incluida en descripcion, esto es lo que puede pesar en el
+        // matching sin depender de comparar texto libre (ver
+        // detallesSimilarity). Si la migración de la columna "detalles"
+        // todavía no se corrió, createReport() la omite sola (ver
+        // src/lib/store.js) sin que falle la publicación.
+        detalles: buildDetallesEstructurados({
+          accesorios: accesorioChips,
+          comportamientos: reaccionChips,
+          marcaDistintiva: marcaChips,
+          ubicacionMarca: manchaUbicacion,
+          colorMarca: manchaColor,
+        }),
         contactoWhatsapp: whatsappDigits,
         contactoEmail: form.contactoEmail.trim(),
         fotos: form.fotos,
@@ -1068,9 +1087,12 @@ export default function FelpusMatcher() {
         pushToast("success", "Reporte publicado. Iniciá sesión con Google para sumar puntos por tus aportes.");
       }
       setForm(emptyForm());
-      setCollarChips([]);
-      setComportamientoChips([]);
-      setSenasText("");
+      setAccesorioChips([]);
+      setReaccionChips([]);
+      setMarcaChips([]);
+      setManchaUbicacion("");
+      setManchaColor("");
+      setDetalleLibre("");
       setGeoStatus("idle");
       setVisionStatus("idle");
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -2044,30 +2066,37 @@ export default function FelpusMatcher() {
                 />
               </div>
 
-              {/* Rediseño de "Descripción": antes un solo textarea en blanco
-                  pedía señas + collar + comportamiento + ubicación de una,
-                  justo el peor momento para tener que redactar bien. Ahora
-                  son 3 preguntas cortas — dos se contestan con un toque, la
-                  tercera (lo único que de verdad varía mascota a mascota)
-                  admite texto o dictado por voz. form.descripcion se sigue
-                  armando solo, en segundo plano (ver el useEffect de más
-                  arriba) — nada cambió del lado de la base de datos. */}
+              {/* "Detalles para reconocerlo": 3 preguntas cortas, casi todas
+                  de un toque, más un campo de texto acotado a lo que de
+                  verdad no entra en ningún chip. form.descripcion se sigue
+                  armando sola en segundo plano (ver el useEffect de más
+                  arriba) — nada cambió del lado de la base de datos; lo
+                  nuevo es que además queda guardada de forma estructurada
+                  (ver detalles en handleSubmit) para pesar en el matching. */}
               <div className="space-y-4">
                 <div>
+                  <p className="text-sm font-extrabold" style={{ color: C.text }}>Detalles para reconocerlo</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: C.muted }}>
+                    Todo es opcional, pero cuantos más datos agregues, más fácil será identificarlo.
+                  </p>
+                </div>
+
+                <div>
                   <p className="text-xs font-bold mb-1.5" style={{ color: C.text }}>¿Tenía algo puesto?</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {COLLAR_CHIPS.map((chip) => {
-                      const selected = collarChips.includes(chip);
+                  <div className="flex flex-wrap gap-1.5" role="group" aria-label="¿Tenía algo puesto?">
+                    {ACCESORIO_OPTIONS.map((opt) => {
+                      const selected = accesorioChips.includes(opt.id);
                       return (
                         <button
-                          key={chip}
+                          key={opt.id}
                           type="button"
-                          onClick={() => toggleCollarChip(chip)}
+                          onClick={() => toggleAccesorioChip(opt.id)}
                           aria-pressed={selected}
-                          className="rounded-full px-3 py-1.5 text-xs font-semibold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                          className={CHIP_BTN_CLASS}
                           style={selected ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
                         >
-                          {chip}
+                          {selected && <Check className="w-3 h-3 shrink-0" />}
+                          {opt.label}
                         </button>
                       );
                     })}
@@ -2075,39 +2104,113 @@ export default function FelpusMatcher() {
                 </div>
 
                 <div>
-                  <p className="text-xs font-bold mb-2" style={{ color: C.text }}>¿Cómo se comporta? (opcional, podés elegir varias)</p>
-                  <div className="space-y-2.5">
-                    {COMPORTAMIENTO_GROUPS.map((group) => (
-                      <div key={group.title}>
-                        <p className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: C.muted }}>
-                          {group.title}
-                        </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {group.chips.map(({ label }) => {
-                            const selected = comportamientoChips.includes(label);
+                  <p className="text-xs font-bold mb-1.5" style={{ color: C.text }}>¿Cómo reacciona con desconocidos?</p>
+                  <div className="flex flex-wrap gap-1.5" role="group" aria-label="¿Cómo reacciona con desconocidos?">
+                    {REACCION_OPTIONS.map((opt) => {
+                      const selected = reaccionChips.includes(opt.id);
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => toggleReaccionChip(opt.id)}
+                          aria-pressed={selected}
+                          className={CHIP_BTN_CLASS}
+                          style={selected ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
+                        >
+                          {selected && <Check className="w-3 h-3 shrink-0" />}
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs font-bold mb-1" style={{ color: C.text }}>¿Tiene algo que lo haga fácil de reconocer?</p>
+                  <p className="text-[11px] mb-1.5" style={{ color: C.muted }}>Elegí una opción o contanos algo particular.</p>
+                  <div className="flex flex-wrap gap-1.5" role="group" aria-label="¿Tiene algo que lo haga fácil de reconocer?">
+                    {MARCA_OPTIONS.map((opt) => {
+                      const selected = marcaChips.includes(opt.id);
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => toggleMarcaChip(opt.id)}
+                          aria-pressed={selected}
+                          className={CHIP_BTN_CLASS}
+                          style={selected ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
+                        >
+                          {selected && <Check className="w-3 h-3 shrink-0" />}
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Progressive disclosure: "Mancha particular" es la única
+                      marca con datos propios. El truco de grid-rows 0fr/1fr
+                      anima la altura sin medir nada por JS y sin saltos
+                      bruscos — a diferencia de max-height con un valor fijo,
+                      no depende de adivinar cuánto mide el contenido. */}
+                  <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${marcaChips.includes("mancha") ? "grid-rows-[1fr] mt-3" : "grid-rows-[0fr]"}`}>
+                    <div className="overflow-hidden">
+                      <div className="rounded-lg pl-3 border-l-2" style={{ borderColor: C.border }}>
+                        <p className="text-[11px] font-bold mb-1.5" style={{ color: C.text }}>¿Dónde tiene la mancha?</p>
+                        <div className="flex flex-wrap gap-1.5" role="group" aria-label="¿Dónde tiene la mancha?">
+                          {MANCHA_UBICACION_OPTIONS.map((opt) => {
+                            const selected = manchaUbicacion === opt.id;
                             return (
                               <button
-                                key={label}
+                                key={opt.id}
                                 type="button"
-                                onClick={() => toggleComportamientoChip(label)}
+                                onClick={() => {
+                                  playTap();
+                                  setManchaUbicacion((prev) => (prev === opt.id ? "" : opt.id));
+                                }}
                                 aria-pressed={selected}
-                                className="rounded-full px-3 py-1.5 text-xs font-semibold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                                className={CHIP_BTN_CLASS}
                                 style={selected ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
                               >
-                                {label}
+                                {opt.label}
                               </button>
                             );
                           })}
                         </div>
+
+                        <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${manchaUbicacion ? "grid-rows-[1fr] mt-2.5" : "grid-rows-[0fr]"}`}>
+                          <div className="overflow-hidden">
+                            <p className="text-[11px] font-bold mb-1.5" style={{ color: C.text }}>¿De qué color? (opcional)</p>
+                            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Color de la mancha">
+                              {MANCHA_COLOR_OPTIONS.map((color) => {
+                                const selected = manchaColor === color;
+                                return (
+                                  <button
+                                    key={color}
+                                    type="button"
+                                    onClick={() => {
+                                      playTap();
+                                      setManchaColor((prev) => (prev === color ? "" : color));
+                                    }}
+                                    aria-pressed={selected}
+                                    className={CHIP_BTN_CLASS}
+                                    style={selected ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
+                                  >
+                                    {color}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    ))}
+                    </div>
                   </div>
                 </div>
 
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label htmlFor="form-senas" className="text-xs font-bold block" style={{ color: C.text }}>
-                      Algo más para identificarla (opcional)
+                    <label htmlFor="form-detalle-libre" className="text-xs font-bold block" style={{ color: C.text }}>
+                      ¿Querés agregar algo más? (opcional)
                     </label>
                     {typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition) && (
                       <button
@@ -2124,40 +2227,31 @@ export default function FelpusMatcher() {
                     )}
                   </div>
                   <textarea
-                    id="form-senas"
-                    value={senasText}
-                    onChange={(e) => setSenasText(e.target.value)}
+                    id="form-detalle-libre"
+                    value={detalleLibre}
+                    onChange={(e) => setDetalleLibre(e.target.value)}
                     rows={2}
                     maxLength={400}
                     placeholder="Ej: tiene una mancha en forma de corazón en la panza..."
                     className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] resize-none"
                     style={{ borderColor: C.border, color: C.text }}
                   />
-                  <div className="flex flex-wrap gap-1.5 mt-1.5">
-                    {SENAS_QUICK_PHRASES.map((phrase) => (
-                      <button
-                        key={phrase}
-                        type="button"
-                        onClick={() => addSenasPhrase(phrase)}
-                        className="rounded-full px-2.5 py-1 text-[11px] font-semibold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
-                        style={{ color: C.muted, borderColor: C.border, background: C.surface }}
-                      >
-                        + {phrase}
-                      </button>
-                    ))}
-                  </div>
                 </div>
 
-                {/* Vista previa de lo que se va a publicar — de sólo lectura,
-                    se arma sola con lo de arriba (especie/tamaño/color/edad/
-                    sexo) + los chips + el texto. Mostrarla, en vez de dejar
-                    a la persona adivinando qué terminó pasando a la
-                    publicación, es lo que permite que todo lo de arriba sea
-                    tan liviano: siempre puede ver el resultado antes de
-                    publicar. */}
-                <div className="rounded-xl p-3 text-xs border" style={{ background: C.surfaceSubtle, borderColor: C.border, color: C.muted }}>
-                  <p className="font-bold mb-1" style={{ color: C.text }}>Así se va a ver la descripción:</p>
-                  <p>{form.descripcion || "Completá especie, tamaño, color y sexo arriba para armarla."}</p>
+                {/* Vista previa — a diferencia de la versión anterior, sólo
+                    aparece cuando hay algo propio que mostrar (no la base
+                    automática sola), y es deliberadamente compacta: no debe
+                    sentirse como "otro campo más" del formulario. */}
+                <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${hasMeaningfulDetails ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+                  <div className="overflow-hidden">
+                    <div className="rounded-lg px-3 py-2 text-[11px] border flex items-start gap-1.5" style={{ background: C.surfaceSubtle, borderColor: C.border, color: C.muted }}>
+                      <Sparkles className="w-3 h-3 mt-0.5 shrink-0" />
+                      <p>
+                        <span className="font-bold" style={{ color: C.text }}>Vista previa: </span>
+                        {form.descripcion}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
