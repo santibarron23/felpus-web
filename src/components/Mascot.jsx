@@ -6,14 +6,30 @@
 // `mood` controla la expresión: "happy" (default), "searching", "celebrating",
 // "waiting". Todo es SVG a mano, sin dependencias externas.
 
+// Ojo: importa el C estático (siempre claro), no useTheme(). Felpi es un
+// personaje ilustrado — sus ojos/nariz/collar están calibrados contra
+// PALETTE.fur (un color de ilustración fijo, no la página), así que no
+// tiene sentido que cambien de color con el tema: un perrito no debería
+// "invertirse" a ojos blancos en modo oscuro. Distinto del resto de la app,
+// donde C.ink/C.red sí deben responder al tema porque están sobre la
+// página, no sobre un dibujo de color fijo.
+import { C } from "../lib/theme";
+
 const PALETTE = {
+  // Tonos de pelaje/orejas/lengua: propios de esta ilustración, sin
+  // equivalente en el tema de la app (no son botones ni texto).
   fur: "#E8B87D",
   furDark: "#D19F63",
   ear: "#C98B4A",
-  cream: "#FBF7F0",
-  ink: "#2B1B12",
-  red: "#D31C22",
   pink: "#F4A6A6",
+  // Estos tres SÍ son la marca — antes estaban copiados a mano acá con los
+  // mismos valores que theme.js (cream === C.surfaceSubtle, no C.cream: el
+  // hocico usa el crema más claro de "superficie", no el de fondo de
+  // página). Referenciar el token evita que Felpi se desincronice si el
+  // rojo o los cremas de marca cambian.
+  cream: C.surfaceSubtle,
+  ink: C.ink,
+  red: C.red,
 };
 
 function Face({ mood }) {

@@ -70,6 +70,11 @@ alter table reports add column if not exists contacto_email text;
 -- Racha de días consecutivos usando la app (mecánica de retención tipo Duolingo).
 alter table contributors add column if not exists streak_days integer not null default 0;
 alter table contributors add column if not exists last_active_date date;
+-- Suscripción de notificaciones push del navegador para ESTE reporte
+-- puntual (no una suscripción "de la cuenta" — un reporte de invitado, sin
+-- login, también tiene que poder recibir avisos). Formato: el objeto
+-- PushSubscription tal cual lo devuelve pushManager.subscribe() en JSON.
+alter table reports add column if not exists push_subscription jsonb;
 
 -- ---------------------------------------------------------------------------
 -- Límites de longitud a nivel de base de datos: el formulario ya los aplica
@@ -110,8 +115,8 @@ alter table contributors enable row level security;
 -- directamente a la API de Supabase (el chequeo de "sos el dueño" vivía
 -- solo en el código del cliente, que no es un límite de seguridad real).
 -- La lectura sigue pública para todos.
--- Antes de un lanzamiento real todavía conviene agregar rate limiting
--- (por IP o por usuario) a la creación de reportes.
+-- Rate limiting de creación de reportes: ver trigger trg_enforce_report_rate_limit
+-- más abajo (después de las políticas de reports).
 -- ---------------------------------------------------------------------------
 
 drop policy if exists "reports_select_all" on reports;
@@ -131,6 +136,130 @@ create policy "reports_update_owner" on reports for update using (auth.uid() = u
 -- aunque el código del cliente lo intente.
 drop policy if exists "reports_delete_owner" on reports;
 create policy "reports_delete_owner" on reports for delete using (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
+-- Rate limiting de creación de reportes: la política de arriba (with check
+-- (true)) permite insertar sin límite a cualquiera, logueado o no — sin esto,
+-- un script puede crear reportes (y fotos en Storage, con su costo) sin
+-- ningún techo. RLS controla QUIÉN puede insertar, no CUÁNTO, así que el
+-- límite va en un trigger.
+--
+-- PostgREST (la API REST que usa Supabase) expone los headers del pedido
+-- HTTP original como el GUC "request.headers" — de ahí se saca el
+-- x-forwarded-for para identificar la IP real del cliente sin necesitar
+-- autenticación. Si no está disponible (ej. llamado desde el SQL Editor, o
+-- el sembrado de datos de ejemplo que corre con la service key) se deja
+-- pasar, para no romper flujos internos.
+-- ---------------------------------------------------------------------------
+create table if not exists report_submissions (
+  ip text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists report_submissions_ip_created_idx on report_submissions (ip, created_at);
+alter table report_submissions enable row level security;
+-- Sin políticas: nadie (anon ni authenticated) puede leer ni escribir esta
+-- tabla directamente vía la API — solo la toca la función security definer
+-- de abajo, que corre con privilegios elevados.
+
+create or replace function public.enforce_report_rate_limit()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  client_ip text;
+  recent_count integer;
+begin
+  begin
+    client_ip := nullif(trim(split_part(current_setting('request.headers', true)::json->>'x-forwarded-for', ',', 1)), '');
+  exception when others then
+    client_ip := null;
+  end;
+
+  if client_ip is null then
+    return NEW;
+  end if;
+
+  -- Poda oportunista: evita que la tabla crezca indefinidamente sin
+  -- necesitar un cron job aparte.
+  delete from report_submissions where created_at < now() - interval '1 day';
+
+  select count(*) into recent_count
+    from report_submissions
+    where ip = client_ip and created_at > now() - interval '1 hour';
+
+  if recent_count >= 8 then
+    raise exception 'Se alcanzó el límite de reportes por hora desde esta conexión. Probá de nuevo más tarde.';
+  end if;
+
+  insert into report_submissions (ip) values (client_ip);
+  return NEW;
+end;
+$$;
+
+drop trigger if exists trg_enforce_report_rate_limit on public.reports;
+create trigger trg_enforce_report_rate_limit
+  before insert on public.reports
+  for each row
+  execute function public.enforce_report_rate_limit();
+
+-- ---------------------------------------------------------------------------
+-- Activar notificaciones push para un reporte puntual (no una suscripción
+-- "de la cuenta": un reporte de invitado, sin login, también tiene que
+-- poder recibir avisos — por eso esto no puede pasar por la policy de
+-- UPDATE de arriba, que exige auth.uid() = user_id). Solo puede actualizar
+-- push_subscription, ninguna otra columna.
+--
+-- Riesgo aceptado: como el id del reporte no es un secreto (aparece en la
+-- URL pública /r/<id> y en los links de compartir), alguien que lo conozca
+-- podría llamar a esto y "robar" la suscripción de otra persona — no
+-- expone ningún dato (no devuelve nada), pero sí podría hacer que dejen de
+-- llegarte avisos de tu propio reporte. Mismo nivel de riesgo ya aceptado
+-- en otros lugares de esta app (ej. los reportes de invitado no se pueden
+-- borrar ni por su propio autor — ver PENDIENTE_DECISION.md #0). Se mitiga
+-- parcialmente reusando el mismo límite de 8/hora por IP que ya protege la
+-- creación de reportes.
+-- ---------------------------------------------------------------------------
+create or replace function public.subscribe_report_push(p_report_id text, p_subscription jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  client_ip text;
+  recent_count integer;
+begin
+  if p_subscription is null then
+    raise exception 'Falta la suscripción.';
+  end if;
+
+  begin
+    client_ip := nullif(trim(split_part(current_setting('request.headers', true)::json->>'x-forwarded-for', ',', 1)), '');
+  exception when others then
+    client_ip := null;
+  end;
+
+  if client_ip is not null then
+    select count(*) into recent_count
+      from report_submissions
+      where ip = client_ip and created_at > now() - interval '1 hour';
+    if recent_count >= 8 then
+      raise exception 'Demasiados intentos desde esta conexión. Probá de nuevo más tarde.';
+    end if;
+    insert into report_submissions (ip) values (client_ip);
+  end if;
+
+  update reports set push_subscription = p_subscription where id = p_report_id;
+  if not found then
+    raise exception 'No se encontró ese reporte.';
+  end if;
+end;
+$$;
+
+revoke all on function public.subscribe_report_push(text, jsonb) from public;
+grant execute on function public.subscribe_report_push(text, jsonb) to anon, authenticated;
 
 drop policy if exists "contributors_select_all" on contributors;
 create policy "contributors_select_all" on contributors for select using (true);
@@ -249,3 +378,145 @@ create trigger trg_notify_new_report
   after insert on public.reports
   for each row
   execute function public.notify_new_report();
+
+-- ---------------------------------------------------------------------------
+-- Rate limiting de /api/embed (llama a Hugging Face, que tiene costo/cuota
+-- propia). El limitador anterior vivía en un Map en memoria adentro de la
+-- función serverless — no servía de nada real: cada cold start (frecuente en
+-- Vercel) arranca el contador en cero, y las instancias concurrentes no
+-- comparten memoria entre sí. Esto hace el mismo conteo+poda+insert de forma
+-- atómica en la base, como el rate limit de reportes de más arriba, pero acá
+-- la IP se pasa como parámetro (la ruta corre en nuestro propio servidor, no
+-- hace falta leer request.headers de PostgREST).
+-- ---------------------------------------------------------------------------
+create table if not exists embed_requests (
+  ip text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists embed_requests_ip_created_idx on embed_requests (ip, created_at);
+alter table embed_requests enable row level security;
+-- Sin políticas: nadie accede a esta tabla directamente vía la API — solo la
+-- toca la función security definer de abajo.
+
+create or replace function public.check_embed_rate_limit(client_ip text, max_per_minute integer default 12)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  recent_count integer;
+begin
+  if client_ip is null or client_ip = '' then
+    return true; -- sin IP no se puede evaluar el límite, se deja pasar
+  end if;
+
+  -- Poda oportunista: evita que la tabla crezca indefinidamente sin
+  -- necesitar un cron job aparte.
+  delete from embed_requests where created_at < now() - interval '1 hour';
+
+  select count(*) into recent_count
+    from embed_requests
+    where ip = client_ip and created_at > now() - interval '1 minute';
+
+  if recent_count >= max_per_minute then
+    return false;
+  end if;
+
+  insert into embed_requests (ip) values (client_ip);
+  return true;
+end;
+$$;
+
+revoke all on function public.check_embed_rate_limit(text, integer) from public;
+grant execute on function public.check_embed_rate_limit(text, integer) to anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Log de errores del cliente: antes logError() solo hacía console.error, así
+-- que un error en producción era invisible a menos que el usuario lo
+-- reportara a mano. Esta tabla es el único lugar donde se guardan — sin
+-- política de SELECT (mismo patrón que report_submissions/embed_requests de
+-- arriba), así que nadie puede leerla vía la API; solo vos, desde el Table
+-- Editor de Supabase (que usa la service key y ignora RLS).
+-- No requiere ninguna cuenta ni servicio nuevo — reutiliza el Supabase que
+-- ya existe.
+-- ---------------------------------------------------------------------------
+create table if not exists error_logs (
+  id bigint generated always as identity primary key,
+  message text not null,
+  stack text,
+  context jsonb,
+  url text,
+  user_agent text,
+  created_at timestamptz not null default now()
+);
+create index if not exists error_logs_created_at_idx on error_logs (created_at);
+alter table error_logs enable row level security;
+-- Sin políticas de SELECT/UPDATE/DELETE: nadie lee ni modifica esto vía la
+-- API. El INSERT sí queda abierto más abajo, mediado por rate limiting.
+
+alter table error_logs drop constraint if exists error_logs_message_len;
+alter table error_logs add constraint error_logs_message_len check (char_length(message) <= 2000);
+alter table error_logs drop constraint if exists error_logs_stack_len;
+alter table error_logs add constraint error_logs_stack_len check (stack is null or char_length(stack) <= 8000);
+alter table error_logs drop constraint if exists error_logs_url_len;
+alter table error_logs add constraint error_logs_url_len check (url is null or char_length(url) <= 500);
+alter table error_logs drop constraint if exists error_logs_user_agent_len;
+alter table error_logs add constraint error_logs_user_agent_len check (user_agent is null or char_length(user_agent) <= 500);
+
+-- El insert queda abierto a cualquiera (el error puede venir de un usuario
+-- sin sesión) pero con el mismo rate limiting por IP que ya usan
+-- reports/embed — sin esto, este endpoint sería una forma fácil de llenar
+-- la tabla de basura sin límite.
+create table if not exists error_log_submissions (
+  ip text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists error_log_submissions_ip_created_idx on error_log_submissions (ip, created_at);
+alter table error_log_submissions enable row level security;
+
+create or replace function public.enforce_error_log_rate_limit()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  client_ip text;
+  recent_count integer;
+begin
+  begin
+    client_ip := nullif(trim(split_part(current_setting('request.headers', true)::json->>'x-forwarded-for', ',', 1)), '');
+  exception when others then
+    client_ip := null;
+  end;
+
+  if client_ip is null then
+    return NEW;
+  end if;
+
+  delete from error_log_submissions where created_at < now() - interval '1 day';
+
+  select count(*) into recent_count
+    from error_log_submissions
+    where ip = client_ip and created_at > now() - interval '1 hour';
+
+  -- Más permisivo que el de reports (8/hora): un mismo bug real puede
+  -- disparar varios errores encadenados en poco tiempo para una persona.
+  if recent_count >= 40 then
+    raise exception 'rate limited';
+  end if;
+
+  insert into error_log_submissions (ip) values (client_ip);
+  return NEW;
+end;
+$$;
+
+drop trigger if exists trg_enforce_error_log_rate_limit on public.error_logs;
+create trigger trg_enforce_error_log_rate_limit
+  before insert on public.error_logs
+  for each row
+  execute function public.enforce_error_log_rate_limit();
+
+drop policy if exists "error_logs_insert_all" on error_logs;
+create policy "error_logs_insert_all" on error_logs for insert with check (true);

@@ -1,5 +1,149 @@
 # Decisiones pendientes — requieren acción o información tuya
 
+## -5. Notificaciones push del navegador (2026-08-04) — requiere 2 pasos tuyos
+
+**Qué hace:** además del email, ahora se puede activar un aviso push del
+navegador (con el celular cerrado) cuando alguien publica una coincidencia
+con tu reporte — botón "Avisame acá si hay una coincidencia" en la pantalla
+de resultado, justo después de publicar. Funciona por reporte, no por
+cuenta, así que también sirve para reportes de invitado (sin login). No usa
+ningún servicio de terceros ni requiere crear ninguna cuenta — Web Push es
+un estándar del navegador, las claves VAPID son un par de llaves que se
+generan localmente en tu máquina (no dependen de ninguna cuenta).
+
+**⚠️ Por seguridad, esta vez NO generé las claves acá:** este archivo va a
+un repo público — la clave *privada* nunca debe quedar escrita en un
+archivo versionado (fue exactamente el incidente ya corregido del ítem -1
+más abajo, con el secreto del webhook). Te las mostré una vez en el chat
+de la sesión donde armé esta función (canal privado, no el repo), pero
+lo más prolijo es que generes tu propio par vos mismo — 10 segundos:
+
+**⚠️ Paso 1 — generar el par de claves (en tu máquina, no en el repo):**
+```
+npx web-push generate-vapid-keys
+```
+Esto imprime una "Public Key" y una "Private Key". Guardalas, no las
+pegues en ningún archivo del proyecto.
+
+**Mientras no completes los pasos de abajo:** el botón de activar
+simplemente no aparece (se esconde solo si `NEXT_PUBLIC_VAPID_PUBLIC_KEY`
+no está seteada), y el email de coincidencia sigue funcionando igual.
+
+**⚠️ Paso 2 — correr la migración de schema.sql:**
+1. Abrí el SQL Editor de tu proyecto Supabase.
+2. Pegá y ejecutá todo `supabase/schema.sql` de nuevo (agrega la columna
+   `push_subscription` a `reports` y la función `subscribe_report_push`).
+
+**⚠️ Paso 3 — variables de entorno (local y Vercel), con las claves del Paso 1:**
+```
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=<tu Public Key>
+VAPID_PRIVATE_KEY=<tu Private Key>
+VAPID_SUBJECT=mailto:tu-email@ejemplo.com
+```
+1. Agregalas a tu `.env.local` (para probar en local — ese archivo ya está
+   en `.gitignore`, nunca se sube).
+2. Agregalas también en Vercel → tu proyecto → Settings → Environment
+   Variables (con esos mismos 3 nombres), y redeploy.
+
+**Nota de seguridad aceptada:** como el id del reporte no es secreto
+(aparece en la URL pública `/r/<id>`), alguien que lo conozca técnicamente
+podría llamar a `subscribe_report_push` con ese id y reemplazar tu
+suscripción por la suya — no expone ningún dato tuyo, en el peor caso
+dejarías de recibir avisos push de ESE reporte puntual (el email no se ve
+afectado). Mismo nivel de riesgo que ya está aceptado en otros lugares de
+esta app (ver ítem #0 más abajo, sobre el borrado de reportes de
+invitado). Mitigado parcialmente con el mismo límite de 8 intentos/hora
+por IP que ya protege la creación de reportes.
+
+**No pude probarlo end-to-end** (no tengo forma de instalar la PWA y
+recibir una notificación real desde acá) — la lógica está revisada a mano
+y el flujo completo (suscribirse → guardar → mandar desde el webhook)
+sigue el mismo patrón que el resto de la app, pero conviene que lo
+verifiques una vez con los pasos de arriba hechos: activá notificaciones en
+un reporte, publicá otro que matchee, y confirmá que llega el push.
+
+---
+
+## -4. Log de errores a Supabase (2026-08-04) — requiere 1 paso tuyo
+
+**Qué hace:** `logError()` (`src/lib/log.js`) antes solo hacía
+`console.error` — un error en producción era invisible salvo que el usuario
+te lo contara. Ahora además intenta guardar una fila en una tabla nueva,
+`error_logs` (mensaje, stack, URL, user agent), protegida con el mismo
+patrón de RLS que `report_submissions`/`embed_requests`: el INSERT queda
+abierto (con rate limiting por IP, 40/hora) pero nadie puede leerla vía la
+API — solo vos, desde el **Table Editor** de tu proyecto Supabase. No usa
+ningún servicio nuevo (Sentry ni parecidos) ni requiere crear ninguna
+cuenta — reutiliza el Supabase que ya tenés.
+
+**Mientras no corras el paso de abajo:** la tabla no existe todavía, así
+que cada intento de guardar un error falla en silencio (atrapado a
+propósito — nunca debe romper nada) y solo queda el `console.error` de
+siempre. La app funciona exactamente igual, simplemente no vas a ver nada
+nuevo en Supabase hasta este paso.
+
+**⚠️ ACCIÓN REQUERIDA DE TU LADO — 1 paso:** el mismo de siempre:
+
+1. Abrí el SQL Editor de tu proyecto Supabase.
+2. Pegá y ejecutá todo `supabase/schema.sql` de nuevo (seguro re-correrlo
+   completo).
+3. Listo. Para revisar errores: Table Editor → `error_logs`, ordená por
+   `created_at` descendente. Como no hay agrupación automática, para no
+   acumular basura sin límite te conviene de tanto en tanto borrar filas
+   viejas a mano (o agregar un cron de limpieza si en algún momento se
+   vuelve un volumen real).
+
+---
+
+## -3. Rate limiting real de /api/embed (2026-08-04) — requiere 1 paso tuyo
+
+**Qué hace:** `/api/embed` llama a Hugging Face (costo/cuota propia) para el
+embedding de IA de cada foto. El limitador que tenía antes vivía en memoria
+adentro de la función serverless — no protegía nada de verdad, porque cada
+cold start de Vercel arranca el contador en cero y las instancias
+concurrentes no comparten memoria entre sí. Ahora hace el mismo
+conteo+poda+insert pero en la base (función `check_embed_rate_limit`,
+máximo 12 pedidos por minuto por IP), igual que el rate limit de reportes
+que ya armamos.
+
+**Mientras no corras el paso de abajo:** el chequeo llama a una función que
+todavía no existe en tu base, así que falla y se deja pasar el pedido sin
+bloquear nada (a propósito — un problema de infra ajeno no debería tumbar la
+función real). Ya lo probé así: sigue funcionando exactamente igual que
+antes, solo que sin el rate limit activo todavía.
+
+**⚠️ ACCIÓN REQUERIDA DE TU LADO — 1 paso:** el mismo de siempre:
+
+1. Abrí el SQL Editor de tu proyecto Supabase.
+2. Pegá y ejecutá todo `supabase/schema.sql` de nuevo (seguro re-correrlo
+   completo).
+3. Listo — no hace falta nada más.
+
+---
+
+## -2. Rate limiting de creación de reportes (2026-08-04) — requiere 1 paso tuyo
+
+**Qué hace:** `supabase/schema.sql` ahora tiene un trigger
+(`enforce_report_rate_limit`) que bloquea más de 8 reportes por hora desde
+la misma IP (usando el header `x-forwarded-for` que PostgREST expone). Antes
+cualquiera podía scriptear inserts ilimitados — la policy de RLS controla
+quién puede insertar, no cuántos, y no había ningún otro límite.
+
+**⚠️ ACCIÓN REQUERIDA DE TU LADO — 1 paso:** igual que con la policy de
+borrado, no tengo acceso a tu SQL Editor para correrlo yo:
+
+1. Abrí el SQL Editor de tu proyecto Supabase.
+2. Pegá y ejecutá todo `supabase/schema.sql` de nuevo (seguro re-correrlo
+   completo, usa `if not exists`/`drop ... if exists` en todos lados).
+3. Listo — no hace falta reconfigurar nada más, el trigger queda activo
+   solo.
+
+**No pude probarlo end-to-end** (no tengo acceso a la base real para
+publicar 9 reportes seguidos y confirmar el bloqueo) — la lógica está
+revisada a mano pero conviene que la chequees vos una vez aplicada.
+
+---
+
 Este archivo lista todo lo que encontré durante la sesión autónoma que **no
 puedo resolver yo mismo** porque necesita credenciales, acceso a una consola
 externa, o una decisión de producto/negocio.
@@ -244,24 +388,17 @@ mostrar el error genérico "No pudimos eliminar la publicación."
 
 ---
 
-## 5. Testing automatizado (E2E / accesibilidad automatizada)
+## 5. Testing automatizado — ✅ PARCIALMENTE RESUELTO (unit tests), E2E sigue pendiente
 
-**Descripción:** el prompt de esta sesión pedía usar Playwright + axe-core
-para capturas en 2 anchos y auditoría de accesibilidad automatizada de las
-pantallas modificadas.
+**Implementado (2026-08-04):** se agregó Vitest (`npm test`) con 42 tests
+unitarios para `src/lib/matching.js` — el algoritmo de scoring (qué tan
+probable es que dos reportes sean la misma mascota), el sistema de niveles,
+y los helpers de formato/texto. Es la lógica más crítica de la app y antes
+no tenía ningún test. Corré `npm test` para verificar.
 
-**Motivo del bloqueo:** el proyecto no tiene ninguna infraestructura de
-testing hoy (`package.json` no tiene `test` script, no hay Playwright ni
-Jest ni Vitest instalados). Instalar y configurar Playwright desde cero es
-una tarea grande (agregar dependencias de testing, configurar el runner,
-escribir specs iniciales) que excede lo que se puede hacer con criterio
-dentro de esta sesión sin also arriesgar dejar el build roto por una mala
-configuración. Ver `AUDITORIA.md` para el detalle de qué SÍ pude verificar
-sin esa infraestructura (inspección de DOM real vía consola del navegador,
-interceptando requests de red, revisando estilos computados).
-
-**Recomendación:** si quieren testing automatizado real a futuro, es un
-proyecto en sí mismo (elegir Playwright vs Cypress, definir qué flujos
-cubrir primero — probablemente "publicar un reporte" y "confirmar un
-reencuentro" por ser los más críticos). No lo empecé por el riesgo de
-dejarlo a medias.
+**Lo que sigue pendiente** (la descripción original, sin resolver): tests
+end-to-end (Playwright/Cypress) que simulen un flujo completo en un
+navegador real — "publicar un reporte", "confirmar un reencuentro" — y
+auditoría de accesibilidad automatizada (axe-core). Es un proyecto en sí
+mismo (elegir herramienta, configurar el runner, decidir qué flujos cubrir
+primero) que no se abordó en esta sesión por el riesgo de dejarlo a medias.

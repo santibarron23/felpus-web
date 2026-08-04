@@ -2,11 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { loadGoogleMaps, observeMapResize } from "../lib/googleMaps";
+import { useTheme } from "./felpus/ThemeProvider";
 
 // Mapa con un pin arrastrable/tocable para marcar la ubicación exacta de un
 // reporte. Si no hay API key configurada, muestra un aviso y la app sigue
 // funcionando igual con el botón "Ubicación" (geolocalización del navegador).
 export default function MapPicker({ lat, lng, onChange, defaultCenter }) {
+  const C = useTheme();
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const containerRef = useRef(null);
   const mapObjRef = useRef(null);
@@ -106,7 +108,7 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter }) {
 
   if (!apiKey) {
     return (
-      <div className="text-xs rounded-lg border p-3" style={{ borderColor: "#EFE3D2", color: "#6B5643" }}>
+      <div className="text-xs rounded-lg border p-3" style={{ borderColor: C.border, color: C.muted }}>
         El mapa interactivo no está configurado (falta{" "}
         <code className="felpus-mono">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code>). Mientras tanto podés usar el
         botón &ldquo;Ubicación&rdquo; para capturar tu posición actual.
@@ -116,7 +118,7 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter }) {
 
   if (status === "error") {
     return (
-      <div className="text-xs rounded-lg border p-3" style={{ borderColor: "#EFE3D2", color: "#AB1017" }}>
+      <div className="text-xs rounded-lg border p-3" style={{ borderColor: C.border, color: C.redDark }}>
         No se pudo cargar Google Maps. Revisá que la clave sea válida y que la Maps JavaScript API esté
         habilitada en tu proyecto de Google Cloud.
       </div>
@@ -127,26 +129,28 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter }) {
     <div>
       <div
         ref={containerRef}
+        role="region"
+        aria-label="Mapa interactivo para marcar la ubicación exacta. Si usás teclado, el botón Ubicación hace lo mismo sin necesidad del mapa."
         className="w-full rounded-xl overflow-hidden border"
-        style={{ height: 220, borderColor: "#EFE3D2", background: "#F0E7D8" }}
+        style={{ height: 220, borderColor: C.border, background: C.surfaceMuted }}
       />
       {pending ? (
-        <div className="mt-2 flex items-center gap-2 rounded-lg p-2.5" style={{ background: "#FBF7F0", border: "1px solid #EFE3D2" }}>
-          <span className="text-[11px] flex-1" style={{ color: "#6B5643" }}>¿Confirmás esta ubicación?</span>
+        <div className="mt-2 flex items-center gap-2 rounded-lg p-2.5" style={{ background: C.surfaceSubtle, border: `1px solid ${C.border}` }}>
+          <span className="text-[11px] flex-1" style={{ color: C.muted }}>¿Confirmás esta ubicación?</span>
           <button
             type="button"
             onClick={confirmPending}
             className="text-[11px] font-bold text-white rounded-lg px-2.5 py-1"
-            style={{ background: "#2E7048" }}
+            style={{ background: C.greenSolid }}
           >
             Confirmar
           </button>
-          <button type="button" onClick={cancelPending} className="text-[11px] font-semibold" style={{ color: "#6B5643" }}>
+          <button type="button" onClick={cancelPending} className="text-[11px] font-semibold" style={{ color: C.muted }}>
             Cancelar
           </button>
         </div>
       ) : (
-        <p className="text-[10px] mt-1" style={{ color: "#6B5643" }}>
+        <p className="text-[10px] mt-1" style={{ color: C.muted }}>
           Tocá el mapa o arrastrá el pin para marcar el lugar exacto, y confirmá la ubicación — cuanto más cerca
           esté del pin de otro reporte, mayor el % de coincidencia.
         </p>

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { loadGoogleMaps } from "../lib/googleMaps";
+import { logError } from "../lib/log";
 
 // Campo de "Zona / barrio" con autocompletado de Google Places — usa
 // PlaceAutocompleteElement, la API nueva que Google recomienda desde 2025
@@ -23,10 +24,16 @@ export default function ZonaAutocomplete({
   const containerRef = useRef(null);
   const elRef = useRef(null);
   const [ready, setReady] = useState(false);
+  // Antes se cargaba el script de Google Maps apenas se montaba este campo,
+  // es decir, apenas se entraba al tab "Reportar" — aunque la persona solo
+  // quisiera tipear la zona a mano. Ahora se difiere hasta el primer foco
+  // real del campo (el contenedor sigue siempre visible desde el montaje,
+  // solo se posterga instanciar el PlaceAutocompleteElement de Google).
+  const [interacted, setInteracted] = useState(false);
 
   useEffect(() => {
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-    if (!apiKey) return;
+    if (!apiKey || !interacted) return;
     let cancelled = false;
 
     loadGoogleMaps(apiKey)
@@ -52,7 +59,7 @@ export default function ZonaAutocomplete({
             const lng = place.location?.lng();
             onSelectPlace(zona, lat, lng);
           } catch (e) {
-            console.error("No se pudo leer el lugar seleccionado", e);
+            logError("No se pudo leer el lugar seleccionado", e);
           }
         });
 
@@ -70,7 +77,7 @@ export default function ZonaAutocomplete({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [interacted]);
 
   // El contenedor del elemento de Google se renderiza SIEMPRE visible y en
   // flujo normal, desde el primer render — nunca con display:none. Si se le
@@ -89,6 +96,7 @@ export default function ZonaAutocomplete({
           type="text"
           value={value}
           onChange={(e) => onManualChange(e.target.value)}
+          onFocus={() => setInteracted(true)}
           maxLength={maxLength}
           placeholder={placeholder}
           className={className}

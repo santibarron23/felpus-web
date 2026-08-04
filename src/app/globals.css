@@ -4,10 +4,46 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&family=Montserrat:wght@400;600;700;800&display=swap');
 
+:root {
+  /* Espejo de C.red (src/lib/theme.js) para usar en clases arbitrarias de
+     Tailwind (ring-[var(--felpus-focus)]), que no pueden leer el objeto JS.
+     Antes cada elemento enfocable repetía el literal "#D31C22" a mano
+     (~19 veces) — dos de esas copias habían quedado desactualizadas
+     (una todavía apuntaba a "#E36525", un naranja descartado en una
+     auditoría de contraste anterior). Si el rojo de marca cambia, hay que
+     actualizar acá Y en theme.js — son los dos únicos lugares. */
+  --felpus-focus: #D31C22;
+  --felpus-focus-tint: rgba(211, 28, 34, 0.15); /* mismo rojo al 15% — evita color-mix() por soporte de navegador */
+  /* Espejo mínimo de C.cream/C.ink solo para el fondo de <html>/<body> — ver
+     abajo. El resto de la paleta vive únicamente en theme.js/ThemeProvider;
+     no se duplicó todo acá para no tener dos fuentes de verdad. */
+  --felpus-bg: #F6EFE4;
+  --felpus-fg: #2B1B12;
+  /* Le dice al navegador qué esquema estamos usando para que los controles
+     nativos (checkboxes, scrollbar, selects) seleccionen su propia skin
+     clara/oscura sin que tengamos que reestilarlos a mano uno por uno. */
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  /* = CD.red/cream/ink en theme.js — mismos valores, misma razón de ser. */
+  --felpus-focus: #FF5B4D;
+  --felpus-focus-tint: rgba(255, 91, 77, 0.2);
+  --felpus-bg: #1C140D;
+  --felpus-fg: #F5ECDF;
+  color-scheme: dark;
+}
+
 html,
 body {
   padding: 0;
   margin: 0;
+  /* Respaldo para el rebote de scroll de iOS (revela el fondo de <body> más
+     allá del contenido) y para el instante entre el primer paint y que el
+     wrapper raíz de la app pinte su propio fondo — sin esto se ve un
+     destello blanco en modo oscuro. */
+  background: var(--felpus-bg);
+  color: var(--felpus-fg);
 }
 
 .felpus-display {
@@ -29,8 +65,8 @@ body {
    cada campo del formulario. */
 .felpus-input:focus {
   outline: none;
-  border-color: #D31C22;
-  box-shadow: 0 0 0 3px rgba(211, 28, 34, 0.15);
+  border-color: var(--felpus-focus);
+  box-shadow: 0 0 0 3px var(--felpus-focus-tint);
 }
 .felpus-input {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -270,6 +306,65 @@ button:not(:disabled):active {
   .felpus-step-icon,
   .felpus-step {
     transition: none;
+  }
+}
+
+/* Celebración al completar los 7 pasos del checklist de "Reportar" (estilo
+   Duolingo: un "pop" satisfactorio + un resplandor + un pequeño estallido de
+   partículas) — dispara una sola vez, justo en el momento en que el
+   checklist pasa de incompleto a 100%. */
+@keyframes felpus-checklist-pop {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.03);
+  }
+  55% {
+    transform: scale(0.985);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.felpus-checklist-pop {
+  animation: felpus-checklist-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes felpus-checklist-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(46, 112, 72, 0);
+  }
+  40% {
+    box-shadow: 0 0 0 8px rgba(46, 112, 72, 0.18);
+  }
+}
+.felpus-checklist-glow {
+  animation: felpus-checklist-glow 0.9s ease-out;
+}
+
+@keyframes felpus-confetti-burst {
+  0% {
+    transform: translate(-50%, -50%) scale(0.6) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(1) rotate(var(--rot));
+    opacity: 0;
+  }
+}
+.felpus-confetti {
+  animation: felpus-confetti-burst 0.7s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .felpus-checklist-pop,
+  .felpus-checklist-glow {
+    animation: none;
+  }
+  .felpus-confetti {
+    display: none;
   }
 }
 
