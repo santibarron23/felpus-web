@@ -52,7 +52,11 @@ export const C = {
   // en C y en CD: son la marca en su tono "de verdad", no la variante de
   // texto. Ver theme.js CD para la contraparte con las mismas notas.
   redSolid: "#D31C22",
-  orangeInkSolid: "#B14F1D",
+  // Antes #B14F1D — a pedido, se reemplazó por un naranja más vivo (mismo
+  // criterio de contraste real, no a ojo: 5.18:1 sobre blanco, en línea con
+  // redSolid/greenSolid). El anterior pasaba AA pero leía como marrón/rust
+  // más que naranja.
+  orangeInkSolid: "#C2410C",
   greenSolid: "#2E7048",
 
   // --- Neutros cálidos ---
@@ -112,7 +116,13 @@ export const C = {
   // crema y como fondo con texto blanco encima.
   tierBronze: "#8C6239",
   tierSilver: "#5B6B80",
-  tierGold: "#7A6306",
+  // Antes #7A6306 — a pedido, se reemplazó: ese tono (hue muy amarillo, poca
+  // luminosidad) leía como oliva/verde oscuro más que dorado/naranja,
+  // sobre todo al lado de orangeInkSolid. Este es un ámbar-naranja más
+  // cálido, con un matiz claramente distinto al de orangeInkSolid (35° vs.
+  // 17° de hue) para que "Rescatista" y "Encontrada" no se confundan aunque
+  // los dos sean tonos de naranja. 4.92:1 sobre blanco, sigue pasando AA.
+  tierGold: "#A16207",
   tierLegendary: "#6D46B8",
   // Variantes de texto de los tiers de arriba: en modo claro son literalmente
   // los mismos valores (ya pasan AA sobre blanco/crema como texto). Existen
@@ -120,7 +130,7 @@ export const C = {
   // más abajo para el porqué.
   tierBronzeText: "#8C6239",
   tierSilverText: "#5B6B80",
-  tierGoldText: "#7A6306",
+  tierGoldText: "#A16207",
   tierLegendaryText: "#6D46B8",
 };
 
@@ -153,7 +163,7 @@ export const CD = {
   // Idénticos a C — ver la nota junto a estos 3 en C, arriba: son el relleno
   // sólido de botones/badges, no el texto, así que no se aclaran con el tema.
   redSolid: "#D31C22",
-  orangeInkSolid: "#B14F1D",
+  orangeInkSolid: "#C2410C",
   greenSolid: "#2E7048",
 
   ink: "#F5ECDF",
@@ -183,11 +193,13 @@ export const CD = {
 
   tierBronze: "#8C6239", // sin cambios — ver nota arriba
   tierSilver: "#5B6B80",
-  tierGold: "#7A6306",
+  tierGold: "#A16207", // mismo valor nuevo que en C — ver nota junto a C.tierGold
   tierLegendary: "#6D46B8",
   tierBronzeText: "#C79865",
   tierSilverText: "#9AA8B8",
-  tierGoldText: "#D9B94A",
+  // Versión clara del nuevo tierGold (mismo matiz, ~35°) para leerse como
+  // texto sobre CD.surface — 8.37:1, en línea con tierSilverText/tierBronzeText.
+  tierGoldText: "#E3AC46",
   tierLegendaryText: "#B497E8",
 };
 
