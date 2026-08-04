@@ -89,13 +89,12 @@ export async function deleteReport(reportId, ownerUserId, fotoUrls) {
 }
 
 // Todas las columnas MENOS contacto_whatsapp/contacto_email — el listado
-// general (Explorar, mapa, franja de actividad) no necesita esos datos, y
-// antes venían igual en cada fila por pedir "*": cualquiera con la anon key
-// pública (visible en el bundle del cliente, como en toda la app) podía
-// hacer un solo pedido y llevarse el contacto de las ~200 publicaciones
-// activas de una sola vez. Ahora hay que abrir cada reporte puntual (ver
-// fetchReportContact) — no es un límite duro (la key sigue siendo pública),
-// pero saca el "un pedido, todos los contactos" más obvio.
+// general (Explorar, mapa, franja de actividad) no necesita esos datos.
+// Esto ya no es solo una convención del cliente: esas dos columnas tienen
+// el SELECT revocado a nivel de Postgres para anon/authenticated (ver
+// schema.sql), así que ni pidiéndolas acá ni con un SELECT directo a la API
+// se puede traer el contacto en bloque — el único camino es fetchReportContact
+// más abajo, que pasa por una función rate-limitada.
 const REPORT_LIST_BASE_FIELDS = [
   "id", "tipo", "especie", "nombre", "color", "color_otro", "tamano", "sexo", "edad", "peso",
   "zona", "lat", "lng", "fecha", "descripcion", "foto_url", "hist", "embedding", "foto_urls",
@@ -144,18 +143,41 @@ export async function fetchReports() {
   throw new Error("No se pudo cargar el listado de reportes.");
 }
 
-// Se pide recién cuando alguien abre el detalle de ESE reporte puntual.
+// Se pide recién cuando alguien abre el detalle de ESE reporte puntual, y
+// vía RPC (get_report_contact en schema.sql) en vez de un SELECT directo —
+// esas dos columnas tienen el SELECT revocado a nivel de Postgres para
+// anon/authenticated, así que un SELECT directo ya no funciona una vez
+// corrida la migración. La función además rate-limitea por IP (30/hora),
+// con su propio cupo separado del de crear reportes.
 export async function fetchReportContact(reportId) {
-  const { data, error } = await supabase
-    .from(REPORTS_TABLE)
-    .select("contacto_whatsapp,contacto_email")
-    .eq("id", reportId)
-    .maybeSingle();
-  if (error) throw error;
+  const rpcResult = await supabase.rpc("get_report_contact", { p_report_id: reportId });
+  // Antes de correr la migración que crea get_report_contact (ver
+  // PENDIENTE_DECISION.md), la función todavía no existe en la base — sin
+  // este fallback, ver el contacto de cualquier reporte se rompería por
+  // completo hasta que se corra. Cae al SELECT directo de siempre, que
+  // sigue funcionando mientras tanto (recién queda revocado cuando se
+  // corre la migración, junto con la función).
+  if (rpcResult.error && isMissingFunctionError(rpcResult.error)) {
+    const { data, error } = await supabase
+      .from(REPORTS_TABLE)
+      .select("contacto_whatsapp,contacto_email")
+      .eq("id", reportId)
+      .maybeSingle();
+    if (error) throw error;
+    return { contactoWhatsapp: data?.contacto_whatsapp || "", contactoEmail: data?.contacto_email || "" };
+  }
+  if (rpcResult.error) throw rpcResult.error;
+  const row = Array.isArray(rpcResult.data) ? rpcResult.data[0] : rpcResult.data;
   return {
-    contactoWhatsapp: data?.contacto_whatsapp || "",
-    contactoEmail: data?.contacto_email || "",
+    contactoWhatsapp: row?.contacto_whatsapp || "",
+    contactoEmail: row?.contacto_email || "",
   };
+}
+
+function isMissingFunctionError(error) {
+  if (!error) return false;
+  const text = `${error.message || ""} ${error.code || ""}`;
+  return text.includes("42883") || text.includes("PGRST202") || /could not find the function|does not exist/i.test(text);
 }
 
 export async function createReport(report) {
