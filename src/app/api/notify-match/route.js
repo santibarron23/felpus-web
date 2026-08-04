@@ -26,6 +26,7 @@ function rowToMatchable(row) {
     id: row.id,
     tipo: row.tipo,
     especie: row.especie,
+    raza: row.raza || "",
     nombre: row.nombre || "",
     color: row.color,
     colorOtro: row.color_otro || "",
