@@ -1,5 +1,6 @@
 import { supabase } from "./supabaseClient";
 import { computeHistogram, makePlaceholderSvg, normalizeNickname } from "./matching";
+import { logError } from "./log";
 
 const REPORTS_TABLE = "reports";
 const CONTRIBUTORS_TABLE = "contributors";
@@ -75,20 +76,45 @@ export async function deleteReport(reportId, ownerUserId, fotoUrls) {
     if (storageError) {
       // No bloqueante: mejor borrar la fila igual que dejar una publicación
       // "zombie" que no se puede eliminar solo porque una foto vieja falló.
-      console.error("No se pudieron borrar todas las fotos de Storage", storageError);
+      logError("No se pudieron borrar todas las fotos de Storage", storageError);
     }
   }
   const { error } = await supabase.from(REPORTS_TABLE).delete().eq("id", reportId).eq("user_id", ownerUserId);
   if (error) throw error;
 }
 
+// Todas las columnas MENOS contacto_whatsapp/contacto_email — el listado
+// general (Explorar, mapa, franja de actividad) no necesita esos datos, y
+// antes venían igual en cada fila por pedir "*": cualquiera con la anon key
+// pública (visible en el bundle del cliente, como en toda la app) podía
+// hacer un solo pedido y llevarse el contacto de las ~200 publicaciones
+// activas de una sola vez. Ahora hay que abrir cada reporte puntual (ver
+// fetchReportContact) — no es un límite duro (la key sigue siendo pública),
+// pero saca el "un pedido, todos los contactos" más obvio.
+const REPORT_LIST_COLUMNS =
+  "id,tipo,especie,nombre,color,color_otro,tamano,sexo,edad,peso,zona,lat,lng,fecha,descripcion,foto_url,hist,embedding,foto_urls,hists,embeddings,nickname,resuelto,resuelto_por,resuelto_por_user_id,resuelto_en,creado_en,user_id";
+
 export async function fetchReports() {
   const { data, error } = await supabase
     .from(REPORTS_TABLE)
-    .select("*")
+    .select(REPORT_LIST_COLUMNS)
     .order("creado_en", { ascending: false });
   if (error) throw error;
   return (data || []).map(rowToReport);
+}
+
+// Se pide recién cuando alguien abre el detalle de ESE reporte puntual.
+export async function fetchReportContact(reportId) {
+  const { data, error } = await supabase
+    .from(REPORTS_TABLE)
+    .select("contacto_whatsapp,contacto_email")
+    .eq("id", reportId)
+    .maybeSingle();
+  if (error) throw error;
+  return {
+    contactoWhatsapp: data?.contacto_whatsapp || "",
+    contactoEmail: data?.contacto_email || "",
+  };
 }
 
 export async function createReport(report) {
@@ -280,10 +306,10 @@ export async function sendHeart(contributorId) {
 // ---------------------------------------------------------------------------
 const SEED_DEFS = [
   { tipo: "perdida", especie: "perro", nombre: "Rocky", color: "marrón y blanco", tamano: "mediano", zona: "Palermo", lat: -34.588, lng: -58.43, fecha: "2026-07-20", descripcion: "Perro mediano marrón con manchas blancas, collar azul, muy sociable. Se perdió cerca de Plaza Serrano.", nickname: "Vecina de Palermo", bg: "#9d7957", fg: "#f6eee1" },
-  { tipo: "encontrada", especie: "perro", nombre: "", color: "marrón claro y blanco", tamano: "mediano", zona: "Palermo", lat: -34.585, lng: -58.432, fecha: "2026-07-22", descripcion: "Encontramos un perro mediano marrón claro con manchas blancas, collar celeste, deambulando cerca de Plaza Serrano.", nickname: "Kiosco Don Raúl", bg: "#a9825f", fg: "#f6eee1" },
+  { tipo: "encontrada", especie: "perro", nombre: "", color: "marrón claro y blanco", tamano: "mediano", zona: "Palermo", lat: -34.585, lng: -58.432, fecha: "2026-07-22", descripcion: "Encontramos un perro mediano marrón claro con manchas blancas, collar celeste, deambulando cerca de Plaza Serrano.", nickname: "Kiosco Don Raúl", bg: "#8f6a48", fg: "#f6eee1" },
   { tipo: "perdida", especie: "gato", nombre: "Mishi", color: "negro", tamano: "chico", zona: "Recoleta", lat: -34.588, lng: -58.393, fecha: "2026-07-18", descripcion: "Gato pequeño completamente negro, muy asustadizo, se escapó por el balcón en Recoleta.", nickname: "Fam. Ibarra", bg: "#2b1b12", fg: "#e4661e" },
   { tipo: "encontrada", especie: "gato", nombre: "", color: "gris atigrado", tamano: "chico", zona: "Belgrano", lat: -34.562, lng: -58.456, fecha: "2026-07-23", descripcion: "Gata chica gris atigrada encontrada en Belgrano, parece tener dueño, muy mansa.", nickname: "Portería Belgrano", bg: "#8a8a8a", fg: "#2b1b12" },
-  { tipo: "encontrada", especie: "perro", nombre: "", color: "negro", tamano: "grande", zona: "Recoleta", lat: -34.589, lng: -58.395, fecha: "2026-07-19", descripcion: "Perro grande negro sin collar, encontrado cerca del cementerio de Recoleta, parece perdido hace días.", nickname: "Vecina de Palermo", bg: "#2b1b12", fg: "#d31c22" },
+  { tipo: "encontrada", especie: "perro", nombre: "", color: "negro", tamano: "grande", zona: "Recoleta", lat: -34.589, lng: -58.395, fecha: "2026-07-19", descripcion: "Perro grande negro sin collar, encontrado cerca del cementerio de Recoleta, parece perdido hace días.", nickname: "Vecina de Palermo", bg: "#2b1b12", fg: "#f0483a" },
 ];
 
 export async function seedIfEmpty() {
@@ -309,7 +335,7 @@ export async function seedIfEmpty() {
       const { bg, fg, ...rest } = s;
       await createReport({ ...rest, id, foto: svg, hist });
     } catch (e) {
-      console.error("No se pudo insertar un reporte de ejemplo", e);
+      logError("No se pudo insertar un reporte de ejemplo", e);
     }
   }
 
@@ -326,7 +352,7 @@ export async function seedIfEmpty() {
         await supabase.from(CONTRIBUTORS_TABLE).insert({ id, ...u, updated_at: new Date().toISOString() });
       }
     } catch (e) {
-      console.error("No se pudo insertar un contribuyente de ejemplo", e);
+      logError("No se pudo insertar un contribuyente de ejemplo", e);
     }
   }
 }

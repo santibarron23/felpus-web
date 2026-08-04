@@ -1,3 +1,5 @@
+import { logError } from "./log";
+
 let mapsLoadingPromise = null;
 
 // Carga el script de Google Maps (con las librerías "places", para el
@@ -45,7 +47,7 @@ export function observeMapResize(map, container) {
       window.google.maps.event.trigger(map, "resize");
       if (lastCenter) map.setCenter(lastCenter);
     } catch (e) {
-      console.error("No se pudo re-medir el mapa tras un resize", e);
+      logError("No se pudo re-medir el mapa tras un resize", e);
     }
   });
   observer.observe(container);

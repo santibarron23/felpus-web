@@ -1,3 +1,5 @@
+import { logError } from "./log";
+
 // ---------------------------------------------------------------------------
 // Felpus — lógica de matching (corre 100% en el navegador)
 //
@@ -258,7 +260,7 @@ export async function getImageEmbedding(dataUrl) {
     const data = await res.json();
     return Array.isArray(data.embedding) ? data.embedding : null;
   } catch (e) {
-    console.error("No se pudo obtener el embedding de imagen (se usará solo el color)", e);
+    logError("No se pudo obtener el embedding de imagen (se usará solo el color)", e);
     return null;
   }
 }
@@ -403,18 +405,43 @@ export function scoreMatch(a, b) {
   };
 }
 
+// Patrón repetido en 4 lugares distintos de la app (campanita de
+// notificaciones, submit del formulario, "ver coincidencias" de una tarjeta,
+// y el webhook de notify-match): puntuar candidatos contra un reporte,
+// quedarse con los que superan SCORE_MINIMO y ordenar de mayor a menor.
+// La selección de candidatos sigue siendo responsabilidad de quien llama
+// (cada caso de uso filtra distinto: por fecha, por id propio, etc.).
+export function findMatches(report, candidates, { limit } = {}) {
+  const scored = candidates
+    .map((c) => ({ report: c, ...scoreMatch(report, c) }))
+    .filter((m) => m.score >= SCORE_MINIMO)
+    .sort((a, b) => b.score - a.score);
+  return limit != null ? scored.slice(0, limit) : scored;
+}
+
 export function scoreLabel(score, colors) {
   if (score >= 0.7) return { text: "Alta probabilidad", color: colors.green };
   if (score >= 0.4) return { text: "Probabilidad media", color: colors.orangeInk };
   return { text: "Probabilidad baja", color: colors.muted };
 }
 
+// Colores de nivel deliberadamente separados de los colores de estado
+// (perdida/encontrada/reencontrada) — ver el comentario junto a los tokens
+// tierBronze/Silver/Gold/Legendary en theme.js para el porqué.
+//
+// Devuelve `bg` (para el círculo/pill de avatar con texto blanco encima —
+// no cambia entre temas) y `text` (para cuando el color se usa como texto
+// plano sobre una tarjeta — sí cambia entre temas). En modo claro son
+// literalmente el mismo valor; en modo oscuro divergen porque un tono lo
+// bastante oscuro para hacer de fondo detrás de texto blanco es, por
+// definición, demasiado oscuro para leerse como texto sobre una tarjeta
+// oscura — ver theme.js.
 export function getTier(points, colors) {
   const p = points || 0;
-  if (p >= 100) return { label: "Leyenda Felpus", paws: 4, color: colors.red };
-  if (p >= 50) return { label: "Rescatista", paws: 3, color: colors.orangeInk };
-  if (p >= 20) return { label: "Guardián de barrio", paws: 2, color: colors.green };
-  return { label: "Vecino atento", paws: 1, color: colors.muted };
+  if (p >= 100) return { label: "Leyenda Felpus", paws: 4, bg: colors.tierLegendary, text: colors.tierLegendaryText };
+  if (p >= 50) return { label: "Rescatista", paws: 3, bg: colors.tierGold, text: colors.tierGoldText };
+  if (p >= 20) return { label: "Guardián de barrio", paws: 2, bg: colors.tierSilver, text: colors.tierSilverText };
+  return { label: "Vecino atento", paws: 1, bg: colors.tierBronze, text: colors.tierBronzeText };
 }
 
 const TIER_THRESHOLDS = [
@@ -496,6 +523,48 @@ export function formatFechaAR(fecha) {
   const [y, m, d] = fecha.split("-");
   if (!y || !m || !d) return fecha;
   return `${d}/${m}/${y}`;
+}
+
+// ---------------------------------------------------------------------------
+// Descripción del reporte: rediseño para reducir al mínimo lo que hay que
+// escribir a mano. Antes había un solo textarea en blanco que le pedía a
+// alguien en medio de una situación estresante que redactara de una: señas
+// particulares + collar + comportamiento + ubicación exacta, todo junto, sin
+// ninguna ayuda. Ahora se arma en 3 capas, todas puramente funciones de
+// datos que ya existen (fácil de testear, sin tocar el DOM):
+//   1. composeDescripcionBase: una frase con lo que ya se completó arriba en
+//      el formulario (especie/tamaño/color/edad/sexo) — el usuario no
+//      vuelve a escribir nada de esto.
+//   2. composeChipSentence: transforma selecciones de chips (collar,
+//      comportamiento) en una frase corta, sin que la persona tipee nada.
+//   3. Lo que la persona SÍ escribe (o dicta por voz) queda acotado a
+//      "algo más para identificarla" — señas realmente únicas, lo único que
+//      no se puede inferir de otro campo.
+// El resultado de las 3 capas se concatena en descripcion, así que a la
+// base de datos y al matching no les cambia nada: siguen viendo el mismo
+// campo de texto de siempre.
+// ---------------------------------------------------------------------------
+export function composeDescripcionBase(form) {
+  if (!form) return "";
+  const especieLabel = form.especie === "perro" ? "un perro" : form.especie === "gato" ? "un gato" : "una mascota";
+  const colorTxt = form.color === "Otro color" ? form.colorOtro : form.color;
+  const parts = [`Es ${especieLabel}`];
+  if (form.tamano) parts.push(`de tamaño ${form.tamano}`);
+  if (colorTxt) parts.push(`color ${colorTxt.toLowerCase()}`);
+  if (form.edad && form.edad !== "No sé") parts.push(form.edad.replace(/\s*\([^)]*\)/, "").toLowerCase());
+  if (form.sexo && form.sexo !== "No sé") parts.push(form.sexo.toLowerCase());
+  return parts.join(", ") + ".";
+}
+
+// Arma "Tenía collar y chapita con nombre." a partir de ["Collar", "Chapita
+// con nombre"] — separa el último ítem con "y" en vez de una coma más,
+// nada más que una lista prolija en español.
+export function composeChipSentence(prefix, chips) {
+  if (!chips || chips.length === 0) return "";
+  const items = chips.map((c) => c.toLowerCase());
+  const joined =
+    items.length === 1 ? items[0] : `${items.slice(0, -1).join(", ")} y ${items[items.length - 1]}`;
+  return `${prefix} ${joined}.`;
 }
 
 export function buildShareText(report) {

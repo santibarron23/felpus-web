@@ -5,24 +5,37 @@ export const runtime = "nodejs";
 const HF_MODEL = "openai/clip-vit-base-patch32";
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8MB — de sobra para una foto ya redimensionada en el cliente.
 
-// Rate limit básico en memoria (por IP). No sobrevive a reinicios ni se
-// comparte entre instancias serverless, pero frena el abuso trivial de un
-// endpoint que consume una API de terceros con costo/límite propio.
-const RATE_LIMIT_WINDOW_MS = 60_000;
-const RATE_LIMIT_MAX = 12;
-const requestLog = new Map();
-
-function isRateLimited(key) {
-  const now = Date.now();
-  const timestamps = (requestLog.get(key) || []).filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
-  timestamps.push(now);
-  requestLog.set(key, timestamps);
-  return timestamps.length > RATE_LIMIT_MAX;
+// Rate limit real (en la base, vía RPC) — el anterior vivía en un Map en
+// memoria adentro de la función serverless, así que no protegía nada: cada
+// cold start arranca en cero y las instancias concurrentes no comparten
+// memoria. Ver check_embed_rate_limit() en supabase/schema.sql. Si el
+// chequeo mismo falla (Supabase caído, no configurado, etc.) se deja pasar
+// el pedido — un problema de infra ajeno no debería tumbar la función real.
+async function checkRateLimit(ip) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!ip || !supabaseUrl || !supabaseKey) return true;
+  try {
+    const res = await fetch(`${supabaseUrl}/rest/v1/rpc/check_embed_rate_limit`, {
+      method: "POST",
+      headers: {
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ client_ip: ip }),
+    });
+    if (!res.ok) return true;
+    return await res.json();
+  } catch (e) {
+    return true;
+  }
 }
 
 export async function POST(request) {
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-  if (isRateLimited(ip)) {
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+  const allowed = await checkRateLimit(ip);
+  if (!allowed) {
     return Response.json({ error: "Demasiadas solicitudes, probá de nuevo en un minuto." }, { status: 429 });
   }
 

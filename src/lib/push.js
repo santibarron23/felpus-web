@@ -1,0 +1,68 @@
+import { supabase } from "./supabaseClient";
+import { logError } from "./log";
+
+// Notificaciones push del navegador: además del email (ver
+// api/notify-match), le avisa a la persona en el momento, con el celular
+// cerrado, si alguien publica una coincidencia con SU reporte. No pide
+// cuenta ni login — se activa por reporte, así que también funciona para
+// quien reportó como invitado (ver subscribe_report_push en schema.sql).
+export function isPushSupported() {
+  return typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+// Pide permiso, se suscribe con el service worker ya registrado, y guarda
+// la suscripción en el reporte puntual vía RPC. Lanza si el usuario
+// rechaza el permiso o si algo falla — el que llama decide cómo avisarlo
+// (toast de error, etc.), acá no se silencia nada.
+export async function subscribeReportPush(reportId) {
+  if (!isPushSupported()) {
+    throw new Error("Este navegador no soporta notificaciones push.");
+  }
+  const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  if (!vapidPublicKey) {
+    throw new Error("Las notificaciones push no están configuradas todavía.");
+  }
+
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") {
+    throw new Error("No diste permiso para las notificaciones.");
+  }
+
+  const registration = await navigator.serviceWorker.ready;
+  let subscription = await registration.pushManager.getSubscription();
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+    });
+  }
+
+  const { error } = await supabase.rpc("subscribe_report_push", {
+    p_report_id: reportId,
+    p_subscription: subscription.toJSON(),
+  });
+  if (error) throw error;
+  return true;
+}
+
+// Se llama al montar la app — no rompe nada si falla, solo hace que el
+// botón de "Activar notificaciones" no sepa que ya estaban activadas.
+export async function hasActivePushSubscription() {
+  try {
+    if (!isPushSupported()) return false;
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (!registration) return false;
+    const subscription = await registration.pushManager.getSubscription();
+    return !!subscription;
+  } catch (e) {
+    logError("No se pudo chequear la suscripción de notificaciones", e);
+    return false;
+  }
+}

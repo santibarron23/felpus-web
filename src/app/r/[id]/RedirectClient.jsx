@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useTheme } from "../../../components/felpus/ThemeProvider";
 
 // Los crawlers de redes sociales (Facebook, WhatsApp, X, Slack, etc.) piden
 // esta URL sin ejecutar JavaScript, así que solo leen las meta etiquetas que
@@ -9,12 +10,13 @@ import { useEffect } from "react";
 // directo en la publicación abierta dentro de la app (?r= ya lo maneja
 // FelpusMatcher).
 export default function RedirectClient({ id }) {
+  const C = useTheme();
   useEffect(() => {
     window.location.replace(`/?r=${encodeURIComponent(id)}`);
   }, [id]);
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center" style={{ background: "#F6EFE4", color: "#6B5643" }}>
+    <div className="min-h-screen w-full flex items-center justify-center" style={{ background: C.cream, color: C.muted }}>
       <p className="text-sm">Abriendo la publicación en Felpus…</p>
     </div>
   );

@@ -1,4 +1,6 @@
-import { scoreMatch } from "../../../lib/matching";
+import webpush from "web-push";
+import { findMatches } from "../../../lib/matching";
+import { logError } from "../../../lib/log";
 
 // Corre en el servidor: lo dispara un Database Webhook de Supabase cada vez
 // que se inserta un reporte nuevo (ver PENDIENTE_DECISION.md para la
@@ -36,6 +38,7 @@ function rowToMatchable(row) {
     lng: row.lng,
     descripcion: row.descripcion,
     contactoEmail: row.contacto_email || "",
+    pushSubscription: row.push_subscription || null,
     fotos,
     hist: fotos[0]?.hist,
     embedding: fotos[0]?.embedding,
@@ -86,6 +89,29 @@ async function sendMatchEmail({ resendKey, toEmail, matchedReport, newReport, sc
   });
 }
 
+async function sendMatchPush({ subscription, matchedReport, newReport, score }) {
+  const siteUrl = "https://felpus-web.vercel.app";
+  const nombre = newReport.nombre || (newReport.especie === "gato" ? "un gato" : "un perro");
+  const pct = Math.round(score * 100);
+  const payload = JSON.stringify({
+    title: "🐾 Posible coincidencia en Felpus",
+    body: `${nombre} (${newReport.color}, zona ${newReport.zona}) se parece a tu publicación de ${matchedReport.nombre || matchedReport.especie} — ${pct}% de compatibilidad.`,
+    url: `${siteUrl}/r/${newReport.id}`,
+    tag: `felpus-match-${matchedReport.id}`,
+  });
+  await webpush.sendNotification(subscription, payload);
+}
+
+// Push es opcional: si no están las claves VAPID configuradas (ver
+// PENDIENTE_DECISION.md), simplemente no se manda nada por ese canal — el
+// email sigue funcionando igual, no hace que todo el webhook falle.
+const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
+const pushConfigured = !!(vapidPublicKey && vapidPrivateKey);
+if (pushConfigured) {
+  webpush.setVapidDetails(process.env.VAPID_SUBJECT || "mailto:contacto@felpus.app", vapidPublicKey, vapidPrivateKey);
+}
+
 export async function POST(request) {
   const secret = request.headers.get("x-webhook-secret");
   if (!process.env.NOTIFY_WEBHOOK_SECRET || secret !== process.env.NOTIFY_WEBHOOK_SECRET) {
@@ -115,26 +141,38 @@ export async function POST(request) {
   const candidateRows = await fetchCandidates(supabaseUrl, supabaseKey, row);
   const candidates = candidateRows.map(rowToMatchable);
 
-  const matches = candidates
-    .map((c) => ({ candidate: c, ...scoreMatch(newReport, c) }))
-    .filter((m) => m.score >= EMAIL_SCORE_THRESHOLD && m.candidate.contactoEmail)
-    .sort((a, b) => b.score - a.score)
+  // Mismo umbral y tope para los dos canales — un push es tan intrusivo
+  // como un email (o más, en el momento), así que no tiene sentido ser más
+  // permisivo con uno que con otro.
+  const matches = findMatches(newReport, candidates)
+    .filter((m) => m.score >= EMAIL_SCORE_THRESHOLD && (m.report.contactoEmail || m.report.pushSubscription))
     .slice(0, MAX_EMAILS_PER_REPORT);
 
   let notified = 0;
   for (const m of matches) {
-    try {
-      await sendMatchEmail({
-        resendKey,
-        toEmail: m.candidate.contactoEmail,
-        matchedReport: m.candidate,
-        newReport,
-        score: m.score,
-      });
-      notified++;
-    } catch (e) {
-      console.error("No se pudo mandar el email de coincidencia", e);
+    let sentSomething = false;
+    if (m.report.contactoEmail) {
+      try {
+        await sendMatchEmail({ resendKey, toEmail: m.report.contactoEmail, matchedReport: m.report, newReport, score: m.score });
+        sentSomething = true;
+      } catch (e) {
+        logError("No se pudo mandar el email de coincidencia", e);
+      }
     }
+    if (pushConfigured && m.report.pushSubscription) {
+      try {
+        await sendMatchPush({ subscription: m.report.pushSubscription, matchedReport: m.report, newReport, score: m.score });
+        sentSomething = true;
+      } catch (e) {
+        // Código 404/410 = la suscripción ya no es válida (el usuario
+        // desinstaló, borró datos del navegador, etc.) — no hay forma de
+        // limpiarla desde acá sin otra función security definer aparte, así
+        // que por ahora solo se loguea distinto para diferenciarlo de un
+        // error real.
+        logError(e?.statusCode === 404 || e?.statusCode === 410 ? "Suscripción push vencida" : "No se pudo mandar la notificación push", e);
+      }
+    }
+    if (sentSomething) notified++;
   }
 
   return Response.json({ notified });

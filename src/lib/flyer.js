@@ -414,7 +414,9 @@ function splitSentences(text) {
 
 export function reportPublicUrl(report) {
   if (typeof window === "undefined") return "";
-  return `${window.location.origin}/?r=${encodeURIComponent(report.id)}`;
+  // Misma URL canónica que usa ShareButton (/r/[id]) — antes este QR apuntaba
+  // a /?r=<id>, una ruta distinta que no lleva la preview con foto real.
+  return `${window.location.origin}/r/${encodeURIComponent(report.id)}`;
 }
 
 export async function buildFlyerBlob(report, colorText) {

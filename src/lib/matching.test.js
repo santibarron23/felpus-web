@@ -1,0 +1,396 @@
+import { describe, it, expect } from "vitest";
+import {
+  normalizeText,
+  normalizeNickname,
+  tokenize,
+  jaccard,
+  haversineKm,
+  histIntersection,
+  cosineSimilarity,
+  imageSimilarity,
+  scoreMatch,
+  findMatches,
+  scoreLabel,
+  getTier,
+  getTierProgress,
+  isRecent,
+  getBadges,
+  timeAgo,
+  formatFechaAR,
+  buildShareText,
+  sanitizePhoneForWhatsapp,
+  composeDescripcionBase,
+  composeChipSentence,
+  SCORE_MINIMO,
+} from "./matching";
+
+// Reporte base reutilizable — cada test sobreescribe solo lo que le importa,
+// así el caso de prueba deja claro qué campo es el que se está variando.
+function makeReport(overrides = {}) {
+  return {
+    id: "r1",
+    tipo: "perdida",
+    especie: "perro",
+    nombre: "Rocky",
+    color: "Negro",
+    colorOtro: "",
+    tamano: "mediano",
+    sexo: "Macho",
+    edad: "Adulto (3-8 años)",
+    peso: "10 a 20 kg",
+    zona: "Palermo",
+    lat: -34.588,
+    lng: -58.43,
+    descripcion: "Perro negro con collar azul, muy sociable",
+    creadoEn: Date.now(),
+    ...overrides,
+  };
+}
+
+describe("normalizeText / tokenize / jaccard", () => {
+  it("saca acentos, pasa a minúscula y limpia puntuación", () => {
+    // Cada carácter que no sea a-z/0-9/espacio se reemplaza por UN espacio
+    // (no se colapsan espacios múltiples) — de ahí los 3 espacios seguidos
+    // entre "marron" y "muy": uno por la coma, el espacio original, y uno
+    // por el "¡". tokenize() es quien sí colapsa espacios después.
+    expect(normalizeText("Perrito Marrón, ¡muy Sociable!")).toBe("perrito marron   muy sociable ");
+  });
+
+  it("normalizeNickname arma un slug con guiones", () => {
+    expect(normalizeNickname("María José")).toBe("maria-jose");
+  });
+
+  it("tokenize descarta stopwords y palabras muy cortas", () => {
+    // "de", "la" son stopwords; "un" y "el" también — no deberían quedar.
+    expect(tokenize("El perro de la vecina es muy bueno")).toEqual(["perro", "vecina", "bueno"]);
+  });
+
+  it("jaccard da 1 cuando los sets de tokens son idénticos", () => {
+    const tokens = tokenize("perro negro collar azul");
+    expect(jaccard(tokens, tokens)).toBe(1);
+  });
+
+  it("jaccard da 0 cuando no comparten ningún token", () => {
+    expect(jaccard(tokenize("gato blanco"), tokenize("perro negro"))).toBe(0);
+  });
+
+  it("jaccard da 0 (no NaN) cuando ambos textos están vacíos", () => {
+    expect(jaccard([], [])).toBe(0);
+  });
+});
+
+describe("haversineKm", () => {
+  it("da 0 para el mismo punto", () => {
+    expect(haversineKm(-34.6, -58.4, -34.6, -58.4)).toBe(0);
+  });
+
+  it("aproxima bien una distancia conocida (CABA ~ La Plata, ~50km)", () => {
+    const d = haversineKm(-34.6037, -58.3816, -34.9214, -57.9544);
+    expect(d).toBeGreaterThan(45);
+    expect(d).toBeLessThan(60);
+  });
+});
+
+describe("histIntersection / cosineSimilarity", () => {
+  it("histIntersection de dos histogramas idénticos suma 1 (normalizados)", () => {
+    expect(histIntersection([0.5, 0.5], [0.5, 0.5])).toBe(1);
+  });
+
+  it("histIntersection da 0 si no se superponen", () => {
+    expect(histIntersection([1, 0], [0, 1])).toBe(0);
+  });
+
+  it("histIntersection devuelve 0 si los histogramas no existen o difieren en longitud", () => {
+    expect(histIntersection(null, [1])).toBe(0);
+    expect(histIntersection([1], [1, 2])).toBe(0);
+  });
+
+  it("cosineSimilarity da 1 para vectores idénticos (tras remapear a [0,1])", () => {
+    expect(cosineSimilarity([1, 0, 0], [1, 0, 0])).toBeCloseTo(1);
+  });
+
+  it("cosineSimilarity da null si los vectores no son válidos", () => {
+    expect(cosineSimilarity(null, [1, 2])).toBeNull();
+    expect(cosineSimilarity([1, 2], [1, 2, 3])).toBeNull();
+    expect(cosineSimilarity([0, 0], [0, 0])).toBeNull(); // norma 0
+  });
+});
+
+describe("imageSimilarity", () => {
+  it("usa el embedding cuando ambos reportes lo tienen", () => {
+    const a = { embedding: [1, 0], hist: [1, 0] };
+    const b = { embedding: [1, 0], hist: [0, 1] }; // hist NO coincide, embedding sí
+    expect(imageSimilarity(a, b)).toBeCloseTo(1);
+  });
+
+  it("cae al histograma si falta el embedding de un lado", () => {
+    const a = { embedding: null, hist: [0.5, 0.5] };
+    const b = { embedding: null, hist: [0.5, 0.5] };
+    expect(imageSimilarity(a, b)).toBe(1);
+  });
+
+  it("con varias fotos, se queda con la mejor combinación", () => {
+    const a = { fotos: [{ hist: [1, 0] }, { hist: [0, 1] }] };
+    const b = { fotos: [{ hist: [0, 1] }] };
+    // la segunda foto de "a" matchea perfecto con la única de "b"
+    expect(imageSimilarity(a, b)).toBe(1);
+  });
+});
+
+describe("scoreMatch", () => {
+  it("da 0 si las especies no coinciden, sin importar lo demás", () => {
+    const a = makeReport({ especie: "perro" });
+    const b = makeReport({ especie: "gato" }); // idéntico en todo lo demás
+    expect(scoreMatch(a, b).score).toBe(0);
+  });
+
+  it("da un score alto para dos reportes prácticamente idénticos y cercanos", () => {
+    const a = makeReport();
+    const b = makeReport({ id: "r2", tipo: "encontrada", lat: -34.589, lng: -58.431 });
+    const result = scoreMatch(a, b);
+    expect(result.score).toBeGreaterThan(0.5);
+  });
+
+  it("penaliza la distancia: mismo reporte pero a mucha distancia da menos score", () => {
+    const a = makeReport();
+    const cerca = scoreMatch(a, makeReport({ id: "r2", lat: -34.589, lng: -58.431 })).score;
+    // Córdoba capital, a ~650km de Palermo
+    const lejos = scoreMatch(a, makeReport({ id: "r3", lat: -31.4201, lng: -64.1888 })).score;
+    expect(cerca).toBeGreaterThan(lejos);
+  });
+
+  it("sin lat/lng, usa la zona como aproximación (misma zona > zona distinta)", () => {
+    const a = makeReport({ lat: null, lng: null, zona: "Palermo" });
+    const mismaZona = scoreMatch(a, makeReport({ id: "r2", lat: null, lng: null, zona: "Palermo" })).score;
+    const otraZona = scoreMatch(a, makeReport({ id: "r3", lat: null, lng: null, zona: "Recoleta" })).score;
+    expect(mismaZona).toBeGreaterThan(otraZona);
+  });
+
+  it("da más peso a la imagen cuando ambos lados tienen embedding de IA", () => {
+    const conIA = makeReport({ embedding: [1, 0, 0] });
+    const sinIA = makeReport({ embedding: null, hist: [0.5, 0.5] });
+    // mismo par de reportes salvo por tener o no embedding real
+    const candidatoConIA = makeReport({ id: "r2", embedding: [0, 1, 0], color: "Blanco", descripcion: "otra cosa" });
+    const candidatoSinIA = makeReport({ id: "r3", embedding: null, hist: [0.5, 0.5], color: "Blanco", descripcion: "otra cosa" });
+    // con embedding disponible pero sin ninguna similitud de imagen (vectores
+    // ortogonales) y datos estructurados que no matchean, el score con IA
+    // debería ser menor o igual que sin IA (donde el histograma sí coincide)
+    const scoreConIA = scoreMatch(conIA, candidatoConIA).score;
+    const scoreSinIA = scoreMatch(sinIA, candidatoSinIA).score;
+    expect(scoreSinIA).toBeGreaterThan(scoreConIA);
+  });
+
+  it("el score siempre queda entre 0 y 1", () => {
+    const a = makeReport();
+    const b = makeReport({ id: "r2" });
+    const { score } = scoreMatch(a, b);
+    expect(score).toBeGreaterThanOrEqual(0);
+    expect(score).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("findMatches", () => {
+  it("descarta candidatos por debajo de SCORE_MINIMO y ordena de mayor a menor", () => {
+    const base = makeReport();
+    const bueno = makeReport({ id: "bueno", lat: -34.589, lng: -58.431 });
+    const malo = makeReport({ id: "malo", especie: "gato" }); // score 0, descartado
+    const resultado = findMatches(base, [malo, bueno]);
+    expect(resultado.map((m) => m.report.id)).toEqual(["bueno"]);
+    expect(resultado[0].score).toBeGreaterThanOrEqual(SCORE_MINIMO);
+  });
+
+  it("respeta el límite", () => {
+    const base = makeReport();
+    const candidatos = [
+      makeReport({ id: "a", lat: -34.589, lng: -58.431 }),
+      makeReport({ id: "b", lat: -34.589, lng: -58.432 }),
+      makeReport({ id: "c", lat: -34.59, lng: -58.433 }),
+    ];
+    expect(findMatches(base, candidatos, { limit: 2 })).toHaveLength(2);
+  });
+
+  it("devuelve todos los candidatos válidos si no se pasa límite", () => {
+    const base = makeReport();
+    const candidatos = [makeReport({ id: "a", lat: -34.589, lng: -58.431 })];
+    expect(findMatches(base, candidatos)).toHaveLength(1);
+  });
+});
+
+describe("scoreLabel", () => {
+  const colors = { green: "green", orangeInk: "orange", muted: "gray" };
+  it("clasifica el score en alta/media/baja probabilidad", () => {
+    expect(scoreLabel(0.8, colors).text).toBe("Alta probabilidad");
+    expect(scoreLabel(0.5, colors).text).toBe("Probabilidad media");
+    expect(scoreLabel(0.1, colors).text).toBe("Probabilidad baja");
+  });
+});
+
+describe("getTier / getTierProgress", () => {
+  const colors = {
+    tierBronze: "bronze", tierBronzeText: "bronzeText",
+    tierSilver: "silver", tierSilverText: "silverText",
+    tierGold: "gold", tierGoldText: "goldText",
+    tierLegendary: "legendary", tierLegendaryText: "legendaryText",
+  };
+
+  it("asigna el nivel correcto según los umbrales de puntos", () => {
+    expect(getTier(0, colors).label).toBe("Vecino atento");
+    expect(getTier(20, colors).label).toBe("Guardián de barrio");
+    expect(getTier(50, colors).label).toBe("Rescatista");
+    expect(getTier(100, colors).label).toBe("Leyenda Felpus");
+    expect(getTier(9999, colors).label).toBe("Leyenda Felpus");
+  });
+
+  it("separa bg (siempre igual) de text (varía por tema)", () => {
+    const tier = getTier(50, colors);
+    expect(tier.bg).toBe("gold");
+    expect(tier.text).toBe("goldText");
+  });
+
+  it("getTierProgress calcula el % correcto dentro de un nivel", () => {
+    // Entre 20 (Guardián) y 50 (Rescatista): con 35 puntos, a mitad de camino.
+    const progress = getTierProgress(35);
+    expect(progress.currentLabel).toBe("Guardián de barrio");
+    expect(progress.nextLabel).toBe("Rescatista");
+    expect(progress.progressPct).toBe(50);
+    expect(progress.pointsToNext).toBe(15);
+  });
+
+  it("getTierProgress en el nivel máximo no tiene próximo nivel", () => {
+    const progress = getTierProgress(500);
+    expect(progress.nextLabel).toBeNull();
+    expect(progress.progressPct).toBe(100);
+  });
+});
+
+describe("isRecent", () => {
+  it("es true para algo creado hace 1 hora", () => {
+    expect(isRecent({ creadoEn: Date.now() - 3600 * 1000 })).toBe(true);
+  });
+
+  it("es false para algo creado hace 2 días", () => {
+    expect(isRecent({ creadoEn: Date.now() - 2 * 24 * 3600 * 1000 })).toBe(false);
+  });
+});
+
+describe("getBadges", () => {
+  it("devuelve solo las insignias que corresponden", () => {
+    const ids = getBadges({ reportes: 1, reencuentros: 0, hearts: 0, points: 0 }).map((b) => b.id);
+    expect(ids).toEqual(["primera-huella"]);
+  });
+
+  it("devuelve [] si no hay contribuyente", () => {
+    expect(getBadges(null)).toEqual([]);
+  });
+});
+
+describe("timeAgo", () => {
+  it("distingue singular de plural", () => {
+    expect(timeAgo(Date.now() - 60 * 60 * 1000)).toBe("hace 1 hora");
+    expect(timeAgo(Date.now() - 2 * 60 * 60 * 1000)).toBe("hace 2 horas");
+  });
+
+  it("devuelve cadena vacía si no hay timestamp", () => {
+    expect(timeAgo(null)).toBe("");
+  });
+});
+
+describe("formatFechaAR", () => {
+  it("convierte AAAA-MM-DD a DD/MM/AAAA", () => {
+    expect(formatFechaAR("2026-07-20")).toBe("20/07/2026");
+  });
+
+  it("devuelve la entrada sin tocar si no tiene 3 partes separadas por guion", () => {
+    expect(formatFechaAR("no-fecha")).toBe("no-fecha");
+    expect(formatFechaAR("")).toBe("");
+  });
+});
+
+describe("buildShareText", () => {
+  it("arma el texto con el tipo en mayúsculas y el nombre si existe", () => {
+    const texto = buildShareText(makeReport({ tipo: "perdida", nombre: "Rocky" }));
+    expect(texto).toContain("PERDIDA");
+    expect(texto).toContain("Rocky —");
+  });
+
+  it("omite el guion del nombre si el reporte no tiene nombre", () => {
+    const texto = buildShareText(makeReport({ nombre: "" }));
+    expect(texto).not.toContain(" — ");
+  });
+});
+
+describe("composeDescripcionBase", () => {
+  it("arma una frase con lo que ya se completó en el formulario", () => {
+    const texto = composeDescripcionBase({
+      especie: "perro",
+      tamano: "mediano",
+      color: "Negro",
+      colorOtro: "",
+      edad: "Adulto (3-8 años)",
+      sexo: "Macho",
+    });
+    expect(texto).toBe("Es un perro, de tamaño mediano, color negro, adulto, macho.");
+  });
+
+  it("usa colorOtro cuando el color es 'Otro color'", () => {
+    const texto = composeDescripcionBase({
+      especie: "gato",
+      tamano: "chico",
+      color: "Otro color",
+      colorOtro: "Tricolor",
+      edad: "",
+      sexo: "",
+    });
+    expect(texto).toContain("color tricolor");
+  });
+
+  it("omite edad/sexo cuando son 'No sé' o están vacíos", () => {
+    const texto = composeDescripcionBase({
+      especie: "otro",
+      tamano: "grande",
+      color: "Blanco",
+      colorOtro: "",
+      edad: "No sé",
+      sexo: "No sé",
+    });
+    expect(texto).toBe("Es una mascota, de tamaño grande, color blanco.");
+  });
+
+  it("devuelve cadena vacía sin formulario", () => {
+    expect(composeDescripcionBase(null)).toBe("");
+  });
+});
+
+describe("composeChipSentence", () => {
+  it("une un solo chip sin conector", () => {
+    expect(composeChipSentence("Tenía", ["Collar"])).toBe("Tenía collar.");
+  });
+
+  it("separa el último ítem con 'y' cuando hay varios", () => {
+    expect(composeChipSentence("Tenía", ["Collar", "Chapita con nombre"])).toBe(
+      "Tenía collar y chapita con nombre."
+    );
+  });
+
+  it("con 3 o más, todos menos el último van con coma", () => {
+    expect(composeChipSentence("Es", ["Sociable", "Curioso", "Juguetón"])).toBe(
+      "Es sociable, curioso y juguetón."
+    );
+  });
+
+  it("devuelve cadena vacía si no hay chips seleccionados", () => {
+    expect(composeChipSentence("Tenía", [])).toBe("");
+    expect(composeChipSentence("Tenía", null)).toBe("");
+  });
+});
+
+describe("sanitizePhoneForWhatsapp", () => {
+  it("deja solo dígitos", () => {
+    expect(sanitizePhoneForWhatsapp("+54 (11) 1234-5678")).toBe("541112345678");
+  });
+
+  it("devuelve cadena vacía para entradas vacías/nulas", () => {
+    expect(sanitizePhoneForWhatsapp("")).toBe("");
+    expect(sanitizePhoneForWhatsapp(null)).toBe("");
+  });
+});

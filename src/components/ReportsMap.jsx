@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { loadGoogleMaps, observeMapResize } from "../lib/googleMaps";
+import { logError } from "../lib/log";
+import { useTheme } from "./felpus/ThemeProvider";
 
 // Mapa de sólo lectura que pinta un marcador por cada reporte que tenga
 // ubicación exacta (lat/lng), mostrando la foto real de la mascota en un
@@ -10,6 +12,7 @@ import { loadGoogleMaps, observeMapResize } from "../lib/googleMaps";
 // sin tener que abrir cada reporte. Tocar un marcador abre el detalle
 // (mismo modal que la lista).
 export default function ReportsMap({ reports, onSelectReport, center }) {
+  const C = useTheme();
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const containerRef = useRef(null);
   const mapObjRef = useRef(null);
@@ -68,13 +71,29 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
         // excepción interna de la librería de Google. Se aísla por marcador
         // para que un pin roto no tumbe el resto del mapa ni la página.
         try {
-          const color = r.tipo === "perdida" ? "#D31C22" : "#E36525";
+          // Antes usaba "#E36525" para "encontrada" — el mismo naranja que ya
+          // se había reemplazado en theme.js por no pasar contraste AA (ver
+          // C.orangeInk). Este mapa tenía su propia copia suelta del valor
+          // viejo, sin importar el tema, así que el fix nunca le llegó.
+          const color = r.tipo === "perdida" ? C.red : C.orangeInk;
+          const label = `${r.tipo === "perdida" ? "Perdida" : "Encontrada"} · ${r.zona}`;
           const pin = document.createElement("div");
           pin.style.cssText = `
             width: 40px; height: 40px; border-radius: 9999px; overflow: hidden;
             border: 3px solid ${color}; background: #fff; cursor: pointer;
             box-shadow: 0 2px 6px rgba(0,0,0,0.35);
           `;
+          // role="button" + tabIndex para que el pin sea alcanzable y
+          // activable por teclado — antes solo respondía al click del mouse.
+          pin.setAttribute("role", "button");
+          pin.setAttribute("tabindex", "0");
+          pin.setAttribute("aria-label", label);
+          pin.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onSelectRef.current?.(r);
+            }
+          });
           const img = document.createElement("img");
           img.src = r.foto;
           img.alt = "";
@@ -87,22 +106,25 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
           const marker = new window.google.maps.marker.AdvancedMarkerElement({
             position: { lat: r.lat, lng: r.lng },
             map: mapObjRef.current,
-            title: `${r.tipo === "perdida" ? "Perdida" : "Encontrada"} · ${r.zona}`,
+            title: label,
             content: pin,
           });
           marker.addListener("gmp-click", () => onSelectRef.current?.(r));
           return marker;
         } catch (e) {
-          console.error("No se pudo crear el marcador del mapa para un reporte", e);
+          logError("No se pudo crear el marcador del mapa para un reporte", e);
           return null;
         }
       })
       .filter(Boolean);
-  }, [reports, status]);
+    // `C` en las deps: sin esto, si el usuario cambia de tema mientras el
+    // mapa está montado, los pines ya dibujados quedan con los colores del
+    // tema anterior hasta el próximo cambio de `reports`.
+  }, [reports, status, C]);
 
   if (!apiKey) {
     return (
-      <div className="text-xs rounded-lg border p-3" style={{ borderColor: "#EFE3D2", color: "#6B5643" }}>
+      <div className="text-xs rounded-lg border p-3" style={{ borderColor: C.border, color: C.muted }}>
         El mapa no está configurado (falta <code className="felpus-mono">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code>).
         Mientras tanto podés seguir explorando con la vista de lista.
       </div>
@@ -111,7 +133,7 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
 
   if (status === "error") {
     return (
-      <div className="text-xs rounded-lg border p-3" style={{ borderColor: "#EFE3D2", color: "#AB1017" }}>
+      <div className="text-xs rounded-lg border p-3" style={{ borderColor: C.border, color: C.redDark }}>
         No se pudo cargar Google Maps. Revisá que la clave sea válida y que la Maps JavaScript API esté
         habilitada en tu proyecto de Google Cloud.
       </div>
@@ -121,8 +143,10 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
   return (
     <div
       ref={containerRef}
+      role="region"
+      aria-label="Mapa de mascotas reportadas cerca tuyo"
       className="w-full rounded-xl overflow-hidden border"
-      style={{ height: 340, borderColor: "#EFE3D2", background: "#F0E7D8" }}
+      style={{ height: 340, borderColor: C.border, background: C.surfaceMuted }}
     />
   );
 }

@@ -31,9 +31,14 @@ async function fetchReport(id) {
 export async function generateMetadata({ params }) {
   const report = await fetchReport(params.id);
   if (!report) {
+    // El reporte no existe (borrado, id inválido): la página igual responde
+    // 200 (RedirectClient decide el destino en el cliente), así que sin
+    // noindex explícito Google terminaba indexando contenido genérico
+    // repetido para cada id inválido.
     return {
       title: "Felpus - Buscador inteligente de mascotas perdidas y encontradas",
       description: "Reportá una mascota perdida o encontrada con foto y descripción.",
+      robots: { index: false, follow: false },
     };
   }
   const tipoTxt = report.tipo === "perdida" ? "Perdida" : "Encontrada";
@@ -44,14 +49,20 @@ export async function generateMetadata({ params }) {
     ? report.descripcion.slice(0, 200)
     : "Ayudanos a reencontrar esta mascota con su familia.";
   const image = report.foto_url;
+  const canonical = `${SITE_URL}/r/${params.id}`;
 
   return {
     title,
     description,
+    // La página redirige del lado del cliente a /?r=<id> (RedirectClient),
+    // así que sin canonical explícito un crawler que ejecuta JS podía
+    // terminar indexando esa URL en vez de esta, que es la que se comparte.
+    alternates: { canonical },
+    robots: report.resuelto ? { index: false, follow: true } : { index: true, follow: true },
     openGraph: {
       title,
       description,
-      url: `${SITE_URL}/r/${params.id}`,
+      url: canonical,
       siteName: "Felpus",
       locale: "es_AR",
       type: "website",
@@ -67,5 +78,25 @@ export async function generateMetadata({ params }) {
 }
 
 export default async function ReportPage({ params }) {
-  return <RedirectClient id={params.id} />;
+  const report = await fetchReport(params.id);
+  const jsonLd = report
+    ? {
+        "@context": "https://schema.org",
+        "@type": "WebPage",
+        name: `${report.tipo === "perdida" ? "Perdida" : "Encontrada"}: ${report.nombre || report.especie} en ${report.zona}`,
+        description: report.descripcion || undefined,
+        url: `${SITE_URL}/r/${params.id}`,
+        image: report.foto_url || undefined,
+        datePublished: report.creado_en || undefined,
+      }
+    : null;
+
+  return (
+    <>
+      {jsonLd && (
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      )}
+      <RedirectClient id={params.id} />
+    </>
+  );
 }
