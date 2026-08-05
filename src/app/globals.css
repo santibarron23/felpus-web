@@ -19,6 +19,20 @@
      no se duplicó todo acá para no tener dos fuentes de verdad. */
   --felpus-bg: #F6EFE4;
   --felpus-fg: #2B1B12;
+  /* Fondo de .felpus-input (todos los campos de texto/select/textarea del
+     formulario de reportar) — antes cada campo repetía "bg-[#FBF7F0]" en su
+     className, SIN ningún equivalente "dark:", así que en modo oscuro los
+     ~20 campos del formulario quedaban con fondo claro fijo. Un solo lugar
+     ahora, igual que --felpus-focus. */
+  --felpus-input-bg: #FBF7F0;
+  /* Espejo de CD.surface/surfaceMuted/surfaceSubtle en theme.js — para los
+     lugares que todavía usan clases Tailwind "dark:bg-[...]" en vez del
+     objeto CD (ver comentario ahí sobre por qué existen ambos caminos).
+     Mismos 3 valores, misma razón de ser: no duplicar la fuente de verdad
+     de los números, solo dar un nombre a los que Tailwind puede leer. */
+  --felpus-dark-card: #231E1B;
+  --felpus-dark-muted-surface: #1B1816;
+  --felpus-dark-hover: #2B2521;
   /* Le dice al navegador qué esquema estamos usando para que los controles
      nativos (checkboxes, scrollbar, selects) seleccionen su propia skin
      clara/oscura sin que tengamos que reestilarlos a mano uno por uno. */
@@ -29,8 +43,9 @@
   /* = CD.red/cream/ink en theme.js — mismos valores, misma razón de ser. */
   --felpus-focus: #FF5B4D;
   --felpus-focus-tint: rgba(255, 91, 77, 0.2);
-  --felpus-bg: #1C140D;
-  --felpus-fg: #F5ECDF;
+  --felpus-bg: #12100F;
+  --felpus-fg: #F7F3F0;
+  --felpus-input-bg: var(--felpus-dark-hover);
   color-scheme: dark;
 }
 
@@ -69,7 +84,8 @@ body {
   box-shadow: 0 0 0 3px var(--felpus-focus-tint);
 }
 .felpus-input {
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  background: var(--felpus-input-bg);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
 }
 
 @keyframes felpus-pulse {

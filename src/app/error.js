@@ -9,10 +9,16 @@
 import { useEffect } from "react";
 import { RefreshCw } from "lucide-react";
 import Mascot from "../components/Mascot";
-import { C } from "../lib/theme";
+import { useTheme } from "../components/felpus/ThemeProvider";
 import { logError } from "../lib/log";
 
 export default function Error({ error, reset }) {
+  // A diferencia de global-error.js (que reemplaza <html>/<body> entero y
+  // por eso no puede depender de ningún contexto de React), este boundary
+  // sigue adentro del árbol normal — el ThemeProvider de layout.js sigue
+  // disponible acá, así que no hay motivo para que se quede fijo en modo
+  // claro si la persona ya eligió oscuro.
+  const C = useTheme();
   useEffect(() => {
     logError("Error no capturado en un segmento de la app", error);
   }, [error]);

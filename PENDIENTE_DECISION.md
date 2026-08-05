@@ -1,6 +1,55 @@
 # Decisiones pendientes — requieren acción o información tuya
 
-## -8. Política de DELETE para las fotos en Storage (2026-08-05) — requiere 1 paso tuyo
+## -9. Mismatch de hidratación sistémico: `style={{color: C.x}}` en todo el árbol (2026-08-05) — no bloquea nada, sesión dedicada aparte
+
+**Qué encontré:** al cerrar la sesión de dark mode fui a verificar que no
+quedaran advertencias de hidratación en consola. Encontré y arreglé tres
+casos puntuales en el header (el logo que yo mismo había roto al hacerlo
+condicional por `themeMode`, el subtítulo del header, y los íconos
+sol/luna del botón de tema) reemplazando el `style={{color: C.x}}`
+calculado en JS por pares de clases Tailwind fijas (`text-[...] dark:text-[...]`).
+
+Al arreglar el botón de tema, apareció OTRA advertencia distinta más abajo
+en el mismo `<header>`: `border-color` también difiere entre servidor y
+cliente (`style={{ borderColor: C.border }}`). Confirmé que esto es la
+misma causa raíz, pero mucho más amplia: `useTheme()` (`C`/`CD` de
+`theme.js`) siempre devuelve la paleta CLARA durante el render de servidor
+(no hay forma de que el server sepa qué tema eligió cada visitante), y el
+cliente corrige recién al hidratar leyendo `data-theme`. Cualquier
+`style={{...: C.algo}}` en un elemento que se renderiza siempre (no solo
+detrás de un `if`) tiene este mismo problema en potencia — y
+`style={{...: C.algo}}` aparece decenas de veces en `FelpusMatcher.jsx` y
+`PureViews.jsx` (bordes de cards, colores de texto, íconos, etc.).
+
+**Por qué no seguí arreglándolos uno por uno:** es un patrón que se repite
+sistémicamente por todo el árbol, no un puñado de casos aislados — seguir
+el mismo hilo hubiera significado convertir prácticamente todos los
+`style={{color: C.x}}` / `style={{borderColor: C.x}}` de la app a clases
+Tailwind con pares claro/oscuro fijos. Es un cambio real y prolijo de
+hacer, pero es un refactor estructural amplio, no algo que corresponda
+colar dentro de una tarea de "verificación final" de un pedido que
+explícitamente decía "no quiero un rediseño estructural".
+
+**Impacto real mientras tanto:** ninguno visible. Es una advertencia de
+React solo en modo desarrollo (`npm run dev`) — en producción
+(`npm run build` + server) no aparece en consola del navegador de la misma
+forma, y aunque apareciera, React ya se recupera solo descartando el HTML
+del servidor y usando el del cliente: la persona nunca ve un parpadeo ni
+contenido incorrecto, solo se pierde parte de la ventaja de tener HTML
+pre-renderizado por el servidor en esos elementos puntuales.
+
+**Camino recomendado para cuando se retome:** la solución de raíz no es
+seguir parcheando `style={{}}` uno por uno, sino que `ThemeProvider` deje
+de depender de un `useState` que lee `document` recién en el cliente —
+por ejemplo, guardando la preferencia de tema en una cookie legible
+también por el servidor (`getServerSideProps`/route handler/middleware de
+Next), para que el primer render de servidor ya conozca el tema real y
+`C`/`CD` coincidan desde el arranque. Alternativa más chica pero más
+manual: migrar los `style={{color: C.x}}` restantes a variables CSS
+(`--felpus-text`, `--felpus-border`, etc., ya hay precedente con
+`--felpus-dark-card` y compañía) resueltas por `[data-theme]` en
+`globals.css`, igual que se hizo con los backgrounds — sin tocar
+`ThemeProvider`.
 
 **Qué pasó:** el bucket `felpus-photos` solo tenía políticas de lectura e
 inserción — nunca de borrado. `deleteReport()` (botón "Eliminar

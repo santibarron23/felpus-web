@@ -94,7 +94,7 @@ export function ReportCard({ report, onOpenDetail, children }) {
   const resuelto = !!report.resuelto;
   return (
     <div
-      className="felpus-card-hover group bg-white dark:bg-[#25190F] rounded-2xl border overflow-hidden shadow-sm"
+      className="felpus-card-hover group bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl border overflow-hidden shadow-sm"
       style={{ borderColor: resuelto ? C.successBorder : C.border, opacity: resuelto ? 0.75 : 1 }}
     >
       <button
@@ -110,7 +110,7 @@ export function ReportCard({ report, onOpenDetail, children }) {
               fill
               sizes="96px"
               loading="lazy"
-              className="felpus-photo-zoom object-cover bg-[#F0E7D8] dark:bg-[#3A2A1B] transition-transform duration-300 group-hover:scale-110"
+              className="felpus-photo-zoom object-cover bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)] transition-transform duration-300 group-hover:scale-110"
             />
           </div>
           {!resuelto && isRecent(report) && (
@@ -214,10 +214,10 @@ export function DetailModal({ report, onClose, onResolve, confirming, onConfirm,
         role="dialog"
         aria-modal="true"
         aria-label={`Detalle de ${report.nombre || report.especie}`}
-        className="bg-white dark:bg-[#25190F] rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto"
+        className="bg-white dark:bg-[var(--felpus-dark-card)] rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="relative h-56 overflow-hidden bg-[#F0E7D8] dark:bg-[#3A2A1B]">
+        <div className="relative h-56 overflow-hidden bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)]">
           {/* Fondo desenfocado con la misma foto, recortado a propósito —
               rellena el marco sin dejar franjas vacías. Encima, la foto
               real entra completa (object-contain) para no cortarle la
@@ -281,31 +281,31 @@ export function DetailModal({ report, onClose, onResolve, confirming, onConfirm,
               href={mapsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="felpus-input bg-[#FBF7F0] rounded-lg p-2.5 hover:bg-[#F0E7D8] dark:bg-[#3A2A1B] transition-colors focus:outline-none"
+              className="felpus-input bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5 hover:bg-[#F0E7D8] dark:hover:bg-[var(--felpus-dark-muted-surface)] transition-colors focus:outline-none"
             >
               <p className="text-[10px] uppercase font-bold flex items-center gap-1" style={{ color: C.muted }}>
                 <MapPin className="w-3 h-3" /> Zona
               </p>
               <p className="underline" style={{ color: C.text }}>{report.zona}</p>
             </a>
-            <div className="bg-[#FBF7F0] rounded-lg p-2.5">
+            <div className="bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
               <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Fecha</p>
               <p style={{ color: C.text }}>{formatFechaAR(report.fecha)}</p>
             </div>
             {report.sexo && (
-              <div className="bg-[#FBF7F0] rounded-lg p-2.5">
+              <div className="bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
                 <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Sexo</p>
                 <p style={{ color: C.text }}>{report.sexo}</p>
               </div>
             )}
             {report.edad && (
-              <div className="bg-[#FBF7F0] rounded-lg p-2.5">
+              <div className="bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
                 <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Edad</p>
                 <p style={{ color: C.text }}>{report.edad}</p>
               </div>
             )}
             {report.peso && (
-              <div className="bg-[#FBF7F0] rounded-lg p-2.5">
+              <div className="bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
                 <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Peso</p>
                 <p style={{ color: C.text }}>{report.peso}</p>
               </div>
@@ -374,7 +374,7 @@ export function DetailModal({ report, onClose, onResolve, confirming, onConfirm,
           {!report.resuelto && (
             <div className="pt-1">
               {confirming ? (
-                <div className="flex items-center gap-2 bg-[#EAF3EC] rounded-xl p-2.5">
+                <div className="flex items-center gap-2 bg-[#EAF3EC] dark:bg-[#1C2E22] rounded-xl p-2.5">
                   <span className="text-xs flex-1" style={{ color: C.greenDark }}>¿Confirmás el reencuentro?</span>
                   <button onClick={onConfirm} className="text-xs font-bold text-white rounded-lg px-3 py-1.5" style={{ background: C.greenSolid }}>
                     Sí, confirmar
@@ -582,12 +582,12 @@ export function ShareButton({ report, className, style, children, wrapperClassNa
           <>
             <div className="fixed inset-0 z-[70]" onClick={() => setOpen(false)} />
             <div
-              className="fixed z-[71] bg-white dark:bg-[#25190F] rounded-xl border shadow-lg py-1 text-xs"
+              className="fixed z-[71] bg-white dark:bg-[var(--felpus-dark-card)] rounded-xl border shadow-lg py-1 text-xs"
               style={{ borderColor: C.border, top: menuPos.top, left: menuPos.left, width: MENU_WIDTH }}
             >
             <button
               onClick={() => openWindow(`https://wa.me/?text=${encodeURIComponent(`${shareText}\n${shareUrl}`)}`)}
-              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[#FBF7F0] font-semibold"
+              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[#FBF7F0] dark:hover:bg-[var(--felpus-dark-hover)] font-semibold"
               style={{ color: C.text }}
             >
               <Share2 className="w-3.5 h-3.5" /> WhatsApp
@@ -596,7 +596,7 @@ export function ShareButton({ report, className, style, children, wrapperClassNa
               onClick={() =>
                 openWindow(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`)
               }
-              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[#FBF7F0] font-semibold"
+              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[#FBF7F0] dark:hover:bg-[var(--felpus-dark-hover)] font-semibold"
               style={{ color: C.text }}
             >
               <Facebook className="w-3.5 h-3.5" /> Facebook
@@ -607,7 +607,7 @@ export function ShareButton({ report, className, style, children, wrapperClassNa
                   `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`
                 )
               }
-              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[#FBF7F0] font-semibold"
+              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[#FBF7F0] dark:hover:bg-[var(--felpus-dark-hover)] font-semibold"
               style={{ color: C.text }}
             >
               <Twitter className="w-3.5 h-3.5" /> X / Twitter
@@ -615,14 +615,14 @@ export function ShareButton({ report, className, style, children, wrapperClassNa
             <button
               onClick={shareToInstagram}
               disabled={sharingInstagram}
-              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[#FBF7F0] font-semibold disabled:opacity-60"
+              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[#FBF7F0] dark:hover:bg-[var(--felpus-dark-hover)] font-semibold disabled:opacity-60"
               style={{ color: C.text }}
             >
               {sharingInstagram ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Instagram className="w-3.5 h-3.5" />} Instagram
             </button>
             <button
               onClick={copyLink}
-              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[#FBF7F0] font-semibold"
+              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[#FBF7F0] dark:hover:bg-[var(--felpus-dark-hover)] font-semibold"
               style={{ color: copied ? C.green : C.text }}
             >
               <Copy className="w-3.5 h-3.5" /> {copied ? "¡Copiado!" : "Copiar enlace"}
@@ -708,13 +708,13 @@ export function ToastStack({ toasts }) {
 export function SkeletonCard() {
   const C = useTheme();
   return (
-    <div className="bg-white dark:bg-[#25190F] rounded-2xl border p-3 flex gap-3 animate-pulse" style={{ borderColor: C.border }}>
-      <div className="w-20 h-20 rounded-xl bg-[#F0E7D8] dark:bg-[#3A2A1B] shrink-0" />
+    <div className="bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl border p-3 flex gap-3 animate-pulse" style={{ borderColor: C.border }}>
+      <div className="w-20 h-20 rounded-xl bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)] shrink-0" />
       <div className="flex-1 space-y-2 py-1">
-        <div className="h-4 w-20 rounded-full bg-[#F0E7D8] dark:bg-[#3A2A1B]" />
-        <div className="h-3 w-2/3 rounded bg-[#F0E7D8] dark:bg-[#3A2A1B]" />
-        <div className="h-3 w-1/2 rounded bg-[#F0E7D8] dark:bg-[#3A2A1B]" />
-        <div className="h-3 w-full rounded bg-[#F0E7D8] dark:bg-[#3A2A1B]" />
+        <div className="h-4 w-20 rounded-full bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)]" />
+        <div className="h-3 w-2/3 rounded bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)]" />
+        <div className="h-3 w-1/2 rounded bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)]" />
+        <div className="h-3 w-full rounded bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)]" />
       </div>
     </div>
   );
@@ -723,14 +723,14 @@ export function SkeletonCard() {
 export function SkeletonRankRow() {
   const C = useTheme();
   return (
-    <div className="flex items-center gap-3 bg-white dark:bg-[#25190F] rounded-xl p-3 border animate-pulse" style={{ borderColor: C.border }}>
-      <div className="w-6 h-4 rounded bg-[#F0E7D8] dark:bg-[#3A2A1B] shrink-0" />
-      <div className="w-9 h-9 rounded-full bg-[#F0E7D8] dark:bg-[#3A2A1B] shrink-0" />
+    <div className="flex items-center gap-3 bg-white dark:bg-[var(--felpus-dark-card)] rounded-xl p-3 border animate-pulse" style={{ borderColor: C.border }}>
+      <div className="w-6 h-4 rounded bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)] shrink-0" />
+      <div className="w-9 h-9 rounded-full bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)] shrink-0" />
       <div className="flex-1 space-y-2 py-0.5">
-        <div className="h-3.5 w-1/3 rounded bg-[#F0E7D8] dark:bg-[#3A2A1B]" />
-        <div className="h-2.5 w-1/2 rounded bg-[#F0E7D8] dark:bg-[#3A2A1B]" />
+        <div className="h-3.5 w-1/3 rounded bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)]" />
+        <div className="h-2.5 w-1/2 rounded bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)]" />
       </div>
-      <div className="h-4 w-8 rounded bg-[#F0E7D8] dark:bg-[#3A2A1B] shrink-0" />
+      <div className="h-4 w-8 rounded bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)] shrink-0" />
     </div>
   );
 }
@@ -781,10 +781,10 @@ export function FilterSheet({
         role="dialog"
         aria-modal="true"
         aria-label="Filtros avanzados"
-        className="felpus-sheet-panel bg-white dark:bg-[#25190F] rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md max-h-[85vh] overflow-y-auto"
+        className="felpus-sheet-panel bg-white dark:bg-[var(--felpus-dark-card)] rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md max-h-[85vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 bg-white dark:bg-[#25190F] flex items-center justify-between px-4 pt-4 pb-3 border-b" style={{ borderColor: C.border }}>
+        <div className="sticky top-0 bg-white dark:bg-[var(--felpus-dark-card)] flex items-center justify-between px-4 pt-4 pb-3 border-b" style={{ borderColor: C.border }}>
           <h3 className="felpus-display text-lg" style={{ color: C.text }}>Filtros avanzados</h3>
           <button type="button" onClick={onClose} aria-label="Cerrar filtros" className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: C.surfaceSubtle }}>
             <X className="w-4 h-4" style={{ color: C.text }} />
@@ -796,7 +796,7 @@ export function FilterSheet({
             <select
               value={filterTamano}
               onChange={(e) => setFilterTamano(e.target.value)}
-              className="felpus-input flex-1 border rounded-lg px-3 py-2 text-sm bg-white dark:bg-[#25190F]"
+              className="felpus-input flex-1 border rounded-lg px-3 py-2 text-sm bg-white dark:bg-[var(--felpus-dark-card)]"
               style={{ borderColor: C.border, color: C.text }}
             >
               <option value="todos">Cualquier tamaño</option>
@@ -807,7 +807,7 @@ export function FilterSheet({
             <select
               value={filterColor}
               onChange={(e) => setFilterColor(e.target.value)}
-              className="felpus-input flex-1 border rounded-lg px-3 py-2 text-sm bg-white dark:bg-[#25190F]"
+              className="felpus-input flex-1 border rounded-lg px-3 py-2 text-sm bg-white dark:bg-[var(--felpus-dark-card)]"
               style={{ borderColor: C.border, color: C.text }}
             >
               <option value="todos">Cualquier color</option>
@@ -852,7 +852,7 @@ export function FilterSheet({
                 if (val != null && !myLocation) handleLocateMe();
                 setFilterRadioKm(val);
               }}
-              className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-white dark:bg-[#25190F]"
+              className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-white dark:bg-[var(--felpus-dark-card)]"
               style={{ borderColor: C.border, color: C.text }}
             >
               <option value="todos">Cualquier distancia</option>
@@ -873,7 +873,7 @@ export function FilterSheet({
           </div>
         </div>
 
-        <div className="sticky bottom-0 bg-white dark:bg-[#25190F] border-t p-3 flex items-center gap-2" style={{ borderColor: C.border }}>
+        <div className="sticky bottom-0 bg-white dark:bg-[var(--felpus-dark-card)] border-t p-3 flex items-center gap-2" style={{ borderColor: C.border }}>
           {hasAdvancedFilters && (
             <button
               type="button"

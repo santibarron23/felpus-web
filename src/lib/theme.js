@@ -135,14 +135,32 @@ export const C = {
 };
 
 // --- Paleta oscura ---
-// Mismo criterio de contraste que C (AA real, medido, no a ojo), pero NO es
-// "invertir el brillo y listo": varios tonos de C que pasan AA sobre blanco
-// fallan sobre fondo oscuro y viceversa — el mismo fenómeno que ya se
-// documentó arriba para `orange` (necesita un tono distinto según si el
-// fondo es claro u oscuro). Por eso red/redDark/orange/orangeInk/green/
-// greenDark tienen acá valores más claros y vivos que en C: son los mismos
-// "personajes" (marca, encontrada, éxito) pero recalibrados para verse bien
+// Rediseñada completa (2026-08-05) siguiendo un principio explícito: ~90%
+// neutros oscuros cálidos, ~7% rojo Felpus, ~3% naranja — el color comunica
+// jerarquía y significado, no delimita la interfaz. Antes CD.border
+// (#84693F) y CD.muted (#B39B80) eran tan saturados/dorados que competían
+// con el rojo/naranja reales por atención — cada tarjeta con borde dorado
+// se sentía tan "importante" como un botón de acción. La meta es que se
+// sienta como "Felpus de noche", no "Felpus oscurecido a lo bruto": mismo
+// criterio de contraste AA real (medido, no a ojo) que el resto de la
+// paleta, pero NO es "invertir el brillo y listo" — varios tonos de C que
+// pasan AA sobre blanco fallan sobre fondo oscuro y viceversa (mismo
+// fenómeno ya documentado arriba para `orange`). Por eso red/redDark/
+// orange/orangeInk/green/greenDark siguen siendo versiones más claras y
+// vivas que en C: son los mismos "personajes" recalibrados para verse bien
 // sobre un fondo casi negro en vez de casi blanco.
+//
+// Sistema de superficies (genera profundidad por nivel, no por bordes de
+// color — ver también los CSS vars --felpus-dark-* en globals.css, que
+// espejan estos mismos 3 valores para los ~65 lugares que todavía usan
+// clases Tailwind "dark:bg-[...]" en vez de este objeto):
+//   cream        #12100F  fondo de página (el nivel más de "atrás")
+//   surfaceMuted #1B1816  header, bottom nav, skeletons/placeholders — la
+//                         capa de "chrome" de la app, apenas por encima del
+//                         fondo, deliberadamente DISTINTA de las cards para
+//                         que la navegación se lea como marco, no contenido
+//   surface      #231E1B  cards — el contenido real
+//   surfaceSubtle #2B2521 hover / inputs / elementos elevados
 //
 // Caso especial — tierXxx: el círculo/pill de avatar con texto blanco
 // encima NO cambia entre temas (es un campo de color autocontenido, no le
@@ -166,21 +184,52 @@ export const CD = {
   orangeInkSolid: "#C2410C",
   greenSolid: "#2E7048",
 
-  ink: "#F5ECDF",
-  text: "#EADFCE",
-  muted: "#B39B80",
-  cream: "#1C140D",
-  border: "#84693F",
-  surface: "#25190F",
-  surfaceSubtle: "#2D2015",
-  surfaceMuted: "#3A2A1B",
+  // Antes #F5ECDF — ajustado para matchear el "primary" de referencia del
+  // rediseño. 17.2:1 sobre cream, sigue siendo el extremo claro del par
+  // ink/cream que se invierte en los chips seleccionados (ver comentario
+  // junto a `ink` en C, arriba) — por eso tiene que seguir siendo el tono
+  // más claro de toda la paleta.
+  ink: "#F7F3F0",
+  // Antes #EADFCE — texto de uso general (88 usos en la app, el token de
+  // texto más común). Deliberadamente un paso por debajo de `ink`: "evitá
+  // blanco puro cuando no sea necesario" — sigue dando 15.1:1 sobre cream y
+  // 13.1:1 sobre surface, muy por encima del mínimo AA (4.5:1).
+  text: "#E4D9CD",
+  // Antes #B39B80 — este era el tono que hacía leer textos secundarios
+  // (subtítulo del header, distancias, captions) como dorado/naranja sin
+  // que ese color significara nada. Ahora un gris cálido neutro de verdad:
+  // 8.66:1 sobre cream, 7.53:1 sobre surface — pasa AAA en los dos casos.
+  muted: "#B9ADA5",
+  // Antes #1C140D — fondo de página, un paso más oscuro para que las
+  // tarjetas (surface, abajo) tengan más margen para "flotar" por encima.
+  cream: "#12100F",
+  // Antes #84693F — el principal responsable de los "bordes dorados": a
+  // 1.5:1 de contraste era tan visible que competía con el rojo/naranja
+  // reales. Este da 1.3:1 contra `surface` — perceptible como límite de
+  // tarjeta, no como acento de color.
+  border: "#3A312C",
+  // Antes #25190F — cards, la superficie de contenido real.
+  surface: "#231E1B",
+  // Antes #2D2015 — hover / inputs / elementos elevados, un paso por
+  // encima de `surface`.
+  surfaceSubtle: "#2B2521",
+  // Antes #3A2A1B — también usado como fondo de header/bottom nav (ver
+  // FelpusMatcher.jsx): la capa de "chrome" de la app, un paso por DEBAJO
+  // de `surface` para que la navegación se lea como marco, no como otra
+  // card más.
+  surfaceMuted: "#1B1816",
 
   successBg: "#1C2E22",
   successText: "#8AD9A6",
   successBorder: "#4F7057",
   dangerBg: "#33201C",
   dangerText: "#FF8A7A",
-  brandTintBg: "#33231A",
+  // Antes #33231A, un marrón genérico sin relación con ningún color de
+  // marca. Ahora un tinte oscuro de ROJO (no de "marrón cálido a secas") —
+  // se usa en la card CTA de Inicio y en el pill activo de la navegación
+  // inferior, así que ese acento sutil sigue leyéndose como Felpus incluso
+  // a baja saturación.
+  brandTintBg: "#2E1917",
   redRing: "rgba(255, 91, 77, 0.25)",
 
   streak: "#FFD08A", // ya es clarísimo — funciona igual sobre fondo oscuro
@@ -198,7 +247,8 @@ export const CD = {
   tierBronzeText: "#C79865",
   tierSilverText: "#9AA8B8",
   // Versión clara del nuevo tierGold (mismo matiz, ~35°) para leerse como
-  // texto sobre CD.surface — 8.37:1, en línea con tierSilverText/tierBronzeText.
+  // texto sobre CD.surface — 8.06:1 contra el nuevo surface, en línea con
+  // tierSilverText/tierBronzeText.
   tierGoldText: "#E3AC46",
   tierLegendaryText: "#B497E8",
 };
