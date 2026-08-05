@@ -403,6 +403,23 @@ create policy "felpus_photos_public_insert"
   on storage.objects for insert
   with check (bucket_id = 'felpus-photos');
 
+-- Sin esto, deleteReport() en store.js (botón "Eliminar publicación") borra
+-- la FILA de reports pero storage.remove() falla en silencio (RLS deniega
+-- por default sin una policy de delete) — la foto queda huérfana en Storage
+-- para siempre, pública, aunque el reporte ya no exista. No se abre el
+-- delete a cualquiera (bucket_id = '...' solo, sin más) porque el bucket es
+-- público: cualquiera con la anon key podría borrar las fotos de cualquier
+-- otra persona. En cambio, "owner" es la columna que Supabase Storage
+-- completa solo con auth.uid() al subir un archivo autenticado — mismo
+-- criterio de dueño que reports_delete_owner más arriba, y la misma
+-- limitación ya aceptada para reportes de invitado (ver PENDIENTE_DECISION.md
+-- #0): sin login, ni la fila ni ahora tampoco la foto se pueden borrar por
+-- este mecanismo.
+drop policy if exists "felpus_photos_owner_delete" on storage.objects;
+create policy "felpus_photos_owner_delete"
+  on storage.objects for delete
+  using (bucket_id = 'felpus-photos' and owner = auth.uid());
+
 -- ---------------------------------------------------------------------------
 -- Webhook: avisa a /api/notify-match cada vez que se publica un reporte
 -- nuevo, para que calcule coincidencias y mande el email correspondiente.

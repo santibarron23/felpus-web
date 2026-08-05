@@ -50,6 +50,13 @@ const nextConfig = {
         protocol: "https",
         hostname: "**.supabase.co",
       },
+      // Avatar de Google (googleAvatar en useAuth.js) — mismo host que ya
+      // está permitido en el CSP img-src de acá arriba, ahora también
+      // habilitado para next/image.
+      {
+        protocol: "https",
+        hostname: "**.googleusercontent.com",
+      },
     ],
   },
   async headers() {

@@ -11,7 +11,14 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-export const supabase = createClient(supabaseUrl || "", supabaseAnonKey || "", {
+// createClient() exige un supabaseUrl no vacío — con "" tira una excepción
+// en el momento de crear el cliente, no solo al usarlo. Eso significa que
+// sin .env.local (clon nuevo del repo, o CI sin las env vars) hasta
+// "npm run build" fallaba duro, a diferencia del resto de la app, que
+// degrada con gracia sin Supabase configurado. El placeholder es sintácticamente
+// válido pero no apunta a ningún proyecto real — cualquier pedido real
+// fallaría igual (y quedaría logueado), pero el build/arranque ya no explota.
+export const supabase = createClient(supabaseUrl || "https://placeholder.supabase.co", supabaseAnonKey || "placeholder-anon-key", {
   auth: {
     flowType: "implicit",
     persistSession: true,

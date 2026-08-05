@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import Image from "next/image";
 import {
   PawPrint,
   Search,
@@ -63,6 +64,7 @@ import {
   composeReaccionSentence,
   composeMarcaSentence,
   buildDetallesEstructurados,
+  reportPhotoAlt,
   PUNTOS_PERDIDA,
   PUNTOS_ENCONTRADA,
   PUNTOS_REENCUENTRO,
@@ -1226,6 +1228,12 @@ export default function FelpusMatcher() {
             className="flex items-center gap-2.5 text-left min-w-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded-lg"
           >
             <div className="min-w-0">
+              {/* Se queda como <img> nativo a propósito: es un logo local
+                  chico, una sola instancia por página (no se repite en
+                  listas como las fotos de reportes, que son el target real
+                  de next/image acá), y "w-auto" (ancho intrínseco) no
+                  combina bien con el width/height fijo que pide next/image
+                  sin arriesgar un layout shift si el archivo cambia. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={LOGO_RED} alt="Felpus" className="h-9 w-auto object-contain" />
               <p className="hidden sm:block text-[11px] mt-0.5 truncate" style={{ color: C.muted }}>
@@ -1311,7 +1319,7 @@ export default function FelpusMatcher() {
                               className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-[#FBF7F0] focus:outline-none focus-visible:bg-[#FBF7F0]"
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={best.foto} alt="" loading="lazy" decoding="async" className="w-11 h-11 rounded-lg object-cover shrink-0 bg-[#F0E7D8] dark:bg-[#3A2A1B]" />
+                              <Image src={best.foto} alt="" width={44} height={44} loading="lazy" className="w-11 h-11 rounded-lg object-cover shrink-0 bg-[#F0E7D8] dark:bg-[#3A2A1B]" />
                               <span className="flex-1 min-w-0">
                                 <span className="block text-xs font-bold truncate" style={{ color: C.text }}>
                                   Tu {mine.tipo === "perdida" ? "reporte de perdida" : "reporte de encontrada"}
@@ -1365,7 +1373,7 @@ export default function FelpusMatcher() {
             <>
               {googleAvatar ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={googleAvatar} alt="" className="w-8 h-8 rounded-full shrink-0" referrerPolicy="no-referrer" />
+                <Image src={googleAvatar} alt="" width={32} height={32} className="w-8 h-8 rounded-full shrink-0" referrerPolicy="no-referrer" />
               ) : (
                 <span
                   className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-white text-xs font-bold"
@@ -1462,14 +1470,15 @@ export default function FelpusMatcher() {
             <div className="bg-white dark:bg-[#25190F] rounded-2xl border overflow-hidden shadow-sm" style={{ borderColor: C.border }}>
               <div className="p-5 text-center">
                 <div
-                  className="w-28 h-28 rounded-full overflow-hidden mx-auto mb-2 border-4"
+                  className="relative w-28 h-28 rounded-full overflow-hidden mx-auto mb-2 border-4"
                   style={{ borderColor: C.cream }}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <Image
                     src={MASCOT_HERO}
                     alt="Perro esperando volver a casa"
-                    className="w-full h-full object-cover"
+                    fill
+                    sizes="112px"
+                    className="object-cover"
                     style={{ objectPosition: "50% 35%" }}
                   />
                 </div>
@@ -1654,8 +1663,7 @@ export default function FelpusMatcher() {
                       style={{ background: C.brandTintBg }}
                     >
                       <div className="relative w-12 h-12 mb-2">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={r.foto} alt="" loading="lazy" decoding="async" className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm" />
+                        <Image src={r.foto} alt={reportPhotoAlt(r)} fill sizes="48px" loading="lazy" className="rounded-full object-cover border-2 border-white shadow-sm" />
                         <span
                           className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-white border-2 border-white"
                           style={{ background: C.greenSolid }}
@@ -1771,8 +1779,13 @@ export default function FelpusMatcher() {
                 <div className="grid grid-cols-3 gap-2">
                   {form.fotos.map((foto, i) => (
                     <div key={i} className="relative h-24 rounded-xl overflow-hidden border" style={{ borderColor: C.border }}>
+                      {/* Se queda como <img> nativo a propósito: foto.dataUrl
+                          es un data: URL ya redimensionado en el cliente
+                          (resizeImageFile en matching.js), no una URL remota
+                          — next/image no tiene nada que optimizar ahí, solo
+                          agregaría overhead. */}
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={foto.dataUrl} alt={`foto ${i + 1}`} className="w-full h-full object-cover" />
+                      <img src={foto.dataUrl} alt={`Foto ${i + 1} de la mascota que estás reportando`} className="w-full h-full object-cover" />
                       <button
                         type="button"
                         onClick={() => handleRemovePhoto(i)}
@@ -2358,8 +2371,7 @@ export default function FelpusMatcher() {
                   <span className="absolute inset-0 rounded-full felpus-ring" style={{ background: C.redRing }} />
                   <span className="absolute inset-0 rounded-full felpus-ring [animation-delay:0.5s]" style={{ background: C.redRing }} />
                   <div className="relative w-12 h-12 rounded-full bg-white dark:bg-[#25190F] border-2 flex items-center justify-center p-2" style={{ borderColor: C.red }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={PAW_MAGNIFIER} alt="" className="w-full h-full object-contain" />
+                    <Image src={PAW_MAGNIFIER} alt="" fill sizes="48px" className="object-contain" />
                   </div>
                 </div>
                 <p key={scanStep} className="felpus-mono text-xs felpus-fadein" style={{ color: C.muted }}>
@@ -2428,8 +2440,7 @@ export default function FelpusMatcher() {
                       >
                         <div className="flex items-center gap-3">
                           <MatchScoreRing score={m.score} />
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={m.report.foto} alt="" loading="lazy" decoding="async" className="w-16 h-16 rounded-xl object-cover bg-[#F0E7D8] dark:bg-[#3A2A1B] shrink-0" />
+                          <Image src={m.report.foto} alt={reportPhotoAlt(m.report)} width={64} height={64} loading="lazy" className="w-16 h-16 rounded-xl object-cover bg-[#F0E7D8] dark:bg-[#3A2A1B] shrink-0" />
                           <div className="min-w-0 flex-1">
                             {m.report.resuelto ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase" style={{ background: C.successBg, color: C.successText }}>
@@ -2674,8 +2685,7 @@ export default function FelpusMatcher() {
                             <div className="scale-75 -m-2">
                               <MatchScoreRing score={m.score} />
                             </div>
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={m.report.foto} alt="" loading="lazy" decoding="async" className="w-10 h-10 rounded-lg object-cover bg-white dark:bg-[#25190F]" />
+                            <Image src={m.report.foto} alt={reportPhotoAlt(m.report)} width={40} height={40} loading="lazy" className="w-10 h-10 rounded-lg object-cover bg-white dark:bg-[#25190F]" />
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-semibold truncate" style={{ color: C.text }}>{displayColor(m.report)} · {m.report.zona}</p>
                               <p className="text-[10px]" style={{ color: C.muted }}>{m.distanceLabel}</p>

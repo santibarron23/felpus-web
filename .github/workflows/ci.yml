@@ -1,0 +1,33 @@
+name: CI
+
+# Corre en cada push y PR — antes nada verificaba automáticamente que los
+# tests pasaran o que el proyecto compilara; un test roto (o un build roto)
+# podía mergearse sin que nadie se enterara hasta mucho después.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+
+      - run: npm test
+
+      # Placeholders sintácticamente válidos, no un proyecto real — alcanza
+      # para que el build compile (createClient() exige un supabaseUrl no
+      # vacío, ver supabaseClient.js), sin necesitar credenciales reales ni
+      # secrets configurados para este workflow.
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key

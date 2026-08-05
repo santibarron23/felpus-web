@@ -874,6 +874,19 @@ export function buildShareText(report) {
   return `🐾 Mascota ${tipoTxt}: ${nombreTxt}${report.especie}${razaTxt}, color ${report.color}, tamaño ${report.tamano}.\nZona: ${report.zona}.\n${report.descripcion}\n\n¿La reconocés? Ayudemos a reencontrarla. Publicado en Felpus.`;
 }
 
+// Alt text de la foto principal de un reporte — antes era solo
+// report.especie ("perro"/"gato"), poco útil para alguien que navega con
+// lector de pantalla y no puede ver la foto. Esto arma algo descriptivo de
+// verdad: tipo (perdida/encontrada) + nombre si tiene + color.
+export function reportPhotoAlt(report) {
+  if (!report) return "";
+  const tipoTxt = report.tipo === "perdida" ? "Perdida" : "Encontrada";
+  const especieTxt = report.especie === "gato" ? "gato" : report.especie === "perro" ? "perro" : "mascota";
+  const colorTxt = report.color === "Otro color" && report.colorOtro ? report.colorOtro : report.color;
+  const nombreTxt = report.nombre ? `${report.nombre}, ` : "";
+  return `${tipoTxt}: ${nombreTxt}${especieTxt}${colorTxt ? ` ${colorTxt.toLowerCase()}` : ""}`;
+}
+
 export function emptyForm() {
   return {
     especie: "perro",
