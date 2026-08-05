@@ -1,5 +1,32 @@
 # Decisiones pendientes — requieren acción o información tuya
 
+## -8. Política de DELETE para las fotos en Storage (2026-08-05) — requiere 1 paso tuyo
+
+**Qué pasó:** el bucket `felpus-photos` solo tenía políticas de lectura e
+inserción — nunca de borrado. `deleteReport()` (botón "Eliminar
+publicación") borra la fila de `reports` pero el intento de borrar la(s)
+foto(s) de Storage fallaba en silencio (atrapado, solo logueado, para no
+bloquear el borrado de la fila) — cada publicación eliminada dejaba su foto
+huérfana, pública, en Storage para siempre.
+
+**Qué hice:** agregué una política de `delete` en `storage.objects`
+limitada al dueño real del archivo (`owner = auth.uid()`, la columna que
+Supabase Storage completa sola al subir un archivo con sesión activa) — no
+un delete abierto a cualquiera, porque el bucket es público y eso hubiera
+dejado que cualquiera con la anon key borre fotos ajenas. Misma limitación
+ya aceptada para reportes de invitado (ver ítem #0 más abajo): sin login,
+ni la fila ni ahora la foto se pueden borrar por este mecanismo.
+
+**Mientras no corras el paso de abajo:** todo sigue exactamente igual que
+antes — el borrado de fotos sigue fallando en silencio, sin romper nada,
+hasta que se corra la migración.
+
+**Paso pendiente — correr la migración de schema.sql:**
+1. Abrí el SQL Editor de tu proyecto Supabase.
+2. Pegá y ejecutá todo `supabase/schema.sql` de nuevo.
+
+---
+
 ## -7. Cerrar el hueco real del contacto (WhatsApp/email) (2026-08-05) — requiere 1 paso tuyo
 
 **Qué pasó:** al revisar `schema.sql` a fondo encontré que la protección de

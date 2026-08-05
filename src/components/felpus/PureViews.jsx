@@ -9,6 +9,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import Image from "next/image";
 import {
   Cat,
   Dog,
@@ -30,7 +31,7 @@ import {
   Copy,
   AlertCircle,
 } from "lucide-react";
-import { scoreLabel, isRecent, formatFechaAR, buildShareText, COLOR_OPTIONS } from "../../lib/matching";
+import { scoreLabel, isRecent, formatFechaAR, buildShareText, reportPhotoAlt, COLOR_OPTIONS } from "../../lib/matching";
 import { downloadFlyer } from "../../lib/flyer";
 import { logError } from "../../lib/log";
 import { useFocusTrap } from "./useFocusTrap";
@@ -102,14 +103,14 @@ export function ReportCard({ report, onOpenDetail, children }) {
         className="flex gap-3 p-3 w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50 rounded-t-2xl"
       >
         <div className="relative shrink-0 w-24 h-24">
-          <div className="w-full h-full rounded-xl overflow-hidden">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+          <div className="relative w-full h-full rounded-xl overflow-hidden">
+            <Image
               src={report.foto}
-              alt={report.especie}
+              alt={reportPhotoAlt(report)}
+              fill
+              sizes="96px"
               loading="lazy"
-              decoding="async"
-              className="felpus-photo-zoom w-full h-full object-cover bg-[#F0E7D8] dark:bg-[#3A2A1B] transition-transform duration-300 group-hover:scale-110"
+              className="felpus-photo-zoom object-cover bg-[#F0E7D8] dark:bg-[#3A2A1B] transition-transform duration-300 group-hover:scale-110"
             />
           </div>
           {!resuelto && isRecent(report) && (
@@ -221,16 +222,14 @@ export function DetailModal({ report, onClose, onResolve, confirming, onConfirm,
               rellena el marco sin dejar franjas vacías. Encima, la foto
               real entra completa (object-contain) para no cortarle la
               cabeza o las patas a mascotas en fotos verticales (9:16). */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={activeFoto.url} alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover blur-2xl scale-125 opacity-50" />
+          <Image src={activeFoto.url} alt="" aria-hidden="true" fill sizes="(min-width: 640px) 448px, 100vw" className="object-cover blur-2xl scale-125 opacity-50" />
           <button
             type="button"
             onClick={() => setLightboxOpen(true)}
             aria-label="Ver foto en tamaño completo"
             className="absolute inset-0 w-full h-full focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={activeFoto.url} alt={report.especie} className="relative w-full h-full object-contain" />
+            <Image src={activeFoto.url} alt={reportPhotoAlt(report)} fill sizes="(min-width: 640px) 448px, 100vw" className="object-contain" />
           </button>
           <button
             onClick={onClose}
@@ -262,8 +261,7 @@ export function DetailModal({ report, onClose, onResolve, confirming, onConfirm,
                 className="w-14 h-14 rounded-lg overflow-hidden border-2 shrink-0"
                 style={{ borderColor: i === activeIndex ? C.red : "transparent" }}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={f.url} alt={`foto ${i + 1}`} loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                <Image src={f.url} alt={`Foto ${i + 1} de ${fotos.length}`} width={56} height={56} loading="lazy" className="w-full h-full object-cover" />
               </button>
             ))}
           </div>
@@ -461,10 +459,16 @@ export function DetailModal({ report, onClose, onResolve, confirming, onConfirm,
           >
             <X className="w-5 h-5" />
           </button>
+          {/* Lightbox a pantalla completa: se queda como <img> nativo a
+              propósito (eslint-disable abajo) — a diferencia de las otras
+              fotos de este archivo, acá no hay un contenedor de tamaño fijo
+              del que colgar "fill" (max-w-full max-h-full deja que la foto
+              se muestre a su tamaño real dentro del viewport), que es
+              justamente el punto de un lightbox: ver la foto tal cual es. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={activeFoto.url}
-            alt={report.especie}
+            alt={reportPhotoAlt(report)}
             className="max-w-full max-h-full object-contain rounded-lg"
             onClick={(e) => e.stopPropagation()}
           />

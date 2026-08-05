@@ -45,18 +45,22 @@ function drawImageCover(ctx, img, x, y, size) {
   ctx.drawImage(img, dx, dy, w, h);
 }
 
-function capitalize(text) {
+// Exportadas (acá y más abajo) aunque solo las use este archivo: son la
+// parte de flyer.js que es lógica pura (texto adentro, texto/estructura
+// afuera), sin canvas ni DOM — separarlas así es lo que permite testearlas
+// directamente en flyer.test.js sin tener que mockear un <canvas>.
+export function capitalize(text) {
   const s = String(text || "");
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
 // --- Texto con "resaltado" (palabras clave en negrita/color), envuelto en líneas ---
 
-function tokenizeWords(text) {
+export function tokenizeWords(text) {
   return String(text || "").split(/\s+/).filter(Boolean);
 }
 
-function stripPunct(word) {
+export function stripPunct(word) {
   return word.replace(/^[¿¡"'“”(]+|[.,;:!?)"'”]+$/g, "");
 }
 
@@ -70,11 +74,11 @@ const HIGHLIGHT_WORDS = new Set([
   "nariz", "manso", "mansa", "arisco", "arisca", "chapita", "vacunado", "vacunada",
 ]);
 
-function tokensFromSentence(sentence) {
+export function tokensFromSentence(sentence) {
   return tokenizeWords(sentence).map((w) => ({ text: w, bold: HIGHLIGHT_WORDS.has(stripPunct(w).toLowerCase()) }));
 }
 
-function tokensFromParts(plainPrefix, boldValue, plainSuffix = "") {
+export function tokensFromParts(plainPrefix, boldValue, plainSuffix = "") {
   const tokens = [];
   tokenizeWords(plainPrefix).forEach((w) => tokens.push({ text: w, bold: false }));
   tokenizeWords(boldValue).forEach((w) => tokens.push({ text: w, bold: true }));
@@ -355,7 +359,7 @@ function drawIcon(ctx, type, cx, cy, r, fg, bg, extra) {
   }
 }
 
-function especieLabel(especie) {
+export function especieLabel(especie) {
   if (especie === "gato") return "Gato";
   if (especie === "perro") return "Perro";
   return "Mascota";
@@ -390,14 +394,14 @@ const ICON_KEYWORD_CATEGORIES = [
   },
 ];
 
-function normalizeForMatch(text) {
+export function normalizeForMatch(text) {
   return text
     .toLowerCase()
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "");
 }
 
-function classifySentenceIcon(sentence) {
+export function classifySentenceIcon(sentence) {
   const norm = normalizeForMatch(sentence);
   for (const category of ICON_KEYWORD_CATEGORIES) {
     if (category.words.some((w) => norm.includes(normalizeForMatch(w)))) return category.icon;
@@ -405,7 +409,7 @@ function classifySentenceIcon(sentence) {
   return "chat";
 }
 
-function splitSentences(text) {
+export function splitSentences(text) {
   return String(text || "")
     .split(/(?<=[.!?])\s+/)
     .map((s) => s.trim())
