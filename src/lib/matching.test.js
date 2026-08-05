@@ -26,6 +26,11 @@ import {
   composeReaccionSentence,
   composeMarcaSentence,
   buildDetallesEstructurados,
+  getRazaOptions,
+  RAZA_ESPECIALES,
+  RAZA_OPTIONS_PERRO,
+  RAZA_OPTIONS_GATO,
+  RAZA_NO_SE,
   SCORE_MINIMO,
 } from "./matching";
 
@@ -207,6 +212,27 @@ describe("scoreMatch", () => {
     expect(dosMestizos).toBe(sinRaza);
   });
 
+  it("'Sin raza / Mestizo', 'No sé / Desconocida' y 'Otra raza' tampoco aportan score (mismo criterio que 'Mestizo/a')", () => {
+    const base = makeReport({ raza: "" });
+    const sinRaza = scoreMatch(base, makeReport({ id: "r2", raza: "" })).score;
+    for (const valor of RAZA_ESPECIALES) {
+      const conEspecial = scoreMatch(makeReport({ raza: valor }), makeReport({ id: "r3", raza: valor })).score;
+      expect(conEspecial).toBe(sinRaza);
+    }
+  });
+
+  it("en gato, la raza pesa menos que en perro", () => {
+    const perroConRaza = scoreMatch(makeReport({ especie: "perro", raza: "Labrador" }), makeReport({ id: "r2", especie: "perro", raza: "Chihuahua" })).score;
+    const perroSinRaza = scoreMatch(makeReport({ especie: "perro", raza: "" }), makeReport({ id: "r3", especie: "perro", raza: "" })).score;
+    const gatoConRaza = scoreMatch(makeReport({ especie: "gato", raza: "Siamés" }), makeReport({ id: "r4", especie: "gato", raza: "Persa" })).score;
+    const gatoSinRaza = scoreMatch(makeReport({ especie: "gato", raza: "" }), makeReport({ id: "r5", especie: "gato", raza: "" })).score;
+    // Misma diferencia (razas distintas vs. sin dato) pero debería pesar
+    // notoriamente menos en gato que en perro.
+    const impactoPerro = perroSinRaza - perroConRaza;
+    const impactoGato = gatoSinRaza - gatoConRaza;
+    expect(impactoGato).toBeLessThan(impactoPerro);
+  });
+
   it("coincidir en detalles estructurados (accesorio/comportamiento/marca) sube el score", () => {
     const detallesA = { accesorios: ["collar"], comportamientos: ["miedoso"], marca_distintiva: ["mancha"], ubicacion_marca: "pecho" };
     const base = makeReport({ detalles: detallesA });
@@ -365,6 +391,12 @@ describe("buildShareText", () => {
     expect(buildShareText(makeReport({ raza: "Mestizo/a" }))).not.toContain("(");
     expect(buildShareText(makeReport({ raza: "" }))).not.toContain("(");
   });
+
+  it("tampoco muestra la raza para 'Sin raza / Mestizo', 'No sé / Desconocida' u 'Otra raza'", () => {
+    for (const valor of RAZA_ESPECIALES) {
+      expect(buildShareText(makeReport({ raza: valor }))).not.toContain("(");
+    }
+  });
 });
 
 describe("composeDescripcionBase", () => {
@@ -388,6 +420,13 @@ describe("composeDescripcionBase", () => {
   it("no suma 'Mestizo/a' a la frase (no aporta nada nuevo)", () => {
     const texto = composeDescripcionBase({ especie: "gato", raza: "Mestizo/a", tamano: "chico", color: "", colorOtro: "", edad: "", sexo: "" });
     expect(texto).toBe("Es un gato, de tamaño chico.");
+  });
+
+  it("tampoco suma 'Sin raza / Mestizo', 'No sé / Desconocida' ni 'Otra raza'", () => {
+    for (const valor of RAZA_ESPECIALES) {
+      const texto = composeDescripcionBase({ especie: "gato", raza: valor, tamano: "chico", color: "", colorOtro: "", edad: "", sexo: "" });
+      expect(texto).toBe("Es un gato, de tamaño chico.");
+    }
   });
 
   it("usa colorOtro cuando el color es 'Otro color'", () => {
@@ -456,6 +495,36 @@ describe("composeClauses", () => {
   it("devuelve cadena vacía sin oraciones", () => {
     expect(composeClauses([])).toBe("");
     expect(composeClauses(null)).toBe("");
+  });
+});
+
+describe("getRazaOptions", () => {
+  it("empieza siempre con RAZA_ESPECIALES, en ese orden", () => {
+    expect(getRazaOptions("perro").slice(0, 3)).toEqual(RAZA_ESPECIALES);
+    expect(getRazaOptions("gato").slice(0, 3)).toEqual(RAZA_ESPECIALES);
+  });
+
+  it("perro trae las razas de perro después de las especiales, gato las de gato", () => {
+    expect(getRazaOptions("perro").slice(3)).toEqual(RAZA_OPTIONS_PERRO);
+    expect(getRazaOptions("gato").slice(3)).toEqual(RAZA_OPTIONS_GATO);
+  });
+
+  it("las razas están ordenadas alfabéticamente", () => {
+    const collator = new Intl.Collator("es", { sensitivity: "base" });
+    const ordenadasPerro = [...RAZA_OPTIONS_PERRO].sort(collator.compare);
+    expect(RAZA_OPTIONS_PERRO).toEqual(ordenadasPerro);
+    const ordenadasGato = [...RAZA_OPTIONS_GATO].sort(collator.compare);
+    expect(RAZA_OPTIONS_GATO).toEqual(ordenadasGato);
+  });
+
+  it("una especie que no es perro ni gato no trae razas, solo las especiales", () => {
+    expect(getRazaOptions("otro")).toEqual(RAZA_ESPECIALES);
+    expect(getRazaOptions(undefined)).toEqual(RAZA_ESPECIALES);
+  });
+
+  it("RAZA_NO_SE es exactamente el segundo valor de RAZA_ESPECIALES", () => {
+    expect(RAZA_NO_SE).toBe(RAZA_ESPECIALES[1]);
+    expect(RAZA_NO_SE).toBe("No sé / Desconocida");
   });
 });
 

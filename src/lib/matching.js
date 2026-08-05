@@ -51,43 +51,93 @@ export const PESO_OPTIONS = ["Menos de 5 kg", "5 a 10 kg", "10 a 20 kg", "20 a 3
 
 // Sugerencias para el <datalist> de raza (no un <select> cerrado: hay
 // cientos de razas y mezclas reales, forzar una lista fija excluiría a la
-// mayoría de las mascotas mestizas). "Mestizo/a" va primero a propósito —
-// es, de lejos, la respuesta más común, y no debería quedar escondida
-// abajo de una lista larga de razas puras.
+// mayoría de las mascotas mestizas). RAZA_ESPECIALES va SIEMPRE primero,
+// antes que cualquier raza real — son las tres respuestas más comunes
+// (mestizo, no sabe, ninguna de la lista) y no deberían quedar escondidas
+// abajo de una lista larga de razas puras. Reemplaza al viejo "Mestizo/a
+// (común europeo)" del gato — la frase "común europeo" no es un término que
+// use la gente en Argentina; "Sin raza / Mestizo" es más directo y además
+// unifica el criterio con perro (antes cada especie tenía su propia
+// redacción de "mestizo").
+export const RAZA_ESPECIALES = ["Sin raza / Mestizo", "No sé / Desconocida", "Otra raza"];
+// Export aparte del valor exacto de "no sé" — lo usa el botón rápido "No sé
+// la raza" del formulario (ver FelpusMatcher.jsx) para no repetir el string
+// literal en dos archivos.
+export const RAZA_NO_SE = RAZA_ESPECIALES[1];
+
+// Alfabético (Intl.Collator en es, no localeCompare a mano — así "Bichón"
+// ordena bajo B y no después de "Boxer" por el acento).
 export const RAZA_OPTIONS_PERRO = [
-  "Mestizo/a",
-  "Labrador",
-  "Golden Retriever",
-  "Caniche/Poodle",
-  "Salchicha/Dachshund",
+  "Akita",
+  "Australian Shepherd",
+  "Beagle",
+  "Bichón Frisé",
+  "Border Collie",
+  "Boston Terrier",
+  "Boxer",
   "Bulldog Francés",
   "Bulldog Inglés",
-  "Pastor Alemán",
+  "Cane Corso",
+  "Caniche/Poodle",
   "Chihuahua",
-  "Boxer",
-  "Rottweiler",
-  "Beagle",
+  "Chow Chow",
   "Cocker Spaniel",
-  "Husky Siberiano",
-  "Yorkshire Terrier",
-  "Schnauzer",
-  "Pitbull/American Staffordshire",
   "Dálmata",
-  "Border Collie",
   "Doberman",
+  "Dogo Argentino",
+  "Fox Terrier",
+  "Galgo",
+  "Golden Retriever",
+  "Husky Siberiano",
+  "Jack Russell Terrier",
+  "Labrador",
+  "Maltés",
+  "Pastor Alemán",
+  "Pinscher Miniatura",
+  "Pitbull/American Staffordshire",
+  "Pointer",
+  "Pug",
+  "Rottweiler",
+  "Salchicha/Dachshund",
+  "Samoyedo",
   "San Bernardo",
+  "Schnauzer",
   "Shih Tzu",
+  "Weimaraner",
+  "Yorkshire Terrier",
 ];
 export const RAZA_OPTIONS_GATO = [
-  "Mestizo/a (común europeo)",
-  "Siamés",
-  "Persa",
   "Angora",
-  "Maine Coon",
   "Bengalí",
-  "Ragdoll",
   "Esfinge/Sphynx",
+  "Maine Coon",
+  "Persa",
+  "Ragdoll",
+  "Siamés",
 ];
+
+// Combina RAZA_ESPECIALES + la lista de razas de la especie, en ese orden
+// — lo que alimenta el <datalist> del formulario (ver FelpusMatcher.jsx).
+// Especie "otro" (ni perro ni gato) no tiene lista de razas real.
+export function getRazaOptions(especie) {
+  const breeds = especie === "perro" ? RAZA_OPTIONS_PERRO : especie === "gato" ? RAZA_OPTIONS_GATO : [];
+  return [...RAZA_ESPECIALES, ...breeds];
+}
+
+// "Sin señal real" para el matching: mestizo (cualquiera de las dos
+// redacciones, vieja y nueva), no saber la raza, o "otra raza" sin
+// especificar cuál — ninguna de estas dice nada sobre qué raza es, así que
+// deben tratarse igual que un campo vacío (null en razaSimilarity, se
+// excluyen del promedio; no se agregan a la frase de composeDescripcionBase).
+function razaSinSenal(razaNormalizada) {
+  if (!razaNormalizada) return true;
+  return (
+    razaNormalizada.includes("mestizo") ||
+    razaNormalizada.includes("no se") ||
+    razaNormalizada.includes("desconocid") ||
+    razaNormalizada.includes("otra raza")
+  );
+}
 
 // ---------------------------------------------------------------------------
 // "Detalles para reconocerlo": accesorio, reacción con desconocidos y marca
@@ -399,17 +449,17 @@ function colorOtroSimilarity(colorOtroA, colorOtroB) {
 }
 
 // La raza es texto libre con autocompletado (no un <select> cerrado — ver
-// RAZA_OPTIONS_PERRO/GATO), así que se compara como texto: igual o una
-// contiene a la otra ("Pitbull" vs "Pitbull/American Staffordshire") cuenta
-// como coincidencia. "Mestizo/a" queda afuera a propósito: es, de lejos, la
-// respuesta más común — que dos reportes coincidan en "es mestizo" no dice
-// casi nada sobre si son la misma mascota, muy distinto a que coincidan en
-// "es un Golden Retriever". Devuelve null (se excluye del promedio, mismo
-// patrón que "No sé" en sexo/edad/peso) en vez de 0, que sí penalizaría.
+// getRazaOptions), así que se compara como texto: igual o una contiene a la
+// otra ("Pitbull" vs "Pitbull/American Staffordshire") cuenta como
+// coincidencia. Mestizo/no sé/otra raza quedan afuera a propósito (ver
+// razaSinSenal): que dos reportes coincidan en "no sé la raza" no dice casi
+// nada sobre si son la misma mascota, muy distinto a que coincidan en "es un
+// Golden Retriever". Devuelve null (se excluye del promedio, mismo patrón
+// que "No sé" en sexo/edad/peso) en vez de 0, que sí penalizaría.
 function razaSimilarity(razaA, razaB) {
   const ra = normalizeText(razaA).trim();
   const rb = normalizeText(razaB).trim();
-  if (!ra || !rb || ra.includes("mestizo") || rb.includes("mestizo")) return null;
+  if (razaSinSenal(ra) || razaSinSenal(rb)) return null;
   if (ra === rb || ra.includes(rb) || rb.includes(ra)) return 1;
   return 0;
 }
@@ -470,11 +520,20 @@ function structuredFieldSimilarity(a, b) {
       a.color !== b.color ? 0 : a.color === "Otro color" ? colorOtroSimilarity(a.colorOtro, b.colorOtro) : 1;
     parts.push({ weight: 0.35, value: colorMatch });
   }
-  // Peso alto (a la par de color): cuando ambos lados la completan con una
-  // raza real (no "mestizo/a"), es de las señales más fuertes que hay para
-  // saber si dos reportes son la misma mascota.
+  // En perro, peso alto (a la par de color): cuando ambos lados la
+  // completan con una raza real, es de las señales más fuertes que hay. En
+  // gato pesa mucho menos a propósito — mucha más gente no sabe la raza de
+  // su gato que la de su perro, y sobre todo: la raza distingue mucho menos
+  // entre gatos (la enorme mayoría son "mestizo/a", sin raza definida) que
+  // entre perros. Ahí pesan más color/patrón (ya cubierto en "color", que
+  // incluye opciones como "Atigrado"), tamaño, marca distintiva (ver
+  // detallesSimilarity) y la imagen — señales que si dos gatos coinciden en
+  // varias, sí dicen algo real.
   const razaSim = razaSimilarity(a.raza, b.raza);
-  if (razaSim != null) parts.push({ weight: 0.3, value: razaSim });
+  if (razaSim != null) {
+    const razaWeight = a.especie === "gato" ? 0.1 : 0.3;
+    parts.push({ weight: razaWeight, value: razaSim });
+  }
   // "Detalles para reconocerlo" (accesorio/reacción/marca distintiva) — ver
   // detallesSimilarity más abajo. Peso moderado: son datos nuevos y
   // opcionales, con catálogos todavía chicos, así que no deberían pesar más
@@ -713,10 +772,10 @@ export function composeDescripcionBase(form) {
   if (!form) return "";
   const especieLabel = form.especie === "perro" ? "un perro" : form.especie === "gato" ? "un gato" : "una mascota";
   const colorTxt = form.color === "Otro color" ? form.colorOtro : form.color;
-  // "Mestizo/a" no se suma a la frase — decir "es un perro mestizo/a" no
-  // aporta nada que "es un perro" no dijera ya (mismo criterio que en
-  // razaSimilarity, más arriba: es la respuesta más común, no distingue).
-  const razaTxt = form.raza && !normalizeText(form.raza).includes("mestizo") ? form.raza.trim() : "";
+  // Mestizo/no sé/otra raza no se suman a la frase — decir "es un perro no
+  // sé la raza" no aporta nada que "es un perro" no dijera ya (mismo
+  // criterio que en razaSimilarity, más arriba: no distinguen).
+  const razaTxt = form.raza && !razaSinSenal(normalizeText(form.raza)) ? form.raza.trim() : "";
   const parts = [`Es ${especieLabel}${razaTxt ? ` ${razaTxt}` : ""}`];
   if (form.tamano) parts.push(`de tamaño ${form.tamano}`);
   if (colorTxt) parts.push(`color ${colorTxt.toLowerCase()}`);
@@ -811,7 +870,7 @@ export function buildDetallesEstructurados({ accesorios, comportamientos, marcaD
 export function buildShareText(report) {
   const tipoTxt = report.tipo === "perdida" ? "PERDIDA" : "ENCONTRADA";
   const nombreTxt = report.nombre ? `${report.nombre} — ` : "";
-  const razaTxt = report.raza && !normalizeText(report.raza).includes("mestizo") ? ` (${report.raza})` : "";
+  const razaTxt = report.raza && !razaSinSenal(normalizeText(report.raza)) ? ` (${report.raza})` : "";
   return `🐾 Mascota ${tipoTxt}: ${nombreTxt}${report.especie}${razaTxt}, color ${report.color}, tamaño ${report.tamano}.\nZona: ${report.zona}.\n${report.descripcion}\n\n¿La reconocés? Ayudemos a reencontrarla. Publicado en Felpus.`;
 }
 

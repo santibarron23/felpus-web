@@ -51,8 +51,8 @@ import {
   sanitizePhoneForWhatsapp,
   EDAD_OPTIONS,
   PESO_OPTIONS,
-  RAZA_OPTIONS_PERRO,
-  RAZA_OPTIONS_GATO,
+  getRazaOptions,
+  RAZA_NO_SE,
   ACCESORIO_OPTIONS,
   REACCION_OPTIONS,
   MARCA_OPTIONS,
@@ -1846,14 +1846,38 @@ export default function FelpusMatcher() {
               </div>
 
               <div>
-                <label htmlFor="form-raza" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
-                  Raza (si la sabés)
-                </label>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <label htmlFor="form-raza" className="text-xs font-bold block" style={{ color: C.text }}>
+                    Raza (si la sabés)
+                  </label>
+                  {/* Atajo de un toque para "no sé" — más visible que dejar
+                      el campo en blanco y esperar que se entienda solo.
+                      Sobre todo importa en gatos: ahí la raza pesa poco en
+                      el matching (ver structuredFieldSimilarity en
+                      matching.js), así que no vale la pena que alguien
+                      abandone el formulario por no saber la raza exacta. */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playTap();
+                      setForm((f) => ({ ...f, raza: f.raza === RAZA_NO_SE ? "" : RAZA_NO_SE }));
+                    }}
+                    aria-pressed={form.raza === RAZA_NO_SE}
+                    className="shrink-0 flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                    style={form.raza === RAZA_NO_SE ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.text, borderColor: C.border, background: C.surface }}
+                  >
+                    No sé la raza
+                  </button>
+                </div>
                 {/* <input list> en vez de <select>: a diferencia de color/
                     tamaño, hay cientos de razas y mezclas reales — un
                     desplegable cerrado dejaría afuera a la mayoría. El
-                    <datalist> sugiere las más comunes según la especie
-                    elegida arriba, pero acepta escribir cualquier cosa. */}
+                    <datalist> (getRazaOptions en matching.js: "Sin raza /
+                    Mestizo", "No sé / Desconocida" y "Otra raza" primero,
+                    después las razas de la especie elegida en orden
+                    alfabético) filtra solo mientras se escribe —
+                    comportamiento nativo del navegador, sin JS extra — pero
+                    el campo acepta escribir cualquier cosa igual. */}
                 <input
                   id="form-raza"
                   type="text"
@@ -1861,17 +1885,19 @@ export default function FelpusMatcher() {
                   value={form.raza}
                   onChange={(e) => setForm((f) => ({ ...f, raza: e.target.value }))}
                   maxLength={60}
-                  placeholder={form.especie === "otro" ? "Opcional" : "Ej: Mestizo/a, Labrador..."}
+                  placeholder={form.especie === "otro" ? "Opcional" : "Ej: Labrador, Siamés..."}
                   className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
                   style={{ borderColor: C.border, color: C.text }}
                 />
                 <datalist id="form-raza-options">
-                  {(form.especie === "perro" ? RAZA_OPTIONS_PERRO : form.especie === "gato" ? RAZA_OPTIONS_GATO : []).map((r) => (
+                  {getRazaOptions(form.especie).map((r) => (
                     <option key={r} value={r} />
                   ))}
                 </datalist>
                 <p className="text-[11px] mt-1" style={{ color: C.muted }}>
-                  Si no la sabés, dejalo en blanco — no es obligatorio.
+                  {form.especie === "gato"
+                    ? "En gatos la raza pesa poco en la búsqueda — \"No sé\" es una respuesta perfectamente válida, no te compliques."
+                    : "Si no la sabés, dejalo en blanco o tocá \"No sé la raza\" — no es obligatorio."}
                 </p>
               </div>
 
