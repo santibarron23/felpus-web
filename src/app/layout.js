@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import "./globals.css";
 import ServiceWorkerRegister from "../components/felpus/ServiceWorkerRegister";
 import { ThemeProvider } from "../components/felpus/ThemeProvider";
@@ -60,25 +61,54 @@ const jsonLd = {
   inLanguage: "es-AR",
 };
 
-// Corre de forma síncrona, ANTES de que React hidrate, para decidir
-// claro/oscuro y escribirlo en <html data-theme="..."> — sin esto, la app
-// arrancaría siempre en claro (o en lo que decida el primer render de
-// React) y "saltaría" a oscuro un instante después si correspondía, un
-// parpadeo muy notorio y poco profesional. Es el mismo patrón que usan
-// next-themes y la mayoría de los sitios con tema oscuro.
+// Corre de forma síncrona, ANTES de que React hidrate, y escribe
+// `data-theme` en <html> de forma puramente imperativa (nunca como prop de
+// React — ver por qué abajo) para que las clases "dark:" (CSS, ligadas a
+// ese atributo) pinten el tono correcto desde el primer frame, sin
+// parpadeo. `%INITIAL_MODE%` viene ya resuelto por RootLayout (Server
+// Component) a partir de la cookie "felpus-theme" — por eso, a diferencia
+// de la versión anterior, este script YA NO necesita adivinar nada para
+// quien vuelve a visitar: solo cubre el único caso que el servidor no
+// puede conocer, la primera visita de alguien sin cookie todavía, donde
+// hace falta `prefers-color-scheme` (inaccesible en el servidor) para no
+// arrancar siempre en claro.
+//
+// Importante: `data-theme` NUNCA se pasa como prop de JSX a <html> (ver
+// RootLayout más abajo) — si lo fuera, React "adoptaría" ese atributo, y al
+// hidratar lo pisaría de vuelta al valor que renderizó el servidor,
+// peleándose con este mismo script en el caso de primera visita (se probó
+// en browser: pasaba exactamente eso). Dejarlo 100% imperativo, fuera del
+// control de React, es lo que evita ese conflicto.
 const THEME_INIT_SCRIPT = `
 (function () {
   try {
-    var stored = localStorage.getItem("felpus-theme");
-    var mode = stored === "light" || stored === "dark"
-      ? stored
-      : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    document.documentElement.setAttribute("data-theme", mode);
+    var initialMode = "%INITIAL_MODE%";
+    document.documentElement.setAttribute("data-theme", initialMode);
+    if (!/(?:^|; )felpus-theme=(light|dark)/.test(document.cookie)) {
+      var mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      if (mode !== initialMode) document.documentElement.setAttribute("data-theme", mode);
+      document.cookie = "felpus-theme=" + mode + "; path=/; max-age=31536000; SameSite=Lax";
+    }
   } catch (e) {}
 })();
 `;
 
 export default function RootLayout({ children }) {
+  // Server Component: leer la cookie acá es lo que le permite al HTML
+  // generado por el servidor arrancar ya con el `mode` de React correcto
+  // (pasado como prop a ThemeProvider más abajo) — así cualquier
+  // `style={{color: C.x}}` calculado por useTheme() en el árbol entero
+  // coincide entre servidor y cliente desde el primer render, algo que
+  // antes NUNCA pasaba (el servidor siempre asumía tema claro; ver
+  // PENDIENTE_DECISION.md, hallazgo del mismatch de hidratación sistémico).
+  // El <html data-theme="..."> que ven las clases "dark:" sigue siendo
+  // responsabilidad exclusiva de THEME_INIT_SCRIPT (ver comentario ahí).
+  // cookies() vuelve dinámico este layout (no se puede pre-generar en
+  // build) — costo aceptado: la app ya es interactiva de punta a punta
+  // (Supabase en runtime), no había ganancia real de estático acá.
+  const stored = cookies().get("felpus-theme")?.value;
+  const initialMode = stored === "dark" ? "dark" : "light";
+
   return (
     // suppressHydrationWarning: el script de abajo escribe data-theme en
     // <html> antes de que React hidrate, a propósito (ver THEME_INIT_SCRIPT)
@@ -89,13 +119,19 @@ export default function RootLayout({ children }) {
     <html lang="es" suppressHydrationWarning>
       <body>
         {/* Primero que nada en <body>, antes de cualquier contenido con
-            color — ver comentario de THEME_INIT_SCRIPT arriba. */}
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+            color — ver comentario de THEME_INIT_SCRIPT arriba. El
+            "%INITIAL_MODE%" se reemplaza acá (no con una plantilla de JS
+            con `${}`) para no volver dinámico el resto del literal —
+            initialMode ya viene validado a "light" | "dark" arriba, nunca
+            texto libre, así que no hay riesgo de inyección. */}
+        <script
+          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT.replace("%INITIAL_MODE%", initialMode) }}
+        />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
-        <ThemeProvider>
+        <ThemeProvider initialMode={initialMode}>
           <ServiceWorkerRegister />
           {children}
         </ThemeProvider>

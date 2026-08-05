@@ -1,6 +1,6 @@
 # Decisiones pendientes — requieren acción o información tuya
 
-## -9. Mismatch de hidratación sistémico: `style={{color: C.x}}` en todo el árbol (2026-08-05) — no bloquea nada, sesión dedicada aparte
+## -9. Mismatch de hidratación sistémico: `style={{color: C.x}}` en todo el árbol (2026-08-05) — ✅ RESUELTO DE RAÍZ (2026-08-05), no requiere ningún paso tuyo
 
 **Qué encontré:** al cerrar la sesión de dark mode fui a verificar que no
 quedaran advertencias de hidratación en consola. Encontré y arreglé tres
@@ -11,45 +11,59 @@ calculado en JS por pares de clases Tailwind fijas (`text-[...] dark:text-[...]`
 
 Al arreglar el botón de tema, apareció OTRA advertencia distinta más abajo
 en el mismo `<header>`: `border-color` también difiere entre servidor y
-cliente (`style={{ borderColor: C.border }}`). Confirmé que esto es la
+cliente (`style={{ borderColor: C.border }}`). Confirmé que esto era la
 misma causa raíz, pero mucho más amplia: `useTheme()` (`C`/`CD` de
-`theme.js`) siempre devuelve la paleta CLARA durante el render de servidor
-(no hay forma de que el server sepa qué tema eligió cada visitante), y el
-cliente corrige recién al hidratar leyendo `data-theme`. Cualquier
+`theme.js`) siempre devolvía la paleta CLARA durante el render de servidor
+(no había forma de que el server supiera qué tema eligió cada visitante), y
+el cliente corregía recién al hidratar leyendo `data-theme`. Cualquier
 `style={{...: C.algo}}` en un elemento que se renderiza siempre (no solo
-detrás de un `if`) tiene este mismo problema en potencia — y
+detrás de un `if`) tenía este mismo problema en potencia — y
 `style={{...: C.algo}}` aparece decenas de veces en `FelpusMatcher.jsx` y
-`PureViews.jsx` (bordes de cards, colores de texto, íconos, etc.).
+`PureViews.jsx` (bordes de cards, colores de texto, íconos, etc.), o sea
+que parchear caso por caso hubiera significado tocar prácticamente toda la
+app — quedó anotado acá como pendiente para una sesión aparte.
 
-**Por qué no seguí arreglándolos uno por uno:** es un patrón que se repite
-sistémicamente por todo el árbol, no un puñado de casos aislados — seguir
-el mismo hilo hubiera significado convertir prácticamente todos los
-`style={{color: C.x}}` / `style={{borderColor: C.x}}` de la app a clases
-Tailwind con pares claro/oscuro fijos. Es un cambio real y prolijo de
-hacer, pero es un refactor estructural amplio, no algo que corresponda
-colar dentro de una tarea de "verificación final" de un pedido que
-explícitamente decía "no quiero un rediseño estructural".
+**Qué hice (sesión siguiente):** en vez de seguir ese camino (convertir
+cientos de `style={{}}` a clases Tailwind, un refactor estructural amplio
+que el pedido original explícitamente no quería), fui a la causa raíz: el
+servidor ahora SÍ conoce el tema elegido, leyendo una cookie
+`felpus-theme` (`src/app/layout.js`, con `cookies()` de `next/headers`) y
+pasándosela a `ThemeProvider` como `initialMode` — así el primer render de
+servidor y el primer render de cliente parten del mismo `C`/`CD` desde el
+arranque, sin que ningún componente tuviera que cambiar una sola línea de
+sus `style={{color: C.x}}` existentes. El toggle de tema (`ThemeProvider.jsx`)
+ahora escribe esa cookie en vez de `localStorage` (localStorage no es
+legible por el servidor). El único caso que el servidor sigue sin poder
+conocer — la primerísima visita de alguien, todavía sin cookie, cuyo
+sistema prefiere oscuro — lo sigue resolviendo el mismo script anti-parpadeo
+de siempre (ahora recibe el `initialMode` ya resuelto por el servidor
+incrustado, y solo consulta `prefers-color-scheme` para ese caso puntual).
 
-**Impacto real mientras tanto:** ninguno visible. Es una advertencia de
-React solo en modo desarrollo (`npm run dev`) — en producción
-(`npm run build` + server) no aparece en consola del navegador de la misma
-forma, y aunque apareciera, React ya se recupera solo descartando el HTML
-del servidor y usando el del cliente: la persona nunca ve un parpadeo ni
-contenido incorrecto, solo se pierde parte de la ventaja de tener HTML
-pre-renderizado por el servidor en esos elementos puntuales.
+**Bug real encontrado y corregido en el camino:** la primera versión de
+este fix agregaba `data-theme` como prop de JSX en `<html>` — React lo
+"adoptaba" como propio y, al hidratar, lo pisaba de vuelta al valor que
+había usado el servidor, peleándose con el script anti-parpadeo
+(reproducido y confirmado en browser). Se corrigió dejando `data-theme`
+100% imperativo (nunca una prop de React), igual que en la versión
+original. Un segundo bug relacionado: dos `useEffect` separados en
+`ThemeProvider` (uno reconciliaba el estado con el DOM, otro volvía a
+escribir `data-theme` a partir del `mode` de React) corrían ambos en el
+mismo commit inicial usando el `mode` TODAVÍA no reconciliado — el segundo
+pisaba lo que el primero acababa de detectar. Se fusionaron en un único
+efecto para eliminar esa carrera. Ambos bugs se detectaron con pruebas de
+browser reales (no solo lectura de código) antes de darlo por cerrado.
 
-**Camino recomendado para cuando se retome:** la solución de raíz no es
-seguir parcheando `style={{}}` uno por uno, sino que `ThemeProvider` deje
-de depender de un `useState` que lee `document` recién en el cliente —
-por ejemplo, guardando la preferencia de tema en una cookie legible
-también por el servidor (`getServerSideProps`/route handler/middleware de
-Next), para que el primer render de servidor ya conozca el tema real y
-`C`/`CD` coincidan desde el arranque. Alternativa más chica pero más
-manual: migrar los `style={{color: C.x}}` restantes a variables CSS
-(`--felpus-text`, `--felpus-border`, etc., ya hay precedente con
-`--felpus-dark-card` y compañía) resueltas por `[data-theme]` en
-`globals.css`, igual que se hizo con los backgrounds — sin tocar
-`ThemeProvider`.
+**Verificado:** cero advertencias de hidratación recorriendo Inicio,
+Explorar, el modal de detalle, Colaboradores y el formulario de Reportar
+completo, en claro y oscuro, con y sin cookie previa, con el sistema en
+claro y en oscuro — probado tanto en `npm run dev` como en un build de
+producción real (`npm run build` + `npm start`). 120/120 tests, build
+limpio.
+
+**Costo aceptado:** `cookies()` vuelve dinámico el layout raíz (no se
+puede pre-generar `/` en build) — ya lo era antes por otros motivos (la
+app es interactiva de punta a punta, tira datos de Supabase en runtime),
+así que no hay ganancia real de estático que se haya perdido acá.
 
 **Qué pasó:** el bucket `felpus-photos` solo tenía políticas de lectura e
 inserción — nunca de borrado. `deleteReport()` (botón "Eliminar

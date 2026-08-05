@@ -1,58 +1,103 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { C, CD } from "../../lib/theme";
 
-const STORAGE_KEY = "felpus-theme"; // "light" | "dark" — ausente = seguir al sistema
+const COOKIE_NAME = "felpus-theme"; // "light" | "dark" — ausente = seguir al sistema
 
 const ThemeContext = createContext(null);
 
-// El modo real ya quedó escrito en <html data-theme="..."> por el script
-// inline de layout.js ANTES de que React hidrate (ver ese archivo) — así se
-// evita el parpadeo típico de "carga en claro y After un instante salta a
-// oscuro". Acá solo leemos ese atributo para que el primer render de React
-// coincida exactamente con lo que el usuario ya está viendo.
-function readInitialMode() {
-  if (typeof document === "undefined") return "light";
-  return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+function readCookieMode() {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(/(?:^|; )felpus-theme=(light|dark)/);
+  return match ? match[1] : null;
 }
 
-export function ThemeProvider({ children }) {
-  const [mode, setMode] = useState(readInitialMode);
+function writeCookieMode(mode) {
+  try {
+    // 1 año, mismo alcance que el sitio entero. SameSite=Lax (no Strict): la
+    // cookie tiene que seguir mandándose en la navegación normal de primer
+    // nivel (ej. si alguien llega desde un link externo a /r/<id>).
+    document.cookie = `${COOKIE_NAME}=${mode}; path=/; max-age=31536000; SameSite=Lax`;
+  } catch {
+    // document.cookie puede fallar en navegación privada muy restrictiva —
+    // el toggle sigue funcionando para esta sesión, solo no se recuerda.
+  }
+}
 
-  // Si el usuario nunca eligió manualmente (no hay nada en localStorage),
-  // seguir los cambios de preferencia del sistema en vivo — por ejemplo si
-  // el celular pasa a modo oscuro automáticamente al atardecer.
+// `initialMode` viene del layout raíz (Server Component), que ya leyó la
+// cookie `felpus-theme` ANTES de renderizar — así el primer render de
+// servidor y el primer render de cliente (hidratación) parten exactamente
+// del mismo valor. Antes esto se resolvía leyendo `document` en un
+// useState inicial: como el servidor nunca tiene `document`, esa versión
+// SIEMPRE asumía tema claro en el render de servidor, y cualquier
+// `style={{color: C.x}}` (a diferencia de las clases `dark:`, resueltas por
+// CSS y no por este valor) quedaba desincronizado entre servidor y cliente
+// — un mismatch de hidratación en potencia en cualquier elemento que use
+// ese patrón, no solo un puñado de casos puntuales (ver PENDIENTE_DECISION.md).
+export function ThemeProvider({ children, initialMode = "light" }) {
+  const [mode, setMode] = useState(initialMode === "dark" ? "dark" : "light");
+
+  // Si el usuario nunca eligió manualmente (no hay cookie), seguir los
+  // cambios de preferencia del sistema en vivo — por ejemplo si el celular
+  // pasa a modo oscuro automáticamente al atardecer.
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = (e) => {
-      if (localStorage.getItem(STORAGE_KEY)) return; // hay preferencia manual, no pisarla
+      if (readCookieMode()) return; // hay preferencia manual, no pisarla
       setMode(e.matches ? "dark" : "light");
     };
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, []);
 
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", mode);
+  // Una única función es la que escribe data-theme/theme-color en el DOM
+  // (a propósito: tenerla separada de la reconciliación de abajo, en dos
+  // efectos con distintas dependencias, causaba una condición de carrera
+  // real — se detectó en pruebas de browser. En el primer commit, ambos
+  // efectos corren con el `mode` de ESTE render (el heredado del servidor);
+  // si el efecto de reconciliación pedía cambiar de estado, ese cambio
+  // todavía no se había aplicado cuando el otro efecto volvía a escribir el
+  // `mode` viejo en el DOM — pisando, por ejemplo, el "dark" que ya había
+  // dejado listo THEME_INIT_SCRIPT para la primera visita con el sistema en
+  // oscuro).
+  const applyMode = useCallback((m) => {
+    document.documentElement.setAttribute("data-theme", m);
     // El <meta name="theme-color"> (color de la barra del navegador/PWA) ya
     // tiene un valor por defecto que sigue prefers-color-scheme sin JS (ver
     // viewport.themeColor en layout.js) — esto lo corrige cuando el usuario
     // elige el tema a mano, para que la barra del navegador no quede
     // desincronizada del resto de la app.
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", mode === "dark" ? CD.red : C.red);
-  }, [mode]);
+    if (meta) meta.setAttribute("content", m === "dark" ? CD.red : C.red);
+  }, []);
+
+  const isFirstRun = useRef(true);
+  useEffect(() => {
+    if (isFirstRun.current) {
+      isFirstRun.current = false;
+      // Corrige el único caso que el servidor no puede conocer: la primera
+      // visita de alguien sin cookie todavía, cuyo sistema prefiere oscuro.
+      // THEME_INIT_SCRIPT (layout.js) ya dejó el <html data-theme="..."> (y
+      // las clases "dark:" que dependen de él) en el valor correcto ANTES
+      // de que React hidrate — acá solo alineamos el estado de React con
+      // eso, sin volver a tocar el DOM (que ya está bien), para que los
+      // `style={{...C}}` también queden correctos. Corre después del
+      // montaje —no durante la hidratación— así que esto es un re-render
+      // cliente normal, no genera ninguna advertencia de mismatch.
+      const domMode = document.documentElement.getAttribute("data-theme");
+      if ((domMode === "dark" || domMode === "light") && domMode !== mode) {
+        setMode(domMode);
+        return;
+      }
+    }
+    applyMode(mode);
+  }, [mode, applyMode]);
 
   const toggle = useCallback(() => {
     setMode((prev) => {
       const next = prev === "dark" ? "light" : "dark";
-      try {
-        localStorage.setItem(STORAGE_KEY, next);
-      } catch {
-        // localStorage puede fallar en navegación privada — el toggle
-        // sigue funcionando para esta sesión, solo no se recuerda.
-      }
+      writeCookieMode(next);
       return next;
     });
   }, []);
