@@ -1,4 +1,5 @@
 import RedirectClient from "./RedirectClient";
+import { safeJsonLdString } from "../../../lib/jsonLd";
 
 const SITE_URL = "https://felpus-web.vercel.app";
 
@@ -94,7 +95,12 @@ export default async function ReportPage({ params }) {
   return (
     <>
       {jsonLd && (
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+        // safeJsonLdString, no JSON.stringify directo: name/description acá
+        // vienen de texto libre del reporte (nombre/zona/descripción), y
+        // esto es SSR público — ver el comentario de safeJsonLdString en
+        // lib/jsonLd.js para el porqué (hallazgo real de auditoría: era
+        // explotable con solo abrir el link /r/<id> que se comparte).
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLdString(jsonLd) }} />
       )}
       <RedirectClient id={params.id} />
     </>

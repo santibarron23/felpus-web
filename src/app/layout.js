@@ -3,6 +3,7 @@ import "./globals.css";
 import ServiceWorkerRegister from "../components/felpus/ServiceWorkerRegister";
 import { ThemeProvider } from "../components/felpus/ThemeProvider";
 import { C, CD } from "../lib/theme";
+import { safeJsonLdString } from "../lib/jsonLd";
 
 const SITE_URL = "https://felpus-web.vercel.app";
 const TITLE = "Felpus - Buscador inteligente de mascotas perdidas y encontradas";
@@ -127,9 +128,15 @@ export default function RootLayout({ children }) {
         <script
           dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT.replace("%INITIAL_MODE%", initialMode) }}
         />
+        {/* safeJsonLdString, no JSON.stringify directo: este jsonLd es 100%
+            estático hoy (sin datos de usuario), pero ver r/[id]/page.js —
+            el mismo patrón CON datos de usuario ahí era una inyección real
+            explotable con solo abrir un link público. Usar acá también la
+            versión segura evita que un cambio futuro que agregue algo
+            dinámico a este objeto reabra el mismo riesgo sin que se note. */}
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+          dangerouslySetInnerHTML={{ __html: safeJsonLdString(jsonLd) }}
         />
         <ThemeProvider initialMode={initialMode}>
           <ServiceWorkerRegister />

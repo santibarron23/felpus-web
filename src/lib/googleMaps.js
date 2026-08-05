@@ -17,7 +17,17 @@ export function loadGoogleMaps(apiKey) {
     script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places,marker`;
     script.async = true;
     script.onload = () => resolve(window.google.maps);
-    script.onerror = () => reject(new Error("No se pudo cargar el script de Google Maps."));
+    script.onerror = () => {
+      // Sin este reset, un fallo de carga UNA sola vez (corte de red
+      // momentáneo, bloqueador de anuncios, etc.) dejaba mapsLoadingPromise
+      // cacheado como rechazado para siempre — cualquier componente que
+      // llamara a loadGoogleMaps() de nuevo (incluso en una visita
+      // posterior a otra pantalla, dentro de la misma sesión de la SPA)
+      // recibía ese mismo rechazo ya resuelto, sin volver a intentar el
+      // script, hasta recargar la página entera.
+      mapsLoadingPromise = null;
+      reject(new Error("No se pudo cargar el script de Google Maps."));
+    };
     document.head.appendChild(script);
   });
   return mapsLoadingPromise;
