@@ -391,7 +391,7 @@ export function DetailModal({ report, onClose, onResolve, confirming, onConfirm,
                 >
                   {!isLoggedIn ? (
                     <>
-                      <LogIn className="w-4 h-4" /> Iniciá sesión para confirmar
+                      <LogIn className="w-4 h-4" /> Iniciá sesión para confirmar reencuentro
                     </>
                   ) : !isOwner ? (
                     <>

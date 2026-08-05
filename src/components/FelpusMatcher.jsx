@@ -95,6 +95,7 @@ import MapPicker from "./MapPicker";
 import ReportsMap from "./ReportsMap";
 import Mascot from "./Mascot";
 import ZonaAutocomplete from "./ZonaAutocomplete";
+import Combobox from "./felpus/Combobox";
 import {
   Badge,
   EspecieIcon,
@@ -755,7 +756,7 @@ export default function FelpusMatcher() {
     if (!user) {
       return (
         <>
-          <LogIn className="w-3.5 h-3.5" /> Iniciá sesión para confirmar
+          <LogIn className="w-3.5 h-3.5" /> Iniciá sesión para confirmar reencuentro
         </>
       );
     }
@@ -1882,31 +1883,28 @@ export default function FelpusMatcher() {
                     No sé la raza
                   </button>
                 </div>
-                {/* <input list> en vez de <select>: a diferencia de color/
+                {/* Combobox propio en vez de <select>: a diferencia de color/
                     tamaño, hay cientos de razas y mezclas reales — un
-                    desplegable cerrado dejaría afuera a la mayoría. El
-                    <datalist> (getRazaOptions en matching.js: "Sin raza /
-                    Mestizo", "No sé / Desconocida" y "Otra raza" primero,
-                    después las razas de la especie elegida en orden
-                    alfabético) filtra solo mientras se escribe —
-                    comportamiento nativo del navegador, sin JS extra — pero
-                    el campo acepta escribir cualquier cosa igual. */}
-                <input
+                    desplegable cerrado dejaría afuera a la mayoría. Antes
+                    era <input list> + <datalist> (comportamiento nativo del
+                    navegador, sin JS extra) pero el soporte de <datalist> en
+                    mobile es muy pobre o inexistente (sobre todo Safari en
+                    iOS) — las sugerencias no aparecían al escribir. Ver
+                    Combobox.jsx: mismo resultado (getRazaOptions: "Sin raza
+                    / Mestizo", "No sé / Desconocida" y "Otra raza" primero,
+                    después las razas de la especie en orden alfabético;
+                    filtra mientras se escribe; acepta texto libre igual),
+                    pero funciona en cualquier navegador. */}
+                <Combobox
                   id="form-raza"
-                  type="text"
-                  list="form-raza-options"
                   value={form.raza}
-                  onChange={(e) => setForm((f) => ({ ...f, raza: e.target.value }))}
+                  onChange={(raza) => setForm((f) => ({ ...f, raza }))}
+                  options={getRazaOptions(form.especie)}
                   maxLength={60}
                   placeholder={form.especie === "otro" ? "Opcional" : "Ej: Labrador, Siamés..."}
                   className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0]"
                   style={{ borderColor: C.border, color: C.text }}
                 />
-                <datalist id="form-raza-options">
-                  {getRazaOptions(form.especie).map((r) => (
-                    <option key={r} value={r} />
-                  ))}
-                </datalist>
                 <p className="text-[11px] mt-1" style={{ color: C.muted }}>
                   {form.especie === "gato"
                     ? "En gatos la raza pesa poco en la búsqueda — \"No sé\" es una respuesta perfectamente válida, no te compliques."
@@ -2438,7 +2436,11 @@ export default function FelpusMatcher() {
                         className={`bg-white dark:bg-[#25190F] rounded-2xl border p-3 ${!m.report.resuelto && m.score >= 0.7 ? "felpus-match-glow" : ""}`}
                         style={{ borderColor: m.report.resuelto ? C.successBorder : C.border, opacity: m.report.resuelto ? 0.75 : 1 }}
                       >
-                        <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => openReportDetail(m.report)}
+                          className="w-full flex items-center gap-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded-xl"
+                        >
                           <MatchScoreRing score={m.score} />
                           <Image src={m.report.foto} alt={reportPhotoAlt(m.report)} width={64} height={64} loading="lazy" className="w-16 h-16 rounded-xl object-cover bg-[#F0E7D8] dark:bg-[#3A2A1B] shrink-0" />
                           <div className="min-w-0 flex-1">
@@ -2455,7 +2457,8 @@ export default function FelpusMatcher() {
                             </p>
                             <p className="text-[10px] font-semibold" style={{ color: scoreLabel(m.score, C).color }}>{scoreLabel(m.score, C).text}</p>
                           </div>
-                        </div>
+                          <ChevronRight className="w-4 h-4 shrink-0" style={{ color: C.muted }} />
+                        </button>
                         {!m.report.resuelto && !matchResult.source.resuelto && (
                           <div className="mt-2 pt-2 border-t" style={{ borderColor: C.border }}>
                             {confirmingId === m.report.id ? (
@@ -2680,7 +2683,12 @@ export default function FelpusMatcher() {
                         </p>
                       )}
                       {cardMatches[r.id]?.map((m) => (
-                        <div key={m.report.id} className="bg-[#FBF7F0] rounded-xl p-2">
+                        <button
+                          key={m.report.id}
+                          type="button"
+                          onClick={() => openReportDetail(m.report)}
+                          className="w-full text-left bg-[#FBF7F0] dark:bg-[#2D2015] rounded-xl p-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                        >
                           <div className="flex items-center gap-2.5">
                             <div className="scale-75 -m-2">
                               <MatchScoreRing score={m.score} />
@@ -2690,8 +2698,9 @@ export default function FelpusMatcher() {
                               <p className="text-xs font-semibold truncate" style={{ color: C.text }}>{displayColor(m.report)} · {m.report.zona}</p>
                               <p className="text-[10px]" style={{ color: C.muted }}>{m.distanceLabel}</p>
                             </div>
+                            <ChevronRight className="w-3.5 h-3.5 shrink-0" style={{ color: C.muted }} />
                           </div>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   )}
