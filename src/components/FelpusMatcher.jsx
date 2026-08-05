@@ -1146,13 +1146,21 @@ export default function FelpusMatcher() {
   // solo cambia cuando de verdad llega data nueva, no en cada render.
   const activeReports = useMemo(() => reports.filter((r) => !r.resuelto), [reports]);
   const resueltas = useMemo(() => reports.filter((r) => r.resuelto), [reports]);
-  const happyReunions = [...resueltas]
-    .sort((a, b) => (b.resueltoEn || b.creadoEn) - (a.resueltoEn || a.creadoEn))
-    .slice(0, 10);
+  // También memoizado (antes no lo estaba, a pesar de derivar de `resueltas`
+  // ya memoizado): sin esto, cada tecla escrita en cualquier input de todo
+  // este componente gigante recreaba el array del carrusel de "Reencuentros
+  // felices" con una referencia nueva, aunque los reencuentros en sí no
+  // hubieran cambiado — mismo tipo de costo evitable que ya se documentó
+  // acá abajo para filteredReports.
+  const happyReunions = useMemo(
+    () => [...resueltas].sort((a, b) => (b.resueltoEn || b.creadoEn) - (a.resueltoEn || a.creadoEn)).slice(0, 10),
+    [resueltas]
+  );
   // Franja de actividad de la comunidad en Inicio — números reales (no
   // simulados) derivados de los reportes ya cargados, para transmitir que
-  // hay gente usando la app ahora mismo sin inventar datos.
-  const last24hCount = reports.filter(isRecent).length;
+  // hay gente usando la app ahora mismo sin inventar datos. Memoizado por el
+  // mismo motivo que lo de arriba.
+  const last24hCount = useMemo(() => reports.filter(isRecent).length, [reports]);
   // Memoizado: sin esto, esta lista se recalculaba (con una referencia de
   // array NUEVA) en cada render de todo el componente, sin importar si algo
   // relevante había cambiado. Eso hacía que ReportsMap reconstruyera todos

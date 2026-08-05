@@ -46,6 +46,12 @@ export default function Combobox({
     function handlePointerDown(e) {
       if (containerRef.current && !containerRef.current.contains(e.target)) {
         setOpen(false);
+        // Sin esto, aria-activedescendant (más abajo) seguía apuntando al
+        // id de una opción resaltada que ya no existe en el DOM (la lista
+        // deja de renderizarse en cuanto open es false) — un lector de
+        // pantalla podía referenciar un elemento fantasma hasta la próxima
+        // vez que se abriera el combobox.
+        setActiveIndex(-1);
       }
     }
     document.addEventListener("mousedown", handlePointerDown);
@@ -94,7 +100,7 @@ export default function Combobox({
         aria-expanded={open}
         aria-controls={listboxId}
         aria-autocomplete="list"
-        aria-activedescendant={activeIndex >= 0 ? `${listboxId}-opt-${activeIndex}` : undefined}
+        aria-activedescendant={open && activeIndex >= 0 ? `${listboxId}-opt-${activeIndex}` : undefined}
         autoComplete="off"
         value={value}
         onChange={(e) => {
