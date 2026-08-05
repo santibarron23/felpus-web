@@ -89,17 +89,38 @@ async function fetchReportContactServer(supabaseUrl, apiKey, reportId) {
   return (Array.isArray(rows) ? rows[0]?.contacto_email : null) || "";
 }
 
+// nombre/color/zona son texto libre que cualquier persona controla al
+// publicar un reporte (zona en particular viene de Google Places o texto a
+// mano) — sin escapar, alguien podría meter HTML/enlaces propios en el
+// email de coincidencia que le llega a OTRA persona (ej. un "nombre" como
+// `<a href="...">` para un enlace de phishing disfrazado de Felpus). Nunca
+// se ejecutaría como <script> (los clientes de correo lo filtran), pero sí
+// se renderiza como HTML real, así que el resto (links, estilos, tags)
+// pasa sin filtro si no se escapa acá.
+export function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[c]);
+}
+
 async function sendMatchEmail({ resendKey, toEmail, matchedReport, newReport, score }) {
   const siteUrl = "https://felpus-web.vercel.app";
-  const link = `${siteUrl}/r/${newReport.id}`;
-  const nombre = newReport.nombre || (newReport.especie === "gato" ? "un gato" : "un perro");
+  const link = `${siteUrl}/r/${encodeURIComponent(newReport.id)}`;
+  const nombre = escapeHtml(newReport.nombre || (newReport.especie === "gato" ? "un gato" : "un perro"));
+  const color = escapeHtml(newReport.color);
+  const zona = escapeHtml(newReport.zona);
+  const matchedNombre = escapeHtml(matchedReport.nombre || matchedReport.especie);
   const pct = Math.round(score * 100);
   const html = `
     <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">
       <h2 style="color:#D31C22;">🐾 Posible coincidencia en Felpus</h2>
       <p>Alguien publicó ${newReport.tipo === "perdida" ? "una mascota perdida" : "una mascota encontrada"}
-        (<strong>${nombre}</strong>, ${newReport.color}, zona ${newReport.zona}) que se parece a tu publicación
-        de <strong>${matchedReport.nombre || matchedReport.especie}</strong> — ${pct}% de compatibilidad.</p>
+        (<strong>${nombre}</strong>, ${color}, zona ${zona}) que se parece a tu publicación
+        de <strong>${matchedNombre}</strong> — ${pct}% de compatibilidad.</p>
       <p><a href="${link}" style="display:inline-block;background:#D31C22;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold;">Ver la publicación</a></p>
       <p style="color:#6B5643;font-size:12px;">Entrá a Felpus para ver el detalle completo y confirmar si es tu mascota.</p>
     </div>`;

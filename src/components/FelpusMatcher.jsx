@@ -652,10 +652,14 @@ export default function FelpusMatcher() {
       } catch (e) {
         logError("No se pudo recuperar la foto compartida", e);
       }
-      // Deliberadamente sin dependencias más allá de mount: solo debe
-      // correr una vez, al abrir la app desde el share target.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     })();
+    // Deliberadamente sin dependencias más allá de mount: solo debe correr
+    // una vez, al abrir la app desde el share target. goToTab/pushToast son
+    // estables (useCallback/useToasts); processPhotoFile no lo es, pero
+    // agregarla dispararía este efecto de nuevo en cada render sin motivo
+    // — el disable de abajo tiene que apuntar a la línea real del array de
+    // dependencias, no a un punto intermedio del IIFE de arriba.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadLeaderboard = useCallback(async () => {

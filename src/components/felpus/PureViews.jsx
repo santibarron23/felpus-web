@@ -170,7 +170,11 @@ export function DetailModal({ report, onClose, onResolve, confirming, onConfirm,
   const [deleting, setDeleting] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const modalRef = useRef(null);
-  useFocusTrap(!!report, modalRef);
+  // Si la lightbox de foto está abierta, Escape la cierra a ELLA (no todo
+  // el detalle atrás) — misma lógica que ya usan el botón "X" y el click en
+  // el fondo de la lightbox. onEscape se lee de un ref adentro del hook, así
+  // que cambiar esta función en cada render no reinscribe el listener.
+  useFocusTrap(!!report, modalRef, lightboxOpen ? () => setLightboxOpen(false) : onClose);
   useEffect(() => {
     setActiveIndex(0);
     setDeleteConfirming(false);
@@ -758,7 +762,7 @@ export function FilterSheet({
 }) {
   const C = useTheme();
   const sheetRef = useRef(null);
-  useFocusTrap(open, sheetRef);
+  useFocusTrap(open, sheetRef, onClose);
 
   useEffect(() => {
     if (!open) return;

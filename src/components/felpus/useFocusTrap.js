@@ -9,8 +9,16 @@ const FOCUSABLE_SELECTOR =
 // true, y lo devuelve a lo que tenía el foco antes al desactivarse/desmontar
 // — sin esto, Tab se escapaba del modal/bottom sheet hacia el contenido de
 // atrás, que sigue siendo interactivo aunque esté tapado visualmente.
-export function useFocusTrap(active, containerRef) {
+//
+// `onEscape` (opcional) además cierra con la tecla Escape — hallazgo de
+// auditoría: ni DetailModal ni FilterSheet la tenían (solo se podían cerrar
+// con el mouse/touch, tocando el fondo o el botón "X"), algo que tanto
+// WCAG como el patrón estándar de diálogo (WAI-ARIA Authoring Practices)
+// esperan como comportamiento básico de cualquier modal.
+export function useFocusTrap(active, containerRef, onEscape) {
   const previousFocusRef = useRef(null);
+  const onEscapeRef = useRef(onEscape);
+  onEscapeRef.current = onEscape;
 
   useEffect(() => {
     if (!active) return;
@@ -32,6 +40,14 @@ export function useFocusTrap(active, containerRef) {
     });
 
     function handleKeyDown(e) {
+      if (e.key === "Escape") {
+        // onEscapeRef (no `onEscape` directo): así este listener no necesita
+        // quedar en las dependencias del efecto — evita sacar y volver a
+        // poner el listener (y perder/reagendar el foco) cada vez que el
+        // componente que llama a este hook pasa una nueva función inline.
+        onEscapeRef.current?.();
+        return;
+      }
       if (e.key !== "Tab") return;
       const items = getFocusables();
       if (items.length === 0) return;
