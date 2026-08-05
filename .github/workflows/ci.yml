@@ -16,7 +16,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # No 20: @supabase/realtime-js (dependencia de @supabase/supabase-js,
+          # que importa supabaseClient.js apenas se carga matching.js/store.js)
+          # exige WebSocket nativo, que Node recién trae desde la v22 — con 20
+          # createClient() tira "native WebSocket not found" al importarse, ni
+          # siquiera hace falta usar el cliente. Confirmado corriendo el CI real.
+          node-version: "22"
           cache: "npm"
 
       - run: npm ci
