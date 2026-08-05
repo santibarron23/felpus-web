@@ -1,5 +1,66 @@
 # Decisiones pendientes — requieren acción o información tuya
 
+## -10. Bono de puntos al confirmar reencuentro nunca se otorgaba (y rompía el flujo entero) (2026-08-05) — requiere 1 paso tuyo
+
+**Qué encontré, auditando el flujo de "confirmar reencuentro":** al marcar
+un match como reencuentro, además de sumarle 50 puntos a quien confirma, la
+app le suma un bono de 20 puntos ("bono-reporte-original") al dueño del
+**otro** reporte del match — por ejemplo, si vos publicaste una mascota
+encontrada y alguien más confirma que es su reporte de "perdida", ese bono
+te lo lleva vos, no la persona que confirmó.
+
+El problema: `awardPoints()` en `src/lib/store.js` hacía un lee-y-escribe
+directo desde el cliente (sin ninguna función atómica de por medio) —
+funciona para sumarte puntos A VOS MISMO porque la policy RLS
+`contributors_update_own` lo permite, pero el caso del bono escribe en la
+fila de **otra persona**, y esa misma policy lo deniega siempre. Cada vez
+que ese bono debía otorgarse (básicamente cada confirmación de reencuentro
+con un match real de por medio), el intento fallaba por RLS, y como estaba
+adentro del mismo `try` que todo el resto del flujo, ese error tumbaba
+TODO: el mensaje de éxito nunca aparecía y en su lugar se veía "No pudimos
+guardar el reencuentro. Probá de nuevo." — **aunque el reporte ya se
+hubiera marcado como resuelto igual, de forma silenciosa.** El bono en sí
+nunca se llegó a otorgar en ningún caso real desde que existe esta
+mecánica.
+
+**Qué hice:**
+1. Agregué `award_points()` a `schema.sql` — una función atómica (mismo
+   patrón que `send_heart`, ya existente para los corazones), que sólo
+   acepta las combinaciones reales de motivo/monto que usa la app (no un
+   delta arbitrario, para no abrir una forma de inflar puntos propios o
+   ajenos llamándola directo con la anon key) y sólo deja tocar la fila de
+   otra persona para el caso puntual del bono.
+2. `awardPoints()` en `store.js` ahora llama a esa función primero, y sólo
+   cae al lee-y-escribe de siempre si la función todavía no existe (mismo
+   patrón de respaldo que ya se usa para `raza`/`detalles`/`get_report_contact`).
+3. Independientemente de la migración: aislé el llamado a `awardPoints()`
+   (el propio Y el del bono) en su propio `try/catch` en
+   `FelpusMatcher.jsx`, separado del resto del flujo de confirmar
+   reencuentro — así, aunque falle sumar puntos (por el motivo que sea), el
+   reencuentro ya guardado sigue mostrando el mensaje de éxito en vez de un
+   error falso. Esto ya está activo ahora mismo, sin depender de que corras
+   la migración.
+
+**Mientras no corras el paso de abajo:** el reencuentro se confirma bien y
+ya no rompe el flujo (por el punto 3), pero el bono al dueño del otro
+reporte sigue sin otorgarse — mismo comportamiento (ausente) que tenía
+desde siempre, sólo que ya no genera un error falso.
+
+**Paso pendiente — correr la migración de schema.sql:**
+1. Abrí el SQL Editor de tu proyecto Supabase.
+2. Pegá y ejecutá todo `supabase/schema.sql` de nuevo (agrega la función
+   `award_points`, no borra nada existente).
+3. Listo — probá confirmar un reencuentro con un match real y verificá en
+   Colaboradores que la otra persona sumó sus 20 puntos de bono.
+
+**No pude probarlo end-to-end** (no tengo acceso a la base real para crear
+dos usuarios y confirmar un reencuentro entre ellos) — la lógica está
+revisada a mano y cubierta por tests (`describe("awardPoints")` en
+`src/lib/store.test.js`, mock de Supabase), pero conviene que lo confirmes
+una vez con la migración corrida.
+
+---
+
 ## -9. Mismatch de hidratación sistémico: `style={{color: C.x}}` en todo el árbol (2026-08-05) — ✅ RESUELTO DE RAÍZ (2026-08-05), no requiere ningún paso tuyo
 
 **Qué encontré:** al cerrar la sesión de dark mode fui a verificar que no

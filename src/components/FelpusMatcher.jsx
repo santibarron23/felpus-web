@@ -832,12 +832,28 @@ export default function FelpusMatcher() {
         return updated || prev;
       });
 
-      await awardPointsRemote(user.id, resolverDisplayName, PUNTOS_REENCUENTRO, "reencuentro");
-      const seenBonusIds = new Set();
-      for (const b of bonusFor) {
-        if (!b?.userId || b.userId === user.id || seenBonusIds.has(b.userId)) continue;
-        seenBonusIds.add(b.userId);
-        await awardPointsRemote(b.userId, b.displayName, PUNTOS_BONO_ORIGINAL, "bono-reporte-original");
+      // Aislado del resto del flujo (try/catch propio, no deja que su error
+      // se propague al catch de más abajo): el reencuentro en sí ya quedó
+      // guardado arriba (resolveReports + el estado en memoria) — que
+      // falle sumar puntos (a quien confirma, o el bono a quien publicó el
+      // otro reporte del match) no debería mostrarle un error genérico a
+      // alguien que sí logró lo que vino a hacer. Esto además protege
+      // puntualmente el caso "bono-reporte-original": antes de correr la
+      // migración de award_points (ver PENDIENTE_DECISION.md) ese llamado
+      // sigue fallando (RLS deniega escribir en la fila de otra persona
+      // desde acá), pero ya no se lleva puesto el resto del flujo con él —
+      // hallazgo de auditoría: antes SIEMPRE pasaba esto en cualquier
+      // confirmación con un bono real de por medio, con o sin la migración.
+      try {
+        await awardPointsRemote(user.id, resolverDisplayName, PUNTOS_REENCUENTRO, "reencuentro");
+        const seenBonusIds = new Set();
+        for (const b of bonusFor) {
+          if (!b?.userId || b.userId === user.id || seenBonusIds.has(b.userId)) continue;
+          seenBonusIds.add(b.userId);
+          await awardPointsRemote(b.userId, b.displayName, PUNTOS_BONO_ORIGINAL, "bono-reporte-original");
+        }
+      } catch (e) {
+        logError("No se pudieron sumar los puntos del reencuentro", e);
       }
       await loadLeaderboard();
       setConfirmingId(null);

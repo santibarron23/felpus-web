@@ -307,8 +307,32 @@ export async function fetchMyRank(userId) {
 // apodo de texto libre) — así solo colaboradores logueados con Google suman
 // puntos, y dos personas nunca pueden "compartir" el mismo contador por
 // escribir el mismo apodo.
+//
+// Vía RPC (award_points en schema.sql), no un lee-y-escribe directo: el
+// caso "bono-reporte-original" (markResolvedAndReward en FelpusMatcher.jsx)
+// le suma puntos al DUEÑO DEL OTRO REPORTE del match, no a quien está
+// confirmando — una fila ajena, que la policy contributors_update_own
+// bloquea siempre desde el cliente. Antes de este fix, ESE caso puntual
+// fallaba el 100% de las veces (RLS deniega el UPDATE del upsert), y el
+// error tumbaba todo el flujo de "confirmar reencuentro" con un mensaje
+// genérico, aunque el reporte ya se hubiera guardado como resuelto igual.
 export async function awardPoints(userId, displayName, delta, reason) {
   if (!userId) return;
+  const rpcResult = await supabase.rpc("award_points", {
+    p_user_id: userId,
+    p_display_name: displayName || null,
+    p_delta: delta,
+    p_reason: reason,
+  });
+  if (!rpcResult.error) return;
+  if (!isMissingFunctionError(rpcResult.error)) throw rpcResult.error;
+
+  // Antes de correr la migración que crea award_points (ver
+  // PENDIENTE_DECISION.md): cae al lee-y-escribe de siempre, que sigue
+  // funcionando para sumarse puntos A UNO MISMO (RLS lo permite), pero NO
+  // para "bono-reporte-original" — ese caso sigue fallando hasta correr la
+  // migración, igual que ya fallaba antes de este fix. markResolvedAndReward
+  // ya aísla ese caso puntual para que su falla no tumbe el resto del flujo.
   const { data: existing } = await supabase
     .from(CONTRIBUTORS_TABLE)
     .select("*")

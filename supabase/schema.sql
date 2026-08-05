@@ -387,6 +387,70 @@ revoke all on function public.send_heart(text) from public;
 grant execute on function public.send_heart(text) to authenticated;
 
 -- ---------------------------------------------------------------------------
+-- award_points: suma puntos/reportes/reencuentros de forma atómica. Mismo
+-- motivo que send_heart de arriba, y el mismo problema real que encontró: al
+-- confirmar un reencuentro, quien confirma le suma un bono al DUEÑO DEL OTRO
+-- REPORTE del match ("bono-reporte-original") — una fila ajena, no la propia
+-- — así que la policy contributors_update_own (auth.uid() = id) lo bloqueaba
+-- siempre. La app llamaba awardPoints() directo desde el cliente (leer +
+-- upsert, sin ninguna función atómica de por medio) y ese caso puntual
+-- fallaba en un 100% de las veces que se disparaba: RLS deniega la parte
+-- UPDATE del upsert, y ese error hacía fallar TODO el flujo de "confirmar
+-- reencuentro" con un mensaje genérico, aunque el reporte ya se hubiera
+-- marcado como resuelto igual. El bono al reportero original nunca se llegó
+-- a otorgar en ningún caso real desde que existe esta mecánica.
+--
+-- (p_reason, p_delta) están restringidos a los pares reales que usa la app
+-- (PUNTOS_REENCUENTRO/PUNTOS_BONO_ORIGINAL/PUNTOS_PERDIDA/PUNTOS_ENCONTRADA
+-- en src/lib/matching.js) — no un delta arbitrario — porque esta función,
+-- al ser necesariamente de privilegios elevados (escribe filas ajenas), no
+-- debería poder usarse para inflar puntos con cualquier valor llamándola
+-- directo con la anon key. Si esos montos cambian alguna vez en el código,
+-- hay que actualizar también esta lista. Los motivos que solo pueden
+-- afectar la fila propia ("reencuentro"/"reporte") además exigen
+-- p_user_id = auth.uid() — solo "bono-reporte-original" puede tocar la fila
+-- de otra persona, que es exactamente el caso que esta función existe para
+-- destrabar.
+-- ---------------------------------------------------------------------------
+create or replace function public.award_points(p_user_id text, p_display_name text, p_delta integer, p_reason text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión para sumar puntos.';
+  end if;
+  if (p_reason, p_delta) not in (('reencuentro', 50), ('bono-reporte-original', 20), ('reporte', 10), ('reporte', 15)) then
+    raise exception 'Combinación de motivo/puntos no reconocida.';
+  end if;
+  if p_reason in ('reencuentro', 'reporte') and p_user_id <> auth.uid()::text then
+    raise exception 'Solo podés sumarte puntos a vos mismo con este motivo.';
+  end if;
+
+  insert into contributors (id, nickname, points, reportes, reencuentros, updated_at)
+  values (
+    p_user_id,
+    coalesce(p_display_name, p_user_id),
+    p_delta,
+    case when p_reason = 'reporte' then 1 else 0 end,
+    case when p_reason = 'reencuentro' then 1 else 0 end,
+    now()
+  )
+  on conflict (id) do update set
+    points = contributors.points + excluded.points,
+    reportes = contributors.reportes + excluded.reportes,
+    reencuentros = contributors.reencuentros + excluded.reencuentros,
+    nickname = coalesce(p_display_name, contributors.nickname),
+    updated_at = now();
+end;
+$$;
+
+revoke all on function public.award_points(text, text, integer, text) from public;
+grant execute on function public.award_points(text, text, integer, text) to authenticated;
+
+-- ---------------------------------------------------------------------------
 -- Storage: bucket público para las fotos de mascotas
 -- ---------------------------------------------------------------------------
 insert into storage.buckets (id, name, public)

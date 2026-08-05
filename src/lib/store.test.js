@@ -14,7 +14,7 @@ const { supabaseMock } = vi.hoisted(() => {
 
 vi.mock("./supabaseClient", () => ({ supabase: supabaseMock }));
 
-const { fetchReports, createReport, fetchReportContact } = await import("./store");
+const { fetchReports, createReport, fetchReportContact, awardPoints } = await import("./store");
 
 // Imita el query builder encadenable de supabase-js: cada método de la
 // cadena (.select/.eq/.order/...) devuelve el mismo objeto, y el objeto es
@@ -243,5 +243,54 @@ describe("fetchReportContact", () => {
   it("si no hay fila para ese id, devuelve contacto vacío en vez de romper", async () => {
     supabaseMock.rpc.mockResolvedValueOnce({ data: [], error: null });
     expect(await fetchReportContact("no-existe")).toEqual({ contactoWhatsapp: "", contactoEmail: "" });
+  });
+});
+
+// Hallazgo de auditoría (2026-08-05): el caso "bono-reporte-original" le
+// suma puntos al DUEÑO DE OTRO REPORTE (no a quien está confirmando el
+// reencuentro) — una fila ajena, que la policy RLS contributors_update_own
+// bloquea siempre en el lee-y-escribe directo de antes. award_points (RPC,
+// ver schema.sql) es la solución; estos tests fijan que awardPoints() la use
+// primero y sólo caiga al viejo comportamiento si todavía no existe.
+describe("awardPoints", () => {
+  it("con la RPC disponible, la llama con los parámetros correctos y no toca .from()", async () => {
+    supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: null });
+    await awardPoints("user-1", "Ana", 50, "reencuentro");
+    expect(supabaseMock.rpc).toHaveBeenCalledWith("award_points", {
+      p_user_id: "user-1",
+      p_display_name: "Ana",
+      p_delta: 50,
+      p_reason: "reencuentro",
+    });
+    expect(supabaseMock.from).not.toHaveBeenCalled();
+  });
+
+  it("sin userId, no llama a nada (guest sin cuenta)", async () => {
+    await awardPoints(null, "Invitado", 10, "reporte");
+    expect(supabaseMock.rpc).not.toHaveBeenCalled();
+    expect(supabaseMock.from).not.toHaveBeenCalled();
+  });
+
+  it("si la RPC todavía no existe (migración no corrida), cae al lee-y-escribe de siempre", async () => {
+    supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: missingFunctionError() });
+    supabaseMock.from.mockReturnValueOnce(
+      makeBuilder({ data: { id: "user-1", nickname: "Ana", points: 100, reportes: 2, reencuentros: 1 }, error: null })
+    );
+    const upsertBuilder = makeBuilder({ error: null });
+    supabaseMock.from.mockReturnValueOnce(upsertBuilder);
+
+    await awardPoints("user-1", "Ana", 50, "reencuentro");
+
+    expect(supabaseMock.from).toHaveBeenCalledTimes(2);
+    const upserted = upsertBuilder.upsert.mock.calls[0][0];
+    expect(upserted.points).toBe(150);
+    expect(upserted.reencuentros).toBe(2);
+  });
+
+  it("un error real de la RPC (no 'función no existe') se propaga, sin caer al lee-y-escribe", async () => {
+    const realError = { code: "P0001", message: "Solo podés sumarte puntos a vos mismo con este motivo." };
+    supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: realError });
+    await expect(awardPoints("otro-user", "X", 20, "reencuentro")).rejects.toBe(realError);
+    expect(supabaseMock.from).not.toHaveBeenCalled();
   });
 });
