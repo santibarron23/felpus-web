@@ -35,6 +35,7 @@ import {
   Flag,
 } from "lucide-react";
 import { scoreLabel, isRecent, formatFechaAR, buildShareText, reportPhotoAlt, COLOR_OPTIONS, REPORT_FLAG_REASONS } from "../../lib/matching";
+import { SITE_URL } from "../../lib/site";
 import { downloadFlyer } from "../../lib/flyer";
 import { logError } from "../../lib/log";
 import { useFocusTrap } from "./useFocusTrap";
@@ -201,11 +202,7 @@ export function ReportCard({ report, onOpenDetail, children }) {
 // Mismo mensaje para WhatsApp y email — incluye el link público del
 // reporte (/r/<id>) para que quien responde pueda abrirlo directo y
 // confirmar que están hablando del mismo caso, sin tener que buscarlo a
-// mano en Felpus. SITE_URL hardcodeado acá mismo (igual que en layout.js,
-// r/[id]/page.js y notify-match/route.js — no hay una única fuente de
-// verdad para esto en el proyecto todavía) porque es el dominio real de
-// producción, no algo que dependa del entorno donde corre el código.
-const SITE_URL = "https://felpus-web.vercel.app";
+// mano en Felpus.
 function contactMessage(report) {
   const nombre = report.nombre || `un/a ${report.especie}`;
   return `Hola! Vi en Felpus tu publicación de ${nombre} en ${report.zona}. Creo que puedo ayudar.\n${SITE_URL}/r/${report.id}`;

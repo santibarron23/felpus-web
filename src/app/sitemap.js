@@ -1,4 +1,4 @@
-const SITE_URL = "https://felpus-web.vercel.app";
+import { SITE_URL } from "../lib/site";
 
 // Cada reporte activo tiene su propia URL indexable (/r/[id]) — sin esto el
 // sitemap solo listaba el home y buscadores no podían descubrir las

@@ -1,7 +1,6 @@
 import RedirectClient from "./RedirectClient";
 import { safeJsonLdString } from "../../../lib/jsonLd";
-
-const SITE_URL = "https://felpus-web.vercel.app";
+import { SITE_URL } from "../../../lib/site";
 
 // Fetch server-side directo contra la REST API de Supabase (no el cliente
 // de src/lib/supabaseClient.js — ese está armado para persistir sesión en

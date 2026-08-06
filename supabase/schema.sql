@@ -521,7 +521,7 @@ begin
       return NEW;
     end if;
     perform net.http_post(
-      url := 'https://felpus-web.vercel.app/api/notify-match',
+      url := 'https://felpus.com/api/notify-match',
       headers := jsonb_build_object(
         'Content-Type', 'application/json',
         'x-webhook-secret', webhook_secret

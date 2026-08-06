@@ -1,6 +1,7 @@
 import webpush from "web-push";
 import { findMatches } from "../../../lib/matching";
 import { logError } from "../../../lib/log";
+import { SITE_URL } from "../../../lib/site";
 
 // Corre en el servidor: lo dispara un Database Webhook de Supabase cada vez
 // que se inserta un reporte nuevo (ver PENDIENTE_DECISION.md para la
@@ -108,8 +109,7 @@ export function escapeHtml(value) {
 }
 
 async function sendMatchEmail({ resendKey, toEmail, matchedReport, newReport, score }) {
-  const siteUrl = "https://felpus-web.vercel.app";
-  const link = `${siteUrl}/r/${encodeURIComponent(newReport.id)}`;
+  const link = `${SITE_URL}/r/${encodeURIComponent(newReport.id)}`;
   const nombre = escapeHtml(newReport.nombre || (newReport.especie === "gato" ? "un gato" : "un perro"));
   const color = escapeHtml(newReport.color);
   const zona = escapeHtml(newReport.zona);
@@ -137,13 +137,12 @@ async function sendMatchEmail({ resendKey, toEmail, matchedReport, newReport, sc
 }
 
 async function sendMatchPush({ subscription, matchedReport, newReport, score }) {
-  const siteUrl = "https://felpus-web.vercel.app";
   const nombre = newReport.nombre || (newReport.especie === "gato" ? "un gato" : "un perro");
   const pct = Math.round(score * 100);
   const payload = JSON.stringify({
     title: "🐾 Posible coincidencia en Felpus",
     body: `${nombre} (${newReport.color}, zona ${newReport.zona}) se parece a tu publicación de ${matchedReport.nombre || matchedReport.especie} — ${pct}% de compatibilidad.`,
-    url: `${siteUrl}/r/${newReport.id}`,
+    url: `${SITE_URL}/r/${newReport.id}`,
     tag: `felpus-match-${matchedReport.id}`,
   });
   await webpush.sendNotification(subscription, payload);

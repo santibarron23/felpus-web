@@ -4,8 +4,7 @@ import ServiceWorkerRegister from "../components/felpus/ServiceWorkerRegister";
 import { ThemeProvider } from "../components/felpus/ThemeProvider";
 import { C, CD } from "../lib/theme";
 import { safeJsonLdString } from "../lib/jsonLd";
-
-const SITE_URL = "https://felpus-web.vercel.app";
+import { SITE_URL } from "../lib/site";
 const TITLE = "Felpus - Buscador inteligente de mascotas perdidas y encontradas";
 const DESCRIPTION =
   "Reportá una mascota perdida o encontrada con foto y descripción. Felpus busca coincidencias automáticamente por imagen, texto y zona.";
