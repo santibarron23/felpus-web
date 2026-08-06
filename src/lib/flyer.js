@@ -125,6 +125,14 @@ function drawTokenLines(ctx, lines, x, y, lineHeight, regularFont, boldFont, reg
   });
 }
 
+// OJO: esto reduce el tamaño de fuente hasta `minSize`, pero NO garantiza
+// que a `minSize` el texto realmente entre en `maxWidth` — el loop corta en
+// cuanto `size` deja de ser mayor a `minSize`, sin volver a medir esa última
+// vez. Para textos de longitud fija y acotada (ej. "MASCOTA PERDIDA") nunca
+// pasa nada porque siempre entran mucho antes de llegar al mínimo. Para
+// texto de longitud variable/con entrada del usuario (ej. la línea de zona,
+// ver más abajo) hace falta combinarlo con truncateToWidth() para de verdad
+// asegurar que no se dibuje nada fuera del margen del flyer.
 function fitFontSize(ctx, text, maxWidth, startSize, minSize, weight = "800") {
   let size = startSize;
   while (size > minSize) {
@@ -133,6 +141,21 @@ function fitFontSize(ctx, text, maxWidth, startSize, minSize, weight = "800") {
     size -= 2;
   }
   return size;
+}
+
+// Corta el texto con "…" hasta que entre en maxWidth, con el font YA seteado
+// en ctx (llamar después de fijar ctx.font). Sin esto, un texto de longitud
+// no acotada (zona + ciudad + provincia, hasta ~260 caracteres en el peor
+// caso) podía terminar dibujándose parcialmente fuera del margen del flyer
+// incluso después de fitFontSize, porque esa función solo achica la fuente,
+// nunca corta el texto.
+function truncateToWidth(ctx, text, maxWidth) {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let truncated = text;
+  while (truncated.length > 1 && ctx.measureText(`${truncated}…`).width > maxWidth) {
+    truncated = truncated.slice(0, -1);
+  }
+  return `${truncated}…`;
 }
 
 // --- Íconos vectoriales simples, dibujados a mano (sin dependencias) ---
@@ -637,12 +660,17 @@ export async function buildFlyerBlob(report, colorText) {
 
   // Zona (fila centrada con ícono) — incluye ciudad/provincia cuando están
   // disponibles (ver composeZonaDisplay), así que el texto puede ser más
-  // largo que antes: se achica con fitFontSize si no entra en una línea, en
-  // vez de desbordar el margen del flyer.
+  // largo que antes y de longitud no acotada (hasta ~260 caracteres en el
+  // peor caso: zona de 100 + ciudad de 80 + provincia de 80). Se achica con
+  // fitFontSize y, si aun así no entra al tamaño mínimo, se trunca con "…"
+  // (truncateToWidth) — sin esto, una combinación muy larga terminaba
+  // dibujándose parcialmente fuera del margen del flyer.
   const zonaText = `ZONA: ${composeZonaDisplay(report).toUpperCase()}`;
-  const zonaFontSize = fitFontSize(ctx, zonaText, CONTENT_W - 80, 24, 14);
+  const zonaMaxWidth = CONTENT_W - 80;
+  const zonaFontSize = fitFontSize(ctx, zonaText, zonaMaxWidth, 24, 14);
   ctx.font = `800 ${zonaFontSize}px ${FONT_FAMILY}`;
-  const zonaTextWidth = ctx.measureText(zonaText).width;
+  const zonaDisplayText = truncateToWidth(ctx, zonaText, zonaMaxWidth);
+  const zonaTextWidth = ctx.measureText(zonaDisplayText).width;
   const zonaIconR = 18;
   const zonaGroupWidth = zonaIconR * 2 + 12 + zonaTextWidth;
   const zonaStartX = (W - zonaGroupWidth) / 2;
@@ -650,7 +678,7 @@ export async function buildFlyerBlob(report, colorText) {
   iconPin(ctx, zonaStartX + zonaIconR, y + zonaIconR, zonaIconR * 0.62, "#ffffff");
   ctx.fillStyle = ink;
   ctx.textAlign = "left";
-  ctx.fillText(zonaText, zonaStartX + zonaIconR * 2 + 12, y + zonaIconR + 8);
+  ctx.fillText(zonaDisplayText, zonaStartX + zonaIconR * 2 + 12, y + zonaIconR + 8);
   y += 40 + 20;
 
   // Contenedor con borde para las filas de datos

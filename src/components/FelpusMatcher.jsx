@@ -742,7 +742,9 @@ export default function FelpusMatcher() {
   const adminSearchNormalized = normalizeText(adminSearch.trim());
   const adminFilteredReports = adminSearchNormalized
     ? adminAllReports.filter((r) =>
-        [r.nombre, r.zona, r.especie, r.color, r.nickname].some((v) => normalizeText(v || "").includes(adminSearchNormalized))
+        [r.nombre, r.zona, r.ciudad, r.provincia, r.especie, r.color, r.nickname].some((v) =>
+          normalizeText(v || "").includes(adminSearchNormalized)
+        )
       )
     : adminAllReports;
 
@@ -1726,8 +1728,12 @@ export default function FelpusMatcher() {
       if (filterColor !== "todos" && r.color !== filterColor) return false;
       if (filterFecha !== "todos" && Date.now() - r.creadoEn > FECHA_LIMITES_MS[filterFecha]) return false;
       if (normalizedQuery) {
+        // ciudad/provincia: mismo campo estructurado que ahora completa la
+        // línea de zona del flyer (ver composeZonaDisplay en flyer.js) —
+        // buscar "Salta" debería encontrar un reporte cuya ciudad/provincia
+        // sea Salta aunque esa palabra no aparezca en el texto de "zona".
         const haystack = normalizeText(
-          [r.zona, r.nombre, r.color, r.colorOtro, r.descripcion].filter(Boolean).join(" ")
+          [r.zona, r.ciudad, r.provincia, r.nombre, r.color, r.colorOtro, r.descripcion].filter(Boolean).join(" ")
         );
         if (!haystack.includes(normalizedQuery)) return false;
       }
