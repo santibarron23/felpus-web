@@ -2270,7 +2270,13 @@ export default function FelpusMatcher() {
                         onChange={(raza) => setForm((f) => ({ ...f, raza }))}
                         options={getRazaOptions(form.especie)}
                         maxLength={60}
-                        placeholder={form.especie === "otro" ? "Opcional" : "Ej: Labrador, Siamés..."}
+                        placeholder={
+                          form.especie === "perro"
+                            ? "Ej: Labrador, Caniche..."
+                            : form.especie === "gato"
+                              ? "Ej: Siamés, Persa..."
+                              : "Opcional"
+                        }
                         className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
                         style={{ borderColor: C.border, color: C.text }}
                       />
