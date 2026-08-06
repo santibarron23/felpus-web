@@ -1,5 +1,39 @@
 # Decisiones pendientes — requieren acción o información tuya
 
+## -12. Ciudad/provincia estructuradas en el flyer (2026-08-06) — requiere 1 paso tuyo
+
+**Qué hice:** agregué dos columnas nuevas a `reports` (`ciudad`, `provincia`),
+completadas automáticamente cuando alguien elige una sugerencia del
+autocompletado de Google Places para la zona (no cuando la tipea a mano) —
+ver `ZonaAutocomplete.jsx`. Se usan para completar la línea "ZONA: ..." del
+flyer imprimible con ciudad y provincia cuando esa información está
+disponible (ver `composeZonaDisplay` en `flyer.js`), y también entran ahora
+en el buscador de Explorar y del panel de admin.
+
+Mismo patrón de columnas opcionales que `raza`/`detalles`/`oculto`
+(`REPORT_LIST_OPTIONAL_COLUMNS` en `store.js`): mientras no corras la
+migración de abajo, publicar y listar reportes sigue funcionando
+exactamente igual que antes — simplemente esos dos campos quedan vacíos
+("Sin especificar" en los desgloses del admin, y la zona del flyer se ve
+igual que siempre, sin la ciudad/provincia agregada).
+
+**Paso pendiente:**
+1. Abrí el SQL Editor de tu proyecto Supabase.
+2. Pegá y ejecutá todo `supabase/schema.sql` de nuevo (agrega `ciudad` y
+   `provincia` a `reports`, no borra nada existente).
+3. Listo — probá crear un reporte nuevo eligiendo una sugerencia del
+   autocompletado de zona (no tipeándola a mano) y generá su flyer: la
+   línea "ZONA:" debería incluir ciudad/provincia si Google las devolvió
+   para esa dirección.
+
+**No pude probarlo con datos reales de Google Places** (necesita la API key
+de Google Maps configurada y una selección real del autocompletado, que no
+puedo disparar en este entorno) — la lógica de combinar/deduplicar
+zona+ciudad+provincia sí está cubierta por tests
+(`composeZonaDisplay` en `flyer.test.js`), y generé un flyer real contra un
+reporte existente (sin ciudad/provincia, caso que ya existía antes) para
+confirmar que no se rompió nada.
+
 ## -11. Login con Google mostraba el dominio de Supabase, no el de Felpus (2026-08-06) — ✅ CERRADO, decisión tomada (2026-08-06): se queda con el flujo clásico
 
 **Resultado final:** se probó de punta a punta (los 2 pasos de configuración
