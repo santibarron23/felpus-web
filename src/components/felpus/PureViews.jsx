@@ -31,6 +31,7 @@ import {
   Copy,
   AlertCircle,
   RefreshCw,
+  Check,
 } from "lucide-react";
 import { scoreLabel, isRecent, formatFechaAR, buildShareText, reportPhotoAlt, COLOR_OPTIONS } from "../../lib/matching";
 import { downloadFlyer } from "../../lib/flyer";
@@ -86,6 +87,39 @@ export function MatchScoreRing({ score, size = 64 }) {
           {pct}%
         </span>
       </div>
+    </div>
+  );
+}
+
+// Antes una coincidencia solo mostraba el aro de % — ayudaba a MIRAR, no a
+// DECIDIR. Esto muestra qué campos coinciden y cuáles no (matchBreakdown en
+// matching.js), compacto para caber en una tarjeta de lista. Los que no
+// coinciden y tienen un detalle concreto (ej. "Negro / Blanco", "A 6.2 km de
+// distancia") se listan aparte, una sola línea — el equivalente compacto de
+// separar "Coinciden" de "Diferencias".
+export function MatchBreakdownChips({ items }) {
+  const C = useTheme();
+  if (!items || items.length === 0) return null;
+  const diffs = items.filter((i) => !i.coincide && i.detail);
+  return (
+    <div className="mt-1.5">
+      <div className="flex flex-wrap gap-1">
+        {items.map((i) => (
+          <span
+            key={i.key}
+            className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+            style={i.coincide ? { background: C.successBg, color: C.successText } : { background: C.surfaceSubtle, color: C.muted }}
+          >
+            {i.coincide ? <Check className="w-2.5 h-2.5 shrink-0" /> : <X className="w-2.5 h-2.5 shrink-0" />}
+            {i.label}
+          </span>
+        ))}
+      </div>
+      {diffs.length > 0 && (
+        <p className="text-[10px] mt-1" style={{ color: C.muted }}>
+          {diffs.map((d) => d.detail).join(" · ")}
+        </p>
+      )}
     </div>
   );
 }
@@ -161,6 +195,19 @@ export function ReportCard({ report, onOpenDetail, children }) {
       {children}
     </div>
   );
+}
+
+// Mismo mensaje para WhatsApp y email — incluye el link público del
+// reporte (/r/<id>) para que quien responde pueda abrirlo directo y
+// confirmar que están hablando del mismo caso, sin tener que buscarlo a
+// mano en Felpus. SITE_URL hardcodeado acá mismo (igual que en layout.js,
+// r/[id]/page.js y notify-match/route.js — no hay una única fuente de
+// verdad para esto en el proyecto todavía) porque es el dominio real de
+// producción, no algo que dependa del entorno donde corre el código.
+const SITE_URL = "https://felpus-web.vercel.app";
+function contactMessage(report) {
+  const nombre = report.nombre || `un/a ${report.especie}`;
+  return `Hola! Vi en Felpus tu publicación de ${nombre} en ${report.zona}. Creo que puedo ayudar.\n${SITE_URL}/r/${report.id}`;
 }
 
 export function DetailModal({ report, contactStatus, onRetryContact, onClose, onResolve, confirming, onConfirm, onCancelConfirm, isLoggedIn, isOwner, onDelete }) {
@@ -366,9 +413,7 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
                 <div className="flex gap-2">
                   {report.contactoWhatsapp && (
                     <a
-                      href={`https://wa.me/${report.contactoWhatsapp}?text=${encodeURIComponent(
-                        `Hola! Vi en Felpus tu publicación de ${report.nombre || `un/a ${report.especie}`} en ${report.zona}. Creo que puedo ayudar.`
-                      )}`}
+                      href={`https://wa.me/${report.contactoWhatsapp}?text=${encodeURIComponent(contactMessage(report))}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold text-white"
@@ -383,9 +428,7 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
                   )}
                   {report.contactoEmail && (
                     <a
-                      href={`mailto:${report.contactoEmail}?subject=${encodeURIComponent("Sobre tu mascota en Felpus")}&body=${encodeURIComponent(
-                        `Hola! Vi en Felpus tu publicación de ${report.nombre || `un/a ${report.especie}`} en ${report.zona}. Creo que puedo ayudar.`
-                      )}`}
+                      href={`mailto:${report.contactoEmail}?subject=${encodeURIComponent("Sobre tu mascota en Felpus")}&body=${encodeURIComponent(contactMessage(report))}`}
                       className="flex-1 flex items-center justify-center gap-1.5 border rounded-xl py-2.5 text-sm font-bold"
                       style={{ borderColor: C.border, color: C.text }}
                     >

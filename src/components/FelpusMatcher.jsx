@@ -31,6 +31,7 @@ import {
   Moon,
   Mic,
   Square,
+  Images,
 } from "lucide-react";
 import {
   normalizeText,
@@ -39,6 +40,7 @@ import {
   getImageEmbedding,
   findMatches,
   scoreLabel,
+  matchBreakdown,
   getTier,
   getTierProgress,
   getBadges,
@@ -100,6 +102,7 @@ import {
   Badge,
   EspecieIcon,
   MatchScoreRing,
+  MatchBreakdownChips,
   ReportCard,
   DetailModal,
   ShareButton,
@@ -309,6 +312,9 @@ export default function FelpusMatcher() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [myRank, setMyRank] = useState(null);
   const [confirmingId, setConfirmingId] = useState(null);
+  // "Comparar fotos" en una tarjeta de coincidencia — mismo patrón que
+  // confirmingId (un solo id "abierto" por vez, alcanza para una lista).
+  const [comparingId, setComparingId] = useState(null);
   const [showResueltas, setShowResueltas] = useState(false);
   const { toasts, pushToast } = useToasts();
   const [detailReport, setDetailReport] = useState(null);
@@ -917,6 +923,17 @@ export default function FelpusMatcher() {
       logError(e);
       pushToast("error", "No pudimos guardar el reencuentro. Probá de nuevo.");
     }
+  }
+
+  // "Descartar" una coincidencia — decisión de la persona ("no es mi
+  // mascota"), no un dato que haya que guardar en ningún lado: solo la saca
+  // de la lista visible en ESTA pantalla de resultados, para esta sesión.
+  // Deliberadamente sin backend ni confirmación extra (recargar la página
+  // la trae de vuelta) — es la acción de menor fricción posible para una
+  // decisión de bajo riesgo.
+  function dismissMatch(reportId) {
+    setMatchResult((prev) => (prev ? { ...prev, results: prev.results.filter((m) => m.report.id !== reportId) } : prev));
+    pushToast("success", "Coincidencia descartada de esta lista.");
   }
 
   // Eliminar la propia publicación (fila + fotos de Storage). No toca los
@@ -2624,10 +2641,32 @@ export default function FelpusMatcher() {
                           </div>
                           <ChevronRight className="w-4 h-4 shrink-0" style={{ color: C.muted }} />
                         </button>
+                        {/* Desglose: qué coincide y qué no, no solo el % —
+                            ayuda a decidir sin tener que abrir el detalle.
+                            No depende de ningún estado nuevo: matchBreakdown
+                            es una función pura sobre los mismos dos reportes
+                            que ya calcularon el score. */}
+                        <MatchBreakdownChips items={matchBreakdown(matchResult.source, m.report)} />
+                        {comparingId === m.report.id && (
+                          <div className="mt-2 grid grid-cols-2 gap-2">
+                            <div>
+                              <p className="text-[10px] font-semibold mb-1 text-center" style={{ color: C.muted }}>Tu reporte</p>
+                              <div className="relative w-full aspect-square rounded-lg overflow-hidden" style={{ background: C.surfaceMuted }}>
+                                <Image src={matchResult.source.foto} alt={reportPhotoAlt(matchResult.source)} fill sizes="150px" className="object-cover" />
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-semibold mb-1 text-center" style={{ color: C.muted }}>Esta publicación</p>
+                              <div className="relative w-full aspect-square rounded-lg overflow-hidden" style={{ background: C.surfaceMuted }}>
+                                <Image src={m.report.foto} alt={reportPhotoAlt(m.report)} fill sizes="150px" className="object-cover" />
+                              </div>
+                            </div>
+                          </div>
+                        )}
                         {!m.report.resuelto && !matchResult.source.resuelto && (
-                          <div className="mt-2 pt-2 border-t" style={{ borderColor: C.border }}>
+                          <div className="mt-2 pt-2 border-t flex items-center flex-wrap gap-x-3 gap-y-1.5" style={{ borderColor: C.border }}>
                             {confirmingId === m.report.id ? (
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 w-full">
                                 <span className="text-[11px] flex-1" style={{ color: C.muted }}>¿Es ella/él?</span>
                                 <button
                                   onClick={() =>
@@ -2649,9 +2688,27 @@ export default function FelpusMatcher() {
                                 </button>
                               </div>
                             ) : (
-                              <button onClick={() => handleConfirmTrigger(matchResult.source, m.report.id)} className="text-[11px] font-bold flex items-center gap-1" style={{ color: C.red }}>
-                                {confirmButtonContent(matchResult.source, "¡Es ella/él! Confirmar reencuentro")}
-                              </button>
+                              <>
+                                <button onClick={() => handleConfirmTrigger(matchResult.source, m.report.id)} className="text-[11px] font-bold flex items-center gap-1" style={{ color: C.red }}>
+                                  {confirmButtonContent(matchResult.source, "¡Es ella/él! Confirmar reencuentro")}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setComparingId((prev) => (prev === m.report.id ? null : m.report.id))}
+                                  className="text-[11px] font-semibold flex items-center gap-1"
+                                  style={{ color: C.text }}
+                                >
+                                  <Images className="w-3 h-3" /> {comparingId === m.report.id ? "Ocultar fotos" : "Comparar fotos"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => dismissMatch(m.report.id)}
+                                  className="text-[11px] font-semibold flex items-center gap-1"
+                                  style={{ color: C.muted }}
+                                >
+                                  <X className="w-3 h-3" /> Descartar
+                                </button>
+                              </>
                             )}
                           </div>
                         )}
@@ -2865,6 +2922,7 @@ export default function FelpusMatcher() {
                             </div>
                             <ChevronRight className="w-3.5 h-3.5 shrink-0" style={{ color: C.muted }} />
                           </div>
+                          <MatchBreakdownChips items={matchBreakdown(r, m.report)} />
                         </button>
                       ))}
                     </div>

@@ -9,6 +9,7 @@ import {
   cosineSimilarity,
   imageSimilarity,
   scoreMatch,
+  matchBreakdown,
   findMatches,
   scoreLabel,
   getTier,
@@ -251,6 +252,93 @@ describe("scoreMatch", () => {
       makeReport({ id: "r3", detalles: { accesorios: ["nada"], comportamientos: ["no_se"] } })
     ).score;
     expect(soloRuido).toBe(sinDetalles);
+  });
+});
+
+describe("matchBreakdown", () => {
+  it("con dos reportes casi idénticos, todo coincide", () => {
+    const a = makeReport();
+    const b = makeReport({ id: "r2", lat: -34.5881, lng: -58.4301 }); // ~10m, sigue "cerca"
+    const items = matchBreakdown(a, b);
+    const byKey = Object.fromEntries(items.map((i) => [i.key, i]));
+    expect(byKey.color.coincide).toBe(true);
+    expect(byKey.tamano.coincide).toBe(true);
+    expect(byKey.sexo.coincide).toBe(true);
+    expect(byKey.zona.coincide).toBe(true);
+    expect(byKey.distancia.coincide).toBe(true);
+  });
+
+  it("marca color/tamaño/sexo como diferencia cuando de verdad difieren, con detail legible", () => {
+    const a = makeReport({ color: "Negro", tamano: "chico", sexo: "Macho" });
+    const b = makeReport({ id: "r2", color: "Blanco", tamano: "grande", sexo: "Hembra" });
+    const items = matchBreakdown(a, b);
+    const byKey = Object.fromEntries(items.map((i) => [i.key, i]));
+    expect(byKey.color).toEqual({ key: "color", label: "Color", coincide: false, detail: "Negro / Blanco" });
+    expect(byKey.tamano.coincide).toBe(false);
+    expect(byKey.sexo.coincide).toBe(false);
+  });
+
+  it("omite un campo si alguno de los dos reportes no lo completó (no es 'diferencia', es 'sin dato')", () => {
+    const a = makeReport({ sexo: "" });
+    const b = makeReport({ id: "r2" });
+    const keys = matchBreakdown(a, b).map((i) => i.key);
+    expect(keys).not.toContain("sexo");
+  });
+
+  it("'No sé' en sexo no cuenta como diferencia (mismo criterio que scoreMatch)", () => {
+    const a = makeReport({ sexo: "No sé" });
+    const b = makeReport({ id: "r2", sexo: "Macho" });
+    const keys = matchBreakdown(a, b).map((i) => i.key);
+    expect(keys).not.toContain("sexo");
+  });
+
+  it("zona y distancia son dos ítems separados: misma zona por nombre, pero lejos en el mapa", () => {
+    const a = makeReport({ zona: "Palermo", lat: -34.58, lng: -58.43 });
+    const b = makeReport({ id: "r2", zona: "Palermo", lat: -34.65, lng: -58.5 }); // ~10km
+    const items = matchBreakdown(a, b);
+    const byKey = Object.fromEntries(items.map((i) => [i.key, i]));
+    expect(byKey.zona.coincide).toBe(true);
+    expect(byKey.distancia.coincide).toBe(false);
+    expect(byKey.distancia.detail).toMatch(/km de distancia/);
+  });
+
+  it("sin lat/lng de ningún lado, no hay ítem de 'distancia' (solo zona)", () => {
+    const a = makeReport({ lat: null, lng: null });
+    const b = makeReport({ id: "r2", lat: null, lng: null });
+    const keys = matchBreakdown(a, b).map((i) => i.key);
+    expect(keys).toContain("zona");
+    expect(keys).not.toContain("distancia");
+  });
+
+  it("la foto siempre aparece con un detail cualitativo, coincida o no", () => {
+    const parecida = matchBreakdown(
+      { ...makeReport(), embedding: [1, 0] },
+      { ...makeReport({ id: "r2" }), embedding: [1, 0] }
+    );
+    const distinta = matchBreakdown(
+      { ...makeReport(), embedding: [1, 0] },
+      { ...makeReport({ id: "r2" }), embedding: [-1, 0] } // vectores opuestos: coseno -1 -> remapeado a 0
+    );
+    const foto1 = parecida.find((i) => i.key === "imagen");
+    const foto2 = distinta.find((i) => i.key === "imagen");
+    expect(foto1.coincide).toBe(true);
+    expect(foto1.detail).toBe("Muy parecida");
+    expect(foto2.coincide).toBe(false);
+    expect(foto2.detail).toBeTruthy();
+  });
+
+  it("raza: se omite si cualquiera de los dos es 'mestizo/no sé/otra raza' (sin señal real)", () => {
+    const a = makeReport({ raza: "Labrador" });
+    const b = makeReport({ id: "r2", raza: "No sé / Desconocida" });
+    expect(matchBreakdown(a, b).map((i) => i.key)).not.toContain("raza");
+  });
+
+  it("detalles: coincide si hay overlap real de chips (accesorio/reacción/marca)", () => {
+    const a = makeReport({ detalles: { accesorios: ["collar"] } });
+    const b = makeReport({ id: "r2", detalles: { accesorios: ["collar"] } });
+    const c = makeReport({ id: "r3", detalles: { accesorios: ["pañuelo"] } });
+    expect(matchBreakdown(a, b).find((i) => i.key === "detalles").coincide).toBe(true);
+    expect(matchBreakdown(a, c).find((i) => i.key === "detalles").coincide).toBe(false);
   });
 });
 

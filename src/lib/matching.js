@@ -629,6 +629,85 @@ export function scoreMatch(a, b) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Desglose de una coincidencia para mostrarle a la persona QUÉ coincide y
+// qué no — no solo el % final. Antes el matching mostraba un aro de color y
+// una etiqueta ("Probabilidad alta") sin ninguna explicación: ayudaba a
+// mirar, no a decidir. Deliberadamente separado de scoreMatch/
+// structuredFieldSimilarity (no los toca, no cambia ningún score real) para
+// no arriesgar la lógica de matching ya afinada y testeada — esto es pura
+// presentación, calculado aparte con los mismos datos.
+//
+// Cada ítem: { key, label, coincide: true|false, detail? }. Se omite un
+// campo entero (no aparece en la lista) cuando alguno de los dos reportes no
+// lo completó — mismo criterio que usa structuredFieldSimilarity para no
+// pesar "sin dato" como si fuera una diferencia real.
+export function matchBreakdown(a, b) {
+  const items = [];
+  const push = (key, label, coincide, detail) => {
+    if (coincide == null) return;
+    items.push({ key, label, coincide, detail: detail || null });
+  };
+
+  if (a.color && b.color) {
+    const coincide =
+      a.color !== b.color ? false : a.color === "Otro color" ? colorOtroSimilarity(a.colorOtro, b.colorOtro) >= 0.5 : true;
+    push(
+      "color",
+      "Color",
+      coincide,
+      coincide ? null : `${a.color === "Otro color" ? a.colorOtro || a.color : a.color} / ${b.color === "Otro color" ? b.colorOtro || b.color : b.color}`
+    );
+  }
+
+  if (a.tamano && b.tamano) {
+    push("tamano", "Tamaño", a.tamano === b.tamano, a.tamano === b.tamano ? null : `${a.tamano} / ${b.tamano}`);
+  }
+
+  if (a.sexo && b.sexo && a.sexo !== "No sé" && b.sexo !== "No sé") {
+    push("sexo", "Sexo", a.sexo === b.sexo);
+  }
+
+  const razaSim = razaSimilarity(a.raza, b.raza);
+  if (razaSim != null) push("raza", "Raza", razaSim >= 1, razaSim >= 1 ? null : `${a.raza} / ${b.raza}`);
+
+  const detallesSim = detallesSimilarity(a, b);
+  if (detallesSim != null) push("detalles", "Características", detallesSim >= 0.5);
+
+  // Zona (por nombre) y distancia exacta (por lat/lng) se muestran como dos
+  // ítems separados, no uno solo — dos reportes pueden estar en el mismo
+  // barrio (zona coincide) pero con los pines a varios km reales de
+  // distancia (un barrio puede ser grande), y esa distinción es justo el
+  // tipo de matiz que ayuda a decidir, no solo un "coincide/no coincide"
+  // de golpe.
+  if (a.zona && b.zona) {
+    const zonaA = normalizeText(a.zona);
+    const zonaB = normalizeText(b.zona);
+    const sameZone = !!zonaA && !!zonaB && (zonaA === zonaB || zonaA.includes(zonaB) || zonaB.includes(zonaA));
+    push("zona", "Zona", sameZone, sameZone ? null : `${a.zona} / ${b.zona}`);
+  }
+  if (a.lat != null && a.lng != null && b.lat != null && b.lng != null) {
+    const d = haversineKm(a.lat, a.lng, b.lat, b.lng);
+    const distLabel = d < 1 ? `${Math.round(d * 1000)} m` : `${d.toFixed(1)} km`;
+    // 2 km como umbral de "cerca": bastante más estricto que RADIO_BASE_KM
+    // (8, el radio que usa locScore antes de ensancharse con los días
+    // transcurridos) a propósito — acá se muestra la distancia real tal
+    // cual, y algo así como "2,3 km" ya es una distancia que vale la pena
+    // que la persona vea marcada, no que se la trate como "cerca" sin más.
+    push("distancia", "Distancia", d <= 2, `A ${distLabel} de distancia`);
+  }
+
+  // Imagen: señal cualitativa (no hay un "sí/no" real posible con un
+  // histograma de color, la única señal disponible sin IA configurada) —
+  // el detail siempre se muestra, coincida o no, para no reducir una
+  // comparación visual real a un simple ✓/✗ sin matices.
+  const imgSim = imageSimilarity(a, b);
+  const imgLabel = imgSim >= 0.7 ? "Muy parecida" : imgSim >= 0.45 ? "Algo parecida" : "Poco parecida";
+  push("imagen", "Foto", imgSim >= 0.45, imgLabel);
+
+  return items;
+}
+
 // Patrón repetido en 4 lugares distintos de la app (campanita de
 // notificaciones, submit del formulario, "ver coincidencias" de una tarjeta,
 // y el webhook de notify-match): puntuar candidatos contra un reporte,
