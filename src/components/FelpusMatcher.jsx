@@ -1949,196 +1949,15 @@ export default function FelpusMatcher() {
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="form-especie" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Especie</label>
-                  <select
-                    id="form-especie"
-                    value={form.especie}
-                    onChange={(e) => setForm((f) => ({ ...f, especie: e.target.value }))}
-                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
-                    style={{ borderColor: C.border, color: C.text }}
-                  >
-                    <option value="perro">Perro</option>
-                    <option value="gato">Gato</option>
-                    <option value="otro">Otro</option>
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="form-tamano" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Tamaño</label>
-                  <select
-                    id="form-tamano"
-                    value={form.tamano}
-                    onChange={(e) => setForm((f) => ({ ...f, tamano: e.target.value }))}
-                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
-                    style={{ borderColor: C.border, color: C.text }}
-                  >
-                    <option value="chico">Chico</option>
-                    <option value="mediano">Mediano</option>
-                    <option value="grande">Grande</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between gap-2 mb-1.5">
-                  <label htmlFor="form-raza" className="text-xs font-bold block" style={{ color: C.text }}>
-                    Raza (si la sabés)
-                  </label>
-                  {/* Atajo de un toque para "no sé" — más visible que dejar
-                      el campo en blanco y esperar que se entienda solo.
-                      Sobre todo importa en gatos: ahí la raza pesa poco en
-                      el matching (ver structuredFieldSimilarity en
-                      matching.js), así que no vale la pena que alguien
-                      abandone el formulario por no saber la raza exacta. */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      playTap();
-                      setForm((f) => ({ ...f, raza: f.raza === RAZA_NO_SE ? "" : RAZA_NO_SE }));
-                    }}
-                    aria-pressed={form.raza === RAZA_NO_SE}
-                    className="shrink-0 flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
-                    style={form.raza === RAZA_NO_SE ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.text, borderColor: C.border, background: C.surface }}
-                  >
-                    No sé la raza
-                  </button>
-                </div>
-                {/* Combobox propio en vez de <select>: a diferencia de color/
-                    tamaño, hay cientos de razas y mezclas reales — un
-                    desplegable cerrado dejaría afuera a la mayoría. Antes
-                    era <input list> + <datalist> (comportamiento nativo del
-                    navegador, sin JS extra) pero el soporte de <datalist> en
-                    mobile es muy pobre o inexistente (sobre todo Safari en
-                    iOS) — las sugerencias no aparecían al escribir. Ver
-                    Combobox.jsx: mismo resultado (getRazaOptions: "Sin raza
-                    / Mestizo", "No sé / Desconocida" y "Otra raza" primero,
-                    después las razas de la especie en orden alfabético;
-                    filtra mientras se escribe; acepta texto libre igual),
-                    pero funciona en cualquier navegador. */}
-                <Combobox
-                  id="form-raza"
-                  value={form.raza}
-                  onChange={(raza) => setForm((f) => ({ ...f, raza }))}
-                  options={getRazaOptions(form.especie)}
-                  maxLength={60}
-                  placeholder={form.especie === "otro" ? "Opcional" : "Ej: Labrador, Siamés..."}
-                  className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
-                  style={{ borderColor: C.border, color: C.text }}
-                />
-                <p className="text-[11px] mt-1" style={{ color: C.muted }}>
-                  {form.especie === "gato"
-                    ? "En gatos la raza pesa poco en la búsqueda — \"No sé\" es una respuesta perfectamente válida, no te compliques."
-                    : "Si no la sabés, dejalo en blanco o tocá \"No sé la raza\" — no es obligatorio."}
-                </p>
-              </div>
-
-              <div>
-                <label htmlFor="form-sexo" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
-                  Sexo <span style={{ color: C.red }}>*</span>
-                </label>
-                <select
-                  id="form-sexo"
-                  value={form.sexo}
-                  onChange={(e) => setForm((f) => ({ ...f, sexo: e.target.value }))}
-                  className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
-                  style={{ borderColor: fieldErrors.sexo ? C.red : C.border, color: C.text }}
-                >
-                  <option value="">Elegir sexo...</option>
-                  {SEXO_OPTIONS.map((op) => (
-                    <option key={op} value={op}>{op}</option>
-                  ))}
-                </select>
-                {fieldErrors.sexo && (
-                  <p className="text-[11px] mt-1" style={{ color: C.red }}>{fieldErrors.sexo}</p>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="form-nombre" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Nombre (si lo sabés)</label>
-                  <input
-                    id="form-nombre"
-                    type="text"
-                    value={form.nombre}
-                    onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
-                    maxLength={60}
-                    placeholder="Opcional"
-                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
-                    style={{ borderColor: C.border, color: C.text }}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="form-color" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
-                    Color <span style={{ color: C.red }}>*</span>
-                  </label>
-                  <select
-                    id="form-color"
-                    value={form.color}
-                    onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
-                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
-                    style={{ borderColor: fieldErrors.color ? C.red : C.border, color: C.text }}
-                  >
-                    <option value="">Elegir color...</option>
-                    {COLOR_OPTIONS.map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {form.color === "Otro color" && (
-                <div>
-                  <label htmlFor="form-color-otro" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Describí el color</label>
-                  <input
-                    id="form-color-otro"
-                    type="text"
-                    value={form.colorOtro}
-                    onChange={(e) => setForm((f) => ({ ...f, colorOtro: e.target.value }))}
-                    maxLength={60}
-                    placeholder="Ej: tricolor, manchas naranjas..."
-                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
-                    style={{ borderColor: fieldErrors.colorOtro ? C.red : C.border, color: C.text }}
-                  />
-                  {fieldErrors.colorOtro && (
-                    <p className="text-[11px] mt-1" style={{ color: C.red }}>{fieldErrors.colorOtro}</p>
-                  )}
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="form-edad" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Edad aproximada</label>
-                  <select
-                    id="form-edad"
-                    value={form.edad}
-                    onChange={(e) => setForm((f) => ({ ...f, edad: e.target.value }))}
-                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
-                    style={{ borderColor: C.border, color: C.text }}
-                  >
-                    <option value="">Elegir edad...</option>
-                    {EDAD_OPTIONS.map((op) => (
-                      <option key={op} value={op}>{op}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="form-peso" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Peso aproximado</label>
-                  <select
-                    id="form-peso"
-                    value={form.peso}
-                    onChange={(e) => setForm((f) => ({ ...f, peso: e.target.value }))}
-                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
-                    style={{ borderColor: C.border, color: C.text }}
-                  >
-                    <option value="">Elegir peso...</option>
-                    {PESO_OPTIONS.map((op) => (
-                      <option key={op} value={op}>{op}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
+              {/* Zona: movida acá, justo después de la foto (antes estaba
+                  después de especie/tamaño/raza/sexo/nombre/color/edad/peso,
+                  el campo #10 del formulario) — auditoría UX mobile: "Foto →
+                  ubicación → esencial → publicar", y la ubicación es la
+                  segunda señal más fuerte para el matching después de la
+                  foto. Además, arrancar temprano el botón "Ubicación" (GPS)
+                  significa que esa espera ya terminó (o está por terminar)
+                  para cuando la persona llega al resto del formulario, en
+                  vez de hacerla esperar al final. */}
               <div>
                 <label htmlFor="form-zona" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
                   Zona / barrio <span style={{ color: C.red }}>*</span>
@@ -2215,204 +2034,101 @@ export default function FelpusMatcher() {
                 </div>
               </div>
 
-              <div>
-                <label htmlFor="form-fecha" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Fecha</label>
-                <input
-                  id="form-fecha"
-                  type="date"
-                  value={form.fecha}
-                  onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))}
-                  className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
-                  style={{ borderColor: C.border, color: C.text }}
-                />
+              {/* Sexo + Color: los dos campos obligatorios que quedaban,
+                  uno al lado del otro para que se sientan como un solo paso
+                  en vez de dos separados. */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="form-sexo" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
+                    Sexo <span style={{ color: C.red }}>*</span>
+                  </label>
+                  <select
+                    id="form-sexo"
+                    value={form.sexo}
+                    onChange={(e) => setForm((f) => ({ ...f, sexo: e.target.value }))}
+                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
+                    style={{ borderColor: fieldErrors.sexo ? C.red : C.border, color: C.text }}
+                  >
+                    <option value="">Elegir sexo...</option>
+                    {SEXO_OPTIONS.map((op) => (
+                      <option key={op} value={op}>{op}</option>
+                    ))}
+                  </select>
+                  {fieldErrors.sexo && (
+                    <p className="text-[11px] mt-1" style={{ color: C.red }}>{fieldErrors.sexo}</p>
+                  )}
+                </div>
+                <div>
+                  <label htmlFor="form-color" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
+                    Color <span style={{ color: C.red }}>*</span>
+                  </label>
+                  <select
+                    id="form-color"
+                    value={form.color}
+                    onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
+                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
+                    style={{ borderColor: fieldErrors.color ? C.red : C.border, color: C.text }}
+                  >
+                    <option value="">Elegir color...</option>
+                    {COLOR_OPTIONS.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              {/* "Detalles para reconocerlo": 3 preguntas cortas, casi todas
-                  de un toque, más un campo de texto acotado a lo que de
-                  verdad no entra en ningún chip. form.descripcion se sigue
-                  armando sola en segundo plano (ver el useEffect de más
-                  arriba) — nada cambió del lado de la base de datos; lo
-                  nuevo es que además queda guardada de forma estructurada
-                  (ver detalles en handleSubmit) para pesar en el matching. */}
-              <div className="space-y-4">
+              {form.color === "Otro color" && (
                 <div>
-                  <p className="text-sm font-extrabold" style={{ color: C.text }}>Detalles para reconocerlo</p>
-                  <p className="text-[11px] mt-0.5" style={{ color: C.muted }}>
-                    Todo es opcional, pero cuantos más datos agregues, más fácil será identificarlo.
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs font-bold mb-1.5" style={{ color: C.text }}>¿Tenía algo puesto?</p>
-                  <div className="flex flex-wrap gap-1.5" role="group" aria-label="¿Tenía algo puesto?">
-                    {ACCESORIO_OPTIONS.map((opt) => {
-                      const selected = accesorioChips.includes(opt.id);
-                      return (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          onClick={() => toggleAccesorioChip(opt.id)}
-                          aria-pressed={selected}
-                          className={CHIP_BTN_CLASS}
-                          style={selected ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
-                        >
-                          {selected && <Check className="w-3 h-3 shrink-0" />}
-                          {opt.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-xs font-bold mb-1.5" style={{ color: C.text }}>¿Cómo reacciona con desconocidos?</p>
-                  <div className="flex flex-wrap gap-1.5" role="group" aria-label="¿Cómo reacciona con desconocidos?">
-                    {REACCION_OPTIONS.map((opt) => {
-                      const selected = reaccionChips.includes(opt.id);
-                      return (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          onClick={() => toggleReaccionChip(opt.id)}
-                          aria-pressed={selected}
-                          className={CHIP_BTN_CLASS}
-                          style={selected ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
-                        >
-                          {selected && <Check className="w-3 h-3 shrink-0" />}
-                          {opt.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-xs font-bold mb-1" style={{ color: C.text }}>¿Tiene algo que lo haga fácil de reconocer?</p>
-                  <p className="text-[11px] mb-1.5" style={{ color: C.muted }}>Elegí una opción o contanos algo particular.</p>
-                  <div className="flex flex-wrap gap-1.5" role="group" aria-label="¿Tiene algo que lo haga fácil de reconocer?">
-                    {MARCA_OPTIONS.map((opt) => {
-                      const selected = marcaChips.includes(opt.id);
-                      return (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          onClick={() => toggleMarcaChip(opt.id)}
-                          aria-pressed={selected}
-                          className={CHIP_BTN_CLASS}
-                          style={selected ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
-                        >
-                          {selected && <Check className="w-3 h-3 shrink-0" />}
-                          {opt.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Progressive disclosure: "Mancha particular" es la única
-                      marca con datos propios. El truco de grid-rows 0fr/1fr
-                      anima la altura sin medir nada por JS y sin saltos
-                      bruscos — a diferencia de max-height con un valor fijo,
-                      no depende de adivinar cuánto mide el contenido. */}
-                  <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${marcaChips.includes("mancha") ? "grid-rows-[1fr] mt-3" : "grid-rows-[0fr]"}`}>
-                    <div className="overflow-hidden">
-                      <div className="rounded-lg pl-3 border-l-2" style={{ borderColor: C.border }}>
-                        <p className="text-[11px] font-bold mb-1.5" style={{ color: C.text }}>¿Dónde tiene la mancha?</p>
-                        <div className="flex flex-wrap gap-1.5" role="group" aria-label="¿Dónde tiene la mancha?">
-                          {MANCHA_UBICACION_OPTIONS.map((opt) => {
-                            const selected = manchaUbicacion === opt.id;
-                            return (
-                              <button
-                                key={opt.id}
-                                type="button"
-                                onClick={() => {
-                                  playTap();
-                                  setManchaUbicacion((prev) => (prev === opt.id ? "" : opt.id));
-                                }}
-                                aria-pressed={selected}
-                                className={CHIP_BTN_CLASS}
-                                style={selected ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
-                              >
-                                {opt.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${manchaUbicacion ? "grid-rows-[1fr] mt-2.5" : "grid-rows-[0fr]"}`}>
-                          <div className="overflow-hidden">
-                            <p className="text-[11px] font-bold mb-1.5" style={{ color: C.text }}>¿De qué color? (opcional)</p>
-                            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Color de la mancha">
-                              {MANCHA_COLOR_OPTIONS.map((color) => {
-                                const selected = manchaColor === color;
-                                return (
-                                  <button
-                                    key={color}
-                                    type="button"
-                                    onClick={() => {
-                                      playTap();
-                                      setManchaColor((prev) => (prev === color ? "" : color));
-                                    }}
-                                    aria-pressed={selected}
-                                    className={CHIP_BTN_CLASS}
-                                    style={selected ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
-                                  >
-                                    {color}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label htmlFor="form-detalle-libre" className="text-xs font-bold block" style={{ color: C.text }}>
-                      ¿Querés agregar algo más? (opcional)
-                    </label>
-                    {typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition) && (
-                      <button
-                        type="button"
-                        onClick={startDictation}
-                        disabled={dictating}
-                        aria-label={dictating ? "Escuchando..." : "Dictar por voz"}
-                        className="shrink-0 flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full border disabled:opacity-70 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
-                        style={dictating ? { background: C.redSolid, color: "#fff", borderColor: C.redSolid } : { color: C.text, borderColor: C.border, background: C.surface }}
-                      >
-                        {dictating ? <Square className="w-3 h-3" fill="currentColor" /> : <Mic className="w-3 h-3" />}
-                        {dictating ? "Escuchando..." : "Dictar"}
-                      </button>
-                    )}
-                  </div>
-                  <textarea
-                    id="form-detalle-libre"
-                    value={detalleLibre}
-                    onChange={(e) => setDetalleLibre(e.target.value)}
-                    rows={2}
-                    maxLength={400}
-                    placeholder="Ej: tiene una mancha en forma de corazón en la panza..."
-                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)] resize-none"
-                    style={{ borderColor: C.border, color: C.text }}
+                  <label htmlFor="form-color-otro" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Describí el color</label>
+                  <input
+                    id="form-color-otro"
+                    type="text"
+                    value={form.colorOtro}
+                    onChange={(e) => setForm((f) => ({ ...f, colorOtro: e.target.value }))}
+                    maxLength={60}
+                    placeholder="Ej: tricolor, manchas naranjas..."
+                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
+                    style={{ borderColor: fieldErrors.colorOtro ? C.red : C.border, color: C.text }}
                   />
+                  {fieldErrors.colorOtro && (
+                    <p className="text-[11px] mt-1" style={{ color: C.red }}>{fieldErrors.colorOtro}</p>
+                  )}
                 </div>
+              )}
 
-                {/* Vista previa — a diferencia de la versión anterior, sólo
-                    aparece cuando hay algo propio que mostrar (no la base
-                    automática sola), y es deliberadamente compacta: no debe
-                    sentirse como "otro campo más" del formulario. */}
-                <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${hasMeaningfulDetails ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
-                  <div className="overflow-hidden">
-                    <div className="rounded-lg px-3 py-2 text-[11px] border flex items-start gap-1.5" style={{ background: C.surfaceSubtle, borderColor: C.border, color: C.muted }}>
-                      <Sparkles className="w-3 h-3 mt-0.5 shrink-0" />
-                      <p>
-                        <span className="font-bold" style={{ color: C.text }}>Vista previa: </span>
-                        {form.descripcion}
-                      </p>
-                    </div>
-                  </div>
+              {/* Especie + Tamaño: no son parte del checklist (nunca
+                  bloquean publicar) pero se quedan en el camino rápido —
+                  son 2 toques sin escribir nada, y pesan de verdad en el
+                  matching. A diferencia de raza/nombre/edad/peso/fecha, que
+                  sí pasan a la sección opcional de abajo. */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="form-especie" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Especie</label>
+                  <select
+                    id="form-especie"
+                    value={form.especie}
+                    onChange={(e) => setForm((f) => ({ ...f, especie: e.target.value }))}
+                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
+                    style={{ borderColor: C.border, color: C.text }}
+                  >
+                    <option value="perro">Perro</option>
+                    <option value="gato">Gato</option>
+                    <option value="otro">Otro</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="form-tamano" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Tamaño</label>
+                  <select
+                    id="form-tamano"
+                    value={form.tamano}
+                    onChange={(e) => setForm((f) => ({ ...f, tamano: e.target.value }))}
+                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
+                    style={{ borderColor: C.border, color: C.text }}
+                  >
+                    <option value="chico">Chico</option>
+                    <option value="mediano">Mediano</option>
+                    <option value="grande">Grande</option>
+                  </select>
                 </div>
               </div>
 
@@ -2453,6 +2169,334 @@ export default function FelpusMatcher() {
                 {fieldErrors.contacto && (
                   <p className="text-[11px] mt-1" style={{ color: C.red }}>{fieldErrors.contacto}</p>
                 )}
+              </div>
+
+              {/* A partir de acá: todo lo que no bloquea publicar (raza,
+                  nombre, edad, peso, fecha, "Detalles para reconocerlo")
+                  queda colapsado detrás de un solo toque — antes había que
+                  scrollear estos 4 campos + 3 preguntas de chips + un
+                  textarea, TODOS con el mismo peso visual que Foto/Zona/
+                  Sexo/Color/Contacto, aunque el propio checklist de arriba
+                  ya sabe que ninguno de ellos es necesario para publicar.
+                  moreDetailsExpanded (ver más arriba) se abre solo si ya
+                  hay algo cargado ahí adentro (ej. texto que llegó
+                  precargado desde el share-target), para no esconder datos
+                  que la persona ya escribió. */}
+              {!moreDetailsExpanded && (
+                <button
+                  type="button"
+                  onClick={() => setShowMoreDetails(true)}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-dashed px-3 py-2.5 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                  style={{ borderColor: C.border, color: C.muted }}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Agregar más detalles (raza, edad, características...) — opcional
+                </button>
+              )}
+
+              <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${moreDetailsExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+                <div className="overflow-hidden">
+                  <div className="space-y-4">
+                    <div>
+                      <label htmlFor="form-nombre" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Nombre (si lo sabés)</label>
+                      <input
+                        id="form-nombre"
+                        type="text"
+                        value={form.nombre}
+                        onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
+                        maxLength={60}
+                        placeholder="Opcional"
+                        className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
+                        style={{ borderColor: C.border, color: C.text }}
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <label htmlFor="form-raza" className="text-xs font-bold block" style={{ color: C.text }}>
+                          Raza (si la sabés)
+                        </label>
+                        {/* Atajo de un toque para "no sé" — más visible que dejar
+                            el campo en blanco y esperar que se entienda solo.
+                            Sobre todo importa en gatos: ahí la raza pesa poco en
+                            el matching (ver structuredFieldSimilarity en
+                            matching.js), así que no vale la pena que alguien
+                            abandone el formulario por no saber la raza exacta. */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playTap();
+                            setForm((f) => ({ ...f, raza: f.raza === RAZA_NO_SE ? "" : RAZA_NO_SE }));
+                          }}
+                          aria-pressed={form.raza === RAZA_NO_SE}
+                          className="shrink-0 flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                          style={form.raza === RAZA_NO_SE ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.text, borderColor: C.border, background: C.surface }}
+                        >
+                          No sé la raza
+                        </button>
+                      </div>
+                      {/* Combobox propio en vez de <select>: a diferencia de color/
+                          tamaño, hay cientos de razas y mezclas reales — un
+                          desplegable cerrado dejaría afuera a la mayoría. Antes
+                          era <input list> + <datalist> (comportamiento nativo del
+                          navegador, sin JS extra) pero el soporte de <datalist> en
+                          mobile es muy pobre o inexistente (sobre todo Safari en
+                          iOS) — las sugerencias no aparecían al escribir. Ver
+                          Combobox.jsx: mismo resultado (getRazaOptions: "Sin raza
+                          / Mestizo", "No sé / Desconocida" y "Otra raza" primero,
+                          después las razas de la especie en orden alfabético;
+                          filtra mientras se escribe; acepta texto libre igual),
+                          pero funciona en cualquier navegador. */}
+                      <Combobox
+                        id="form-raza"
+                        value={form.raza}
+                        onChange={(raza) => setForm((f) => ({ ...f, raza }))}
+                        options={getRazaOptions(form.especie)}
+                        maxLength={60}
+                        placeholder={form.especie === "otro" ? "Opcional" : "Ej: Labrador, Siamés..."}
+                        className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
+                        style={{ borderColor: C.border, color: C.text }}
+                      />
+                      <p className="text-[11px] mt-1" style={{ color: C.muted }}>
+                        {form.especie === "gato"
+                          ? "En gatos la raza pesa poco en la búsqueda — \"No sé\" es una respuesta perfectamente válida, no te compliques."
+                          : "Si no la sabés, dejalo en blanco o tocá \"No sé la raza\" — no es obligatorio."}
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label htmlFor="form-edad" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Edad aproximada</label>
+                        <select
+                          id="form-edad"
+                          value={form.edad}
+                          onChange={(e) => setForm((f) => ({ ...f, edad: e.target.value }))}
+                          className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
+                          style={{ borderColor: C.border, color: C.text }}
+                        >
+                          <option value="">Elegir edad...</option>
+                          {EDAD_OPTIONS.map((op) => (
+                            <option key={op} value={op}>{op}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label htmlFor="form-peso" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Peso aproximado</label>
+                        <select
+                          id="form-peso"
+                          value={form.peso}
+                          onChange={(e) => setForm((f) => ({ ...f, peso: e.target.value }))}
+                          className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
+                          style={{ borderColor: C.border, color: C.text }}
+                        >
+                          <option value="">Elegir peso...</option>
+                          {PESO_OPTIONS.map((op) => (
+                            <option key={op} value={op}>{op}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label htmlFor="form-fecha" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Fecha</label>
+                      <input
+                        id="form-fecha"
+                        type="date"
+                        value={form.fecha}
+                        onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))}
+                        className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
+                        style={{ borderColor: C.border, color: C.text }}
+                      />
+                    </div>
+
+                    {/* "Detalles para reconocerlo": 3 preguntas cortas, casi todas
+                        de un toque, más un campo de texto acotado a lo que de
+                        verdad no entra en ningún chip. form.descripcion se sigue
+                        armando sola en segundo plano (ver el useEffect de más
+                        arriba) — nada cambió del lado de la base de datos; lo
+                        nuevo es que además queda guardada de forma estructurada
+                        (ver detalles en handleSubmit) para pesar en el matching. */}
+                    <div>
+                      <p className="text-sm font-extrabold" style={{ color: C.text }}>Detalles para reconocerlo</p>
+                      <p className="text-[11px] mt-0.5" style={{ color: C.muted }}>
+                        Todo es opcional, pero cuantos más datos agregues, más fácil será identificarlo.
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-bold mb-1.5" style={{ color: C.text }}>¿Tenía algo puesto?</p>
+                      <div className="flex flex-wrap gap-1.5" role="group" aria-label="¿Tenía algo puesto?">
+                        {ACCESORIO_OPTIONS.map((opt) => {
+                          const selected = accesorioChips.includes(opt.id);
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              onClick={() => toggleAccesorioChip(opt.id)}
+                              aria-pressed={selected}
+                              className={CHIP_BTN_CLASS}
+                              style={selected ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
+                            >
+                              {selected && <Check className="w-3 h-3 shrink-0" />}
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-bold mb-1.5" style={{ color: C.text }}>¿Cómo reacciona con desconocidos?</p>
+                      <div className="flex flex-wrap gap-1.5" role="group" aria-label="¿Cómo reacciona con desconocidos?">
+                        {REACCION_OPTIONS.map((opt) => {
+                          const selected = reaccionChips.includes(opt.id);
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              onClick={() => toggleReaccionChip(opt.id)}
+                              aria-pressed={selected}
+                              className={CHIP_BTN_CLASS}
+                              style={selected ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
+                            >
+                              {selected && <Check className="w-3 h-3 shrink-0" />}
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-bold mb-1" style={{ color: C.text }}>¿Tiene algo que lo haga fácil de reconocer?</p>
+                      <p className="text-[11px] mb-1.5" style={{ color: C.muted }}>Elegí una opción o contanos algo particular.</p>
+                      <div className="flex flex-wrap gap-1.5" role="group" aria-label="¿Tiene algo que lo haga fácil de reconocer?">
+                        {MARCA_OPTIONS.map((opt) => {
+                          const selected = marcaChips.includes(opt.id);
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              onClick={() => toggleMarcaChip(opt.id)}
+                              aria-pressed={selected}
+                              className={CHIP_BTN_CLASS}
+                              style={selected ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
+                            >
+                              {selected && <Check className="w-3 h-3 shrink-0" />}
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Progressive disclosure: "Mancha particular" es la única
+                          marca con datos propios. El truco de grid-rows 0fr/1fr
+                          anima la altura sin medir nada por JS y sin saltos
+                          bruscos — a diferencia de max-height con un valor fijo,
+                          no depende de adivinar cuánto mide el contenido. */}
+                      <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${marcaChips.includes("mancha") ? "grid-rows-[1fr] mt-3" : "grid-rows-[0fr]"}`}>
+                        <div className="overflow-hidden">
+                          <div className="rounded-lg pl-3 border-l-2" style={{ borderColor: C.border }}>
+                            <p className="text-[11px] font-bold mb-1.5" style={{ color: C.text }}>¿Dónde tiene la mancha?</p>
+                            <div className="flex flex-wrap gap-1.5" role="group" aria-label="¿Dónde tiene la mancha?">
+                              {MANCHA_UBICACION_OPTIONS.map((opt) => {
+                                const selected = manchaUbicacion === opt.id;
+                                return (
+                                  <button
+                                    key={opt.id}
+                                    type="button"
+                                    onClick={() => {
+                                      playTap();
+                                      setManchaUbicacion((prev) => (prev === opt.id ? "" : opt.id));
+                                    }}
+                                    aria-pressed={selected}
+                                    className={CHIP_BTN_CLASS}
+                                    style={selected ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
+                                  >
+                                    {opt.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${manchaUbicacion ? "grid-rows-[1fr] mt-2.5" : "grid-rows-[0fr]"}`}>
+                              <div className="overflow-hidden">
+                                <p className="text-[11px] font-bold mb-1.5" style={{ color: C.text }}>¿De qué color? (opcional)</p>
+                                <div className="flex flex-wrap gap-1.5" role="group" aria-label="Color de la mancha">
+                                  {MANCHA_COLOR_OPTIONS.map((color) => {
+                                    const selected = manchaColor === color;
+                                    return (
+                                      <button
+                                        key={color}
+                                        type="button"
+                                        onClick={() => {
+                                          playTap();
+                                          setManchaColor((prev) => (prev === color ? "" : color));
+                                        }}
+                                        aria-pressed={selected}
+                                        className={CHIP_BTN_CLASS}
+                                        style={selected ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
+                                      >
+                                        {color}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label htmlFor="form-detalle-libre" className="text-xs font-bold block" style={{ color: C.text }}>
+                          ¿Querés agregar algo más? (opcional)
+                        </label>
+                        {typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition) && (
+                          <button
+                            type="button"
+                            onClick={startDictation}
+                            disabled={dictating}
+                            aria-label={dictating ? "Escuchando..." : "Dictar por voz"}
+                            className="shrink-0 flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full border disabled:opacity-70 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                            style={dictating ? { background: C.redSolid, color: "#fff", borderColor: C.redSolid } : { color: C.text, borderColor: C.border, background: C.surface }}
+                          >
+                            {dictating ? <Square className="w-3 h-3" fill="currentColor" /> : <Mic className="w-3 h-3" />}
+                            {dictating ? "Escuchando..." : "Dictar"}
+                          </button>
+                        )}
+                      </div>
+                      <textarea
+                        id="form-detalle-libre"
+                        value={detalleLibre}
+                        onChange={(e) => setDetalleLibre(e.target.value)}
+                        rows={2}
+                        maxLength={400}
+                        placeholder="Ej: tiene una mancha en forma de corazón en la panza..."
+                        className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)] resize-none"
+                        style={{ borderColor: C.border, color: C.text }}
+                      />
+                    </div>
+
+                    {/* Vista previa — a diferencia de la versión anterior, sólo
+                        aparece cuando hay algo propio que mostrar (no la base
+                        automática sola), y es deliberadamente compacta: no debe
+                        sentirse como "otro campo más" del formulario. */}
+                    <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${hasMeaningfulDetails ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+                      <div className="overflow-hidden">
+                        <div className="rounded-lg px-3 py-2 text-[11px] border flex items-start gap-1.5" style={{ background: C.surfaceSubtle, borderColor: C.border, color: C.muted }}>
+                          <Sparkles className="w-3 h-3 mt-0.5 shrink-0" />
+                          <p>
+                            <span className="font-bold" style={{ color: C.text }}>Vista previa: </span>
+                            {form.descripcion}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {formError && (
