@@ -1002,6 +1002,13 @@ export function emptyForm() {
     fecha: new Date().toISOString().slice(0, 10),
     descripcion: "",
     contactoWhatsapp: "",
+    // País del selector de WhatsApp (ver PhoneInput.jsx) — "AR" a propósito
+    // fijo acá (no getDefaultCountry() de phone.js, que lee navigator): este
+    // objeto lo usa también el primer render del servidor, donde navigator
+    // no existe. El país real por dispositivo se corrige solo, después del
+    // montaje, en un efecto de FelpusMatcher — mismo patrón que el resto de
+    // la app usa para todo lo que depende del navegador (tema, geolocation).
+    contactoWhatsappCountry: "AR",
     contactoEmail: "",
     // Hasta 3 fotos: [{ dataUrl, hist, embedding }, ...]
     fotos: [],

@@ -83,6 +83,15 @@ body {
   border-color: var(--felpus-focus);
   box-shadow: 0 0 0 3px var(--felpus-focus-tint);
 }
+/* Campos compuestos (ej. PhoneInput.jsx: selector de país + input de
+   número dentro de un mismo marco): el foco real del navegador cae sobre
+   un <input>/<button> INTERNO, no sobre el div que lleva la clase
+   .felpus-input — sin :focus-within, ese wrapper nunca mostraría el
+   anillo de foco, aunque uno de sus campos internos sí lo tenga. */
+.felpus-input:focus-within {
+  border-color: var(--felpus-focus);
+  box-shadow: 0 0 0 3px var(--felpus-focus-tint);
+}
 .felpus-input {
   background: var(--felpus-input-bg);
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;

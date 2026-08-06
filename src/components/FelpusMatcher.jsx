@@ -58,7 +58,6 @@ import {
   haversineKm,
   COLOR_OPTIONS,
   SEXO_OPTIONS,
-  sanitizePhoneForWhatsapp,
   EDAD_OPTIONS,
   PESO_OPTIONS,
   getRazaOptions,
@@ -112,6 +111,8 @@ import ReportsMap from "./ReportsMap";
 import Mascot from "./Mascot";
 import ZonaAutocomplete from "./ZonaAutocomplete";
 import Combobox from "./felpus/Combobox";
+import PhoneInput from "./felpus/PhoneInput";
+import { splitStoredWhatsapp, getDefaultCountry, formatE164ForDisplay } from "../lib/phone";
 import {
   Badge,
   EspecieIcon,
@@ -318,6 +319,63 @@ export default function FelpusMatcher() {
       // localStorage no disponible o corrupto — no es bloqueante
     }
   }, []);
+  // Último resultado de validación del PhoneInput (ver PhoneInput.jsx,
+  // prop onParsed) — evita volver a parsear el número a mano en
+  // handleSubmit: la fuente de verdad de "¿es válido, y cuáles son sus
+  // dígitos?" vive en un solo lugar (src/lib/phone.js).
+  const [whatsappParsed, setWhatsappParsed] = useState({ isValid: false, reason: null, e164: "", digits: "", country: null });
+  // Contacto de WhatsApp recordado EN ESTE DISPOSITIVO (localStorage, no en
+  // la cuenta): mismo dato que ya se manda a la base con cada reporte, así
+  // que guardarlo acá no expone nada nuevo — solo evita volver a escribirlo
+  // en la próxima publicación. whatsappUsingSaved=true muestra la pill
+  // "+54 9 ... ✓ Cambiar" en vez del input vacío (ver JSX del campo).
+  const [savedWhatsapp, setSavedWhatsapp] = useState(null);
+  const [savedWhatsappDisplay, setSavedWhatsappDisplay] = useState("");
+  const [whatsappUsingSaved, setWhatsappUsingSaved] = useState(false);
+  // Fuerza el estado de error del PhoneInput en un intento de submit fallido
+  // aunque la persona nunca haya salido del campo (blur) — ver "no validar
+  // agresivo mientras escribe, pero sí explicar al intentar publicar".
+  const [whatsappForceTouched, setWhatsappForceTouched] = useState(false);
+
+  // Activa la pill "+54 9 ... ✓ Cambiar" a partir de un E.164 ya conocido y
+  // precarga form.contactoWhatsapp/contactoWhatsappCountry con su
+  // desglose — así, si más tarde se toca "Cambiar", el PhoneInput arranca
+  // desde ese número en vez de un campo vacío. Un solo lugar para las dos
+  // veces que hace falta esto: al montar (contacto guardado de una
+  // publicación anterior) y apenas se publica un reporte con éxito (para
+  // que, si se publica un segundo reporte en la misma sesión, ya aparezca
+  // recordado también).
+  const applySavedWhatsapp = useCallback((e164) => {
+    setSavedWhatsapp(e164);
+    setWhatsappUsingSaved(true);
+    splitStoredWhatsapp(e164).then(({ country, national }) => {
+      setForm((f) => ({
+        ...f,
+        contactoWhatsapp: national || f.contactoWhatsapp,
+        contactoWhatsappCountry: country || f.contactoWhatsappCountry,
+      }));
+    });
+    formatE164ForDisplay(e164).then(setSavedWhatsappDisplay);
+  }, []);
+
+  // Al montar: si hay un WhatsApp guardado de una publicación anterior en
+  // este dispositivo, precarga el campo (colapsado en la pill) en vez de
+  // arrancar de un input vacío. Si no hay nada guardado, solo ajusta el
+  // país por defecto según el navegador (ver getDefaultCountry en
+  // phone.js) — en un efecto, no en el useState inicial, porque navigator
+  // no existe en el primer render del servidor.
+  useEffect(() => {
+    let saved = "";
+    try {
+      saved = localStorage.getItem("felpus_saved_whatsapp") || "";
+    } catch {
+      // localStorage no disponible — sigue sin contacto guardado, no bloquea
+    }
+    if (saved) applySavedWhatsapp(saved);
+    else setForm((f) => ({ ...f, contactoWhatsappCountry: getDefaultCountry() }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [expandedCard, setExpandedCard] = useState(null);
   const [cardMatches, setCardMatches] = useState({});
   const [formError, setFormError] = useState("");
@@ -735,8 +793,11 @@ export default function FelpusMatcher() {
   const moreDetailsExpanded = showMoreDetails || hasOptionalFieldsFilled;
 
   const reportChecklist = useMemo(() => {
-    const whatsappDigits = sanitizePhoneForWhatsapp(form.contactoWhatsapp);
     const colorOk = form.color.trim() && (form.color !== "Otro color" || form.colorOtro.trim());
+    // whatsappUsingSaved cuenta como "listo" sin esperar el parseo async del
+    // PhoneInput (que ni siquiera está montado en ese modo, ver JSX) — el
+    // contacto guardado ya fue válido cuando se guardó.
+    const whatsappOk = whatsappUsingSaved || whatsappParsed.isValid;
     return [
       { id: "apodo", label: "Apodo", done: !!nickname.trim() },
       { id: "fotos", label: "Foto", done: form.fotos.length > 0 },
@@ -749,9 +810,9 @@ export default function FelpusMatcher() {
       // más allá de esa base automática.
       { id: "descripcion", label: "Detalles", done: hasMeaningfulDetails },
       { id: "sexo", label: "Sexo", done: !!form.sexo },
-      { id: "contacto", label: "Contacto", done: !!whatsappDigits || !!form.contactoEmail.trim() },
+      { id: "contacto", label: "Contacto", done: whatsappOk || !!form.contactoEmail.trim() },
     ];
-  }, [nickname, form.fotos.length, form.zona, form.color, form.colorOtro, form.sexo, form.contactoWhatsapp, form.contactoEmail, hasMeaningfulDetails]);
+  }, [nickname, form.fotos.length, form.zona, form.color, form.colorOtro, form.sexo, whatsappUsingSaved, whatsappParsed.isValid, form.contactoEmail, hasMeaningfulDetails]);
   const reportProgressDone = reportChecklist.filter((s) => s.done).length;
   const reportProgressPct = Math.round((reportProgressDone / reportChecklist.length) * 100);
 
@@ -1217,18 +1278,30 @@ export default function FelpusMatcher() {
       focusField("form-sexo");
       return;
     }
-    const whatsappDigits = sanitizePhoneForWhatsapp(form.contactoWhatsapp);
-    if (!whatsappDigits && !form.contactoEmail.trim()) {
+    // Con la pill de "contacto guardado" activa, el número ya fue validado
+    // cuando se guardó — no hace falta volver a parsearlo. Si no, se usa el
+    // último resultado que reportó PhoneInput (ver onParsed), que es la
+    // misma fuente que ya está mostrando el ✓/error en pantalla — nunca se
+    // vuelve a parsear "a ciegas" acá.
+    const whatsappResult = whatsappUsingSaved && savedWhatsapp
+      ? { isValid: true, digits: savedWhatsapp.replace(/\D/g, "") }
+      : whatsappParsed;
+    const whatsappHasText = !whatsappUsingSaved && form.contactoWhatsapp.trim().length > 0;
+    if (!whatsappResult.isValid && !whatsappHasText && !form.contactoEmail.trim()) {
       const msg = "Dejá un WhatsApp o un email de contacto — así pueden avisarte si la reconocen.";
       setFormError(msg);
       setFieldErrors({ contacto: msg });
       focusField("form-contacto-whatsapp");
       return;
     }
-    if (form.contactoWhatsapp.trim() && whatsappDigits.length < 8) {
-      const msg = "Ese WhatsApp no parece completo — incluí el código de país y de área.";
+    if (whatsappHasText && !whatsappResult.isValid) {
+      const msg = "Revisá el WhatsApp que escribiste — no logramos interpretarlo bien.";
       setFormError(msg);
       setFieldErrors({ contacto: msg });
+      // El PhoneInput ya muestra su propio mensaje específico (incompleto/
+      // no interpretable) — esto solo lo fuerza a aparecer aunque la
+      // persona nunca haya salido del campo (blur).
+      setWhatsappForceTouched(true);
       focusField("form-contacto-whatsapp");
       return;
     }
@@ -1281,7 +1354,7 @@ export default function FelpusMatcher() {
           ubicacionMarca: manchaUbicacion,
           colorMarca: manchaColor,
         }),
-        contactoWhatsapp: whatsappDigits,
+        contactoWhatsapp: whatsappResult.isValid ? whatsappResult.digits : "",
         contactoEmail: form.contactoEmail.trim(),
         fotos: form.fotos,
         nickname: nickname.trim(),
@@ -1326,6 +1399,24 @@ export default function FelpusMatcher() {
       setDetalleLibre("");
       setGeoStatus("idle");
       setVisionStatus("idle");
+      setWhatsappForceTouched(false);
+      // Recordar el contacto DESPUÉS del reset de arriba (setForm(emptyForm()))
+      // y no antes: applySavedWhatsapp mergea national/país en el form de
+      // forma async (splitStoredWhatsapp) — si se llamara antes del reset,
+      // el emptyForm() de esta misma función correría primero (es
+      // síncrono) y pisaría ese merge en cuanto la promesa resolviera.
+      // Ningún cambio para quien no dejó WhatsApp válido (whatsappResult
+      // sigue siendo el de ANTES del reset, capturado más arriba).
+      if (whatsappResult.isValid) {
+        const e164 = `+${whatsappResult.digits}`;
+        try {
+          localStorage.setItem("felpus_saved_whatsapp", e164);
+        } catch {
+          // localStorage no disponible — no es bloqueante, simplemente no
+          // se recuerda para la próxima vez.
+        }
+        applySavedWhatsapp(e164);
+      }
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
       logError(err);
@@ -2294,38 +2385,69 @@ export default function FelpusMatcher() {
                 <label id="form-contacto-label" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
                   Contacto <span style={{ color: C.red }}>*</span>
                 </label>
-                <p className="text-[11px] mb-1.5" style={{ color: C.muted }}>
+                <p className="text-[11px] mb-2" style={{ color: C.muted }}>
                   Para que puedan avisarte si la reconocen. Completá al menos uno.
                 </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <input
-                    id="form-contacto-whatsapp"
-                    type="tel"
-                    inputMode="tel"
-                    aria-label="WhatsApp de contacto"
-                    aria-describedby="form-contacto-label"
-                    value={form.contactoWhatsapp}
-                    onChange={(e) => setForm((f) => ({ ...f, contactoWhatsapp: e.target.value }))}
-                    maxLength={25}
-                    placeholder="WhatsApp: +54 9 11 1234-5678"
-                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
-                    style={{ borderColor: fieldErrors.contacto ? C.red : C.border, color: C.text }}
-                  />
-                  <input
-                    id="form-contacto-email"
-                    type="email"
-                    aria-label="Email de contacto"
-                    aria-describedby="form-contacto-label"
-                    value={form.contactoEmail}
-                    onChange={(e) => setForm((f) => ({ ...f, contactoEmail: e.target.value }))}
-                    maxLength={120}
-                    placeholder="Email"
-                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
-                    style={{ borderColor: fieldErrors.contacto ? C.red : C.border, color: C.text }}
-                  />
+                <div className="space-y-3">
+                  <div>
+                    <label htmlFor="form-contacto-whatsapp" className="text-[11px] font-semibold mb-1 block" style={{ color: C.muted }}>
+                      WhatsApp
+                    </label>
+                    {whatsappUsingSaved ? (
+                      // Reutiliza el contacto de la última publicación desde
+                      // este dispositivo (ver el efecto de montaje más
+                      // arriba) en vez de arrancar de un input vacío otra
+                      // vez — mismo dato que ya se manda a la base con cada
+                      // reporte, no expone nada nuevo.
+                      <div
+                        className="felpus-input flex items-center justify-between gap-2 border rounded-lg px-3 py-2"
+                        style={{ borderColor: C.border }}
+                      >
+                        <span className="flex items-center gap-1.5 text-sm min-w-0" style={{ color: C.text }}>
+                          <span className="truncate">{savedWhatsappDisplay || "..."}</span>
+                          <Check className="w-3.5 h-3.5 shrink-0" style={{ color: C.green }} />
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setWhatsappUsingSaved(false)}
+                          className="shrink-0 text-xs font-bold underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded"
+                          style={{ color: C.text }}
+                        >
+                          Cambiar
+                        </button>
+                      </div>
+                    ) : (
+                      <PhoneInput
+                        id="form-contacto-whatsapp"
+                        country={form.contactoWhatsappCountry}
+                        onCountryChange={(code) => setForm((f) => ({ ...f, contactoWhatsappCountry: code }))}
+                        value={form.contactoWhatsapp}
+                        onChange={(text) => setForm((f) => ({ ...f, contactoWhatsapp: text }))}
+                        onParsed={setWhatsappParsed}
+                        forceTouched={whatsappForceTouched}
+                      />
+                    )}
+                  </div>
+                  <div>
+                    <label htmlFor="form-contacto-email" className="text-[11px] font-semibold mb-1 block" style={{ color: C.muted }}>
+                      Email
+                    </label>
+                    <input
+                      id="form-contacto-email"
+                      type="email"
+                      aria-label="Email de contacto"
+                      aria-describedby="form-contacto-label"
+                      value={form.contactoEmail}
+                      onChange={(e) => setForm((f) => ({ ...f, contactoEmail: e.target.value }))}
+                      maxLength={120}
+                      placeholder="tu@email.com"
+                      className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
+                      style={{ borderColor: fieldErrors.contacto ? C.red : C.border, color: C.text }}
+                    />
+                  </div>
                 </div>
                 {fieldErrors.contacto && (
-                  <p className="text-[11px] mt-1" style={{ color: C.red }}>{fieldErrors.contacto}</p>
+                  <p className="text-[11px] mt-1.5" style={{ color: C.red }}>{fieldErrors.contacto}</p>
                 )}
               </div>
 
