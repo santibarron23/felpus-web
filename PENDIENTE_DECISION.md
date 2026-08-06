@@ -1,6 +1,52 @@
 # Decisiones pendientes — requieren acción o información tuya
 
-## -11. Login con Google mostraba el dominio de Supabase, no el de Felpus (2026-08-06) — requiere 2 pasos tuyos, opcional
+## -11. Login con Google mostraba el dominio de Supabase, no el de Felpus (2026-08-06) — ✅ CERRADO, decisión tomada (2026-08-06): se queda con el flujo clásico
+
+**Resultado final:** se probó de punta a punta (los 2 pasos de configuración
+de abajo, corregidos 2 bugs de CSP encontrados en el camino — ver más abajo)
+y el One Tap de Google **no llegó a mostrarse** en los dispositivos reales
+del usuario (mobile y desktop), cayendo siempre al flujo clásico. Además,
+aclarado con el usuario: el camino gratis de One Tap **nunca iba a mostrar
+un dominio propio tipo "auth.felpus.com"** — cuando funciona, no muestra
+ningún dominio (cartel embebido con marca "Felpus"), no lo reemplaza por
+uno propio. Mostrar literalmente "auth.felpus.com" solo es posible con el
+Custom Domain pago de Supabase (evaluado y descartado por costo, ver abajo).
+
+**Decisión del usuario (2026-08-06):** dejarlo como está — el login clásico
+(con el dominio de Supabase visible) sigue funcionando bien, sin costo
+extra, y se reenvía la verificación de marca con los 3 puntos que Google sí
+pidió explícitamente ya corregidos (dominio verificado, propósito explicado,
+nombre de la app coincidente). El código de Google Identity Services
+(`googleAuth.js`, la parte de `useAuth.js`) se queda en el repo tal cual
+— no molesta a nadie (sin la env var no se activa, y con la env var
+activada simplemente no logra mostrarse y cae al flujo de siempre — cero
+regresión), por si en el futuro Google mejora la elegibilidad de One Tap
+para esta app y empieza a funcionar solo.
+
+**2 bugs reales encontrados y corregidos en el camino (quedan igual,
+son mejoras aparte de esta decisión):**
+1. El CSP de `next.config.mjs` bloqueaba `accounts.google.com` en
+   `script-src` y `connect-src` — el script de Google ni cargaba.
+2. Con eso arreglado, seguía bloqueado en `style-src`
+   (`accounts.google.com/gsi/style`, el CSS del cartel de One Tap) —
+   confirmado en vivo contra producción, con el pedido de red fallando.
+
+Ambos ya están en `main` (commits `8f2ae28` y `4479b12`) — quedan bien,
+son correcciones legítimas del CSP independientemente de si el One Tap
+termina mostrándose algún día.
+
+**Nota aparte, no relacionada con esto:** durante las pruebas apareció una
+vez un error real "401: invalid_client — The OAuth client was not found"
+en el flujo clásico (rompía TODO el login, no solo lo nuevo) — se
+resolvió solo después de recargar la config en Supabase y esperar la
+propagación de Google (la doc de Google avisa que los cambios de redirect
+URI pueden tardar de 5 minutos a algunas horas). Si vuelve a aparecer sin
+haber tocado nada, investigar de nuevo — no se llegó a confirmar la causa
+raíz exacta, solo que se resolvió con el tiempo.
+
+---
+
+## -11 (contexto original, dejado abajo para referencia) — requería 2 pasos, ya completados
 
 **Qué encontré:** en el proceso de verificación de marca de Google OAuth
 (ver los 3 motivos de rechazo que Google fue dando — dominio no verificado,
