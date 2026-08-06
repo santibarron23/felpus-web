@@ -1761,7 +1761,12 @@ export default function FelpusMatcher() {
                   generaba una advertencia de hidratación acá. Con clases
                   "dark:" el color lo decide el CSS vía [data-theme], sin ese
                   riesgo. */}
-              <p className="hidden sm:block text-[11px] mt-0.5 truncate text-[#6B5643] dark:text-[#B9ADA5]">
+              {/* Antes "hidden sm:block": el resumen de qué es Felpus quedaba
+                  invisible en mobile — el único lugar donde SÍ se explicaba
+                  el propósito de la app a un vistazo (sin depender de leer
+                  todo el hero) desaparecía justamente en el viewport que
+                  más tráfico recibe. Visible en todos los tamaños ahora. */}
+              <p className="text-[11px] mt-0.5 truncate text-[#6B5643] dark:text-[#B9ADA5]">
                 Buscador inteligente de mascotas perdidas y encontradas
               </p>
             </div>
