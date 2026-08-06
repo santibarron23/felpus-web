@@ -192,6 +192,22 @@ function isMissingFunctionError(error) {
   return text.includes("42883") || text.includes("PGRST202") || /could not find the function|does not exist/i.test(text);
 }
 
+// Mismo espíritu que isMissingFunctionError, para tablas/columnas nuevas de
+// "Mi Felpus" (saved_reports, contributors.whatsapp) antes de correr la
+// migración — un mensaje claro en vez del error crudo de PostgREST.
+function isMissingTableError(error) {
+  if (!error) return false;
+  const text = `${error.message || ""} ${error.code || ""}`;
+  return text.includes("42P01") || text.includes("PGRST205") || /could not find the table/i.test(text);
+}
+
+function isMissingColumnError(error, columnName) {
+  if (!error) return false;
+  const text = `${error.message || ""} ${error.code || ""}`;
+  if (!text.includes("42703") && !text.includes("PGRST204") && !/does not exist/i.test(text)) return false;
+  return new RegExp(`\\b${columnName}\\b`, "i").test(text);
+}
+
 // Denunciar una publicación como falsa/errónea/inapropiada. Va por RPC
 // (flag_report en schema.sql), no por un insert directo a report_flags —
 // esa tabla no tiene política de INSERT para anon/authenticated a propósito
@@ -428,6 +444,84 @@ export async function fetchMyRank(userId) {
   if (countError) throw countError;
 
   return { ...me, rank: (count || 0) + 1 };
+}
+
+// ---------------------------------------------------------------------------
+// "Mi Felpus" — perfil + mascotas guardadas (ver la nota larga en
+// schema.sql sobre por qué el perfil vive en contributors y no en una
+// tabla nueva).
+// ---------------------------------------------------------------------------
+
+// Puede devolver null: alguien logueado que nunca reportó ni confirmó un
+// reencuentro todavía no tiene fila en contributors — es un perfil vacío
+// válido, no un error (ver updateProfile, que lo crea recién al guardar).
+export async function fetchProfile(userId) {
+  if (!userId) return null;
+  const { data, error } = await supabase.from(CONTRIBUTORS_TABLE).select("*").eq("id", userId).maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+// upsert, no update: cubre tanto a quien ya tiene fila en contributors
+// (por puntos ganados) como a quien todavía no tiene ninguna — la misma
+// policy (auth.uid()::text = id) permite las dos operaciones sobre la
+// propia fila, así que alcanza con un solo llamado sin consultar antes cuál
+// de los dos casos es. Nunca toca points/reportes/reencuentros/hearts/
+// streak_days: al no incluirlos en el objeto, el upsert los deja como
+// están (o, si la fila es nueva, caen en sus valores default de la tabla).
+export async function updateProfile(userId, { nickname, whatsapp }) {
+  if (!userId) throw new Error("Necesitás iniciar sesión para editar tu perfil.");
+  const { error } = await supabase
+    .from(CONTRIBUTORS_TABLE)
+    .upsert({ id: userId, nickname, whatsapp: whatsapp || null, updated_at: new Date().toISOString() });
+  if (error) {
+    if (isMissingColumnError(error, "whatsapp")) {
+      throw new Error("Guardar el WhatsApp del perfil todavía no está disponible. Probá de nuevo más tarde.");
+    }
+    throw error;
+  }
+}
+
+const SAVED_REPORTS_TABLE = "saved_reports";
+const SAVED_REPORTS_MISSING_MSG = "Guardar mascotas todavía no está disponible en este momento. Probá de nuevo más tarde.";
+
+// Solo los ids (no el reporte completo — ver el comentario en schema.sql:
+// saved_reports no duplica ningún dato de reports). Falla ABIERTO ante una
+// tabla que todavía no existe (sin la migración corrida): "sin guardados"
+// en vez de romper toda la pantalla de "Mi Felpus" por una sección que
+// nadie llegó a usar todavía.
+export async function fetchSavedReportIds(userId) {
+  if (!userId) return [];
+  const { data, error } = await supabase.from(SAVED_REPORTS_TABLE).select("report_id").eq("user_id", userId);
+  if (error) {
+    if (isMissingTableError(error)) return [];
+    throw error;
+  }
+  return (data || []).map((r) => r.report_id);
+}
+
+// ignoreDuplicates (insert ... on conflict do nothing) además de la unique
+// key compuesta en la base: dos clicks rápidos en "Guardar" (doble toque
+// en mobile, red lenta) no revientan con un error de duplicado — el
+// resultado es el mismo "ya está guardado" en los dos casos.
+export async function saveReport(userId, reportId) {
+  if (!userId) throw new Error("Iniciá sesión con Google para guardar mascotas.");
+  const { error } = await supabase
+    .from(SAVED_REPORTS_TABLE)
+    .upsert({ user_id: userId, report_id: reportId }, { onConflict: "user_id,report_id", ignoreDuplicates: true });
+  if (error) {
+    if (isMissingTableError(error)) throw new Error(SAVED_REPORTS_MISSING_MSG);
+    throw error;
+  }
+}
+
+export async function unsaveReport(userId, reportId) {
+  if (!userId) return;
+  const { error } = await supabase.from(SAVED_REPORTS_TABLE).delete().eq("user_id", userId).eq("report_id", reportId);
+  if (error) {
+    if (isMissingTableError(error)) throw new Error(SAVED_REPORTS_MISSING_MSG);
+    throw error;
+  }
 }
 
 // Los puntos quedan atados al user.id estable de Supabase Auth (no a un

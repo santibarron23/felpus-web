@@ -39,6 +39,10 @@ import {
   AlertTriangle,
   AlertCircle,
   Trash2,
+  User,
+  Bookmark,
+  Pencil,
+  MessageCircle,
 } from "lucide-react";
 import {
   normalizeText,
@@ -98,6 +102,11 @@ import {
   adminSetOculto,
   adminListFlaggedReports,
   adminFetchMetrics,
+  fetchProfile,
+  updateProfile,
+  fetchSavedReportIds,
+  saveReport,
+  unsaveReport,
 } from "../lib/store";
 import { playTap, playSuccess } from "../lib/sound";
 import { loadGoogleMaps } from "../lib/googleMaps";
@@ -230,6 +239,31 @@ function describeSubmitError(err) {
   // viene redactado en español y listo para mostrar tal cual.
   if (/límite de reportes por hora/.test(msg)) return msg;
   return "Algo falló al publicar el reporte. Probá de nuevo.";
+}
+
+// Muestra el WhatsApp de perfil (guardado como E.164 en contributors.whatsapp,
+// ver schema.sql) en formato lindo ("+54 9 387 588 5427") en vez del E.164
+// crudo — mismo formateo que ya usa la pill de "contacto guardado" del
+// formulario de Reportar (ver formatE164ForDisplay en lib/phone.js), acá
+// factorizado aparte porque "Mi Felpus" lo necesita en dos lugares (la
+// cabecera y la pestaña Perfil).
+function ProfileWhatsappLine({ value, textClassName = "text-xs" }) {
+  const C = useTheme();
+  const [display, setDisplay] = useState(value);
+  useEffect(() => {
+    let cancelled = false;
+    formatE164ForDisplay(value).then((formatted) => {
+      if (!cancelled) setDisplay(formatted);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [value]);
+  return (
+    <p className={`${textClassName} truncate flex items-center gap-1`} style={{ color: C.muted }}>
+      <MessageCircle className="w-3 h-3 shrink-0" /> {display}
+    </p>
+  );
 }
 
 export default function FelpusMatcher() {
@@ -420,6 +454,152 @@ export default function FelpusMatcher() {
   const fileInputRef = useRef(null);
   const deepLinkHandled = useRef(false);
   const isAdmin = user?.email === ADMIN_EMAIL;
+
+  // "Mi Felpus" — perfil personal + mascotas guardadas. Igual que el panel
+  // de admin, estado propio en vez de mezclarlo con `reports`/`user`: solo
+  // le importa a quien está logueado y mirando esta pantalla puntual.
+  const [savedReportIds, setSavedReportIds] = useState(() => new Set());
+  const [savedBusyId, setSavedBusyId] = useState(null);
+  const [mifelpusSection, setMifelpusSection] = useState("reportes"); // "reportes" | "guardadas" | "perfil"
+  const [mifelpusFilter, setMifelpusFilter] = useState("todas"); // "todas" | "perdida" | "encontrada" | "resuelto"
+  const [myReportsDeleteConfirmId, setMyReportsDeleteConfirmId] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [profileNameDraft, setProfileNameDraft] = useState("");
+  const [profilePhoneCountry, setProfilePhoneCountry] = useState("AR");
+  const [profilePhoneText, setProfilePhoneText] = useState("");
+  const [profilePhoneParsed, setProfilePhoneParsed] = useState({ isValid: false, reason: null, e164: "", digits: "" });
+  const [profileSaving, setProfileSaving] = useState(false);
+
+  // Mascotas guardadas: se cargan apenas hay sesión (no solo al entrar a
+  // "Mi Felpus") — así el marcador de "guardado" ya sale bien tildado la
+  // primera vez que alguien ve una tarjeta en Explorar, sin depender de
+  // haber visitado Mi Felpus antes en esa sesión.
+  useEffect(() => {
+    if (!user) {
+      setSavedReportIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    fetchSavedReportIds(user.id)
+      .then((ids) => {
+        if (!cancelled) setSavedReportIds(new Set(ids));
+      })
+      .catch((e) => logError("No se pudieron cargar las mascotas guardadas", e));
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  const loadProfile = useCallback(async () => {
+    if (!user) return;
+    setProfileLoading(true);
+    setProfileError("");
+    try {
+      setProfile(await fetchProfile(user.id));
+    } catch (e) {
+      logError("No se pudo cargar el perfil", e);
+      setProfileError(e?.message || "No se pudo cargar tu perfil.");
+    } finally {
+      setProfileLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (activeTab === "mifelpus" && user) loadProfile();
+  }, [activeTab, user, loadProfile]);
+
+  // Optimista (togglea antes de que responda la base) con reversión si
+  // falla — el mismo criterio que ya usa heartedIds/toggleHeart más abajo
+  // para "Colaboradores": la reacción tiene que sentirse instantánea, no
+  // esperar un viaje de red para ver el marcador cambiar.
+  async function handleToggleSaved(report) {
+    if (!user) {
+      pushToast("error", "Iniciá sesión con Google para guardar mascotas.");
+      return;
+    }
+    const wasSaved = savedReportIds.has(report.id);
+    setSavedBusyId(report.id);
+    setSavedReportIds((prev) => {
+      const next = new Set(prev);
+      if (wasSaved) next.delete(report.id);
+      else next.add(report.id);
+      return next;
+    });
+    try {
+      if (wasSaved) await unsaveReport(user.id, report.id);
+      else await saveReport(user.id, report.id);
+    } catch (e) {
+      setSavedReportIds((prev) => {
+        const next = new Set(prev);
+        if (wasSaved) next.add(report.id);
+        else next.delete(report.id);
+        return next;
+      });
+      logError("No se pudo actualizar mascotas guardadas", e);
+      pushToast("error", e?.message || "No se pudo actualizar guardados. Probá de nuevo.");
+    } finally {
+      setSavedBusyId(null);
+    }
+  }
+
+  function openEditProfile() {
+    setProfileNameDraft(profile?.nickname || googleDisplayName || "");
+    setProfilePhoneText("");
+    setProfilePhoneParsed({ isValid: false, reason: null, e164: "", digits: "" });
+    if (profile?.whatsapp) {
+      splitStoredWhatsapp(profile.whatsapp).then(({ country, national }) => {
+        setProfilePhoneCountry(country || "AR");
+        setProfilePhoneText(national || "");
+      });
+    } else {
+      setProfilePhoneCountry(getDefaultCountry());
+    }
+    setEditingProfile(true);
+  }
+
+  async function handleSaveProfile() {
+    const name = profileNameDraft.trim();
+    if (!name) {
+      pushToast("error", "Poné un nombre — es lo que ve el resto de la comunidad.");
+      return;
+    }
+    // Mismo criterio que el WhatsApp del formulario de Reportar: si hay
+    // texto pero no resultó válido, no se guarda a medias — se le pide
+    // corregirlo o borrarlo. Vacío es perfectamente válido (el WhatsApp de
+    // perfil es opcional).
+    if (profilePhoneText.trim() && !profilePhoneParsed.isValid) {
+      pushToast("error", "Revisá el WhatsApp del perfil — no logramos interpretarlo bien.");
+      return;
+    }
+    setProfileSaving(true);
+    try {
+      const whatsapp = profilePhoneParsed.isValid ? profilePhoneParsed.digits && `+${profilePhoneParsed.digits}` : profile?.whatsapp || "";
+      await updateProfile(user.id, { nickname: name, whatsapp: whatsapp || "" });
+      setProfile((prev) => ({ ...(prev || { id: user.id }), nickname: name, whatsapp: whatsapp || null }));
+      setNickname(name);
+      setEditingProfile(false);
+      pushToast("success", "Perfil actualizado.");
+    } catch (e) {
+      logError("No se pudo guardar el perfil", e);
+      pushToast("error", e?.message || "No se pudo guardar el perfil. Probá de nuevo.");
+    } finally {
+      setProfileSaving(false);
+    }
+  }
+
+  const myReports = useMemo(() => (user ? reports.filter((r) => r.userId === user.id) : []), [reports, user]);
+  const myReportsFiltered = useMemo(() => {
+    if (mifelpusFilter === "resuelto") return myReports.filter((r) => r.resuelto);
+    if (mifelpusFilter === "todas") return myReports;
+    return myReports.filter((r) => r.tipo === mifelpusFilter && !r.resuelto);
+  }, [myReports, mifelpusFilter]);
+  const savedReportsList = useMemo(
+    () => reports.filter((r) => savedReportIds.has(r.id)).sort((a, b) => b.creadoEn - a.creadoEn),
+    [reports, savedReportIds]
+  );
 
   // Panel de administrador — estado propio, separado del resto de la app a
   // propósito: solo lo toca una persona, así que no vale la pena acoplarlo a
@@ -1586,6 +1766,30 @@ export default function FelpusMatcher() {
             </div>
           </button>
           <div className="flex items-center gap-2 shrink-0">
+            {/* "Mi Felpus" — solo con sesión iniciada (perfil/guardados
+                requieren cuenta, no tiene sentido para invitados). Mismo
+                patrón que el ícono de admin: entrada en el header, no en la
+                navegación inferior — agregar un 5to/6to ítem ahí desbalancearía
+                el layout para quienes ni siquiera ven este botón. */}
+            {user && (
+              <button
+                type="button"
+                onClick={() => {
+                  playTap();
+                  goToTab("mifelpus");
+                }}
+                aria-label="Mi Felpus"
+                title="Mi Felpus"
+                className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                style={{ background: activeTab === "mifelpus" ? C.redSolid : C.cream }}
+              >
+                {googleAvatar ? (
+                  <Image src={googleAvatar} alt="" width={32} height={32} className="w-full h-full object-cover" />
+                ) : (
+                  <User className="w-4 h-4" style={{ color: activeTab === "mifelpus" ? "#fff" : C.text }} />
+                )}
+              </button>
+            )}
             {isAdmin && (
               <button
                 type="button"
@@ -3149,7 +3353,13 @@ export default function FelpusMatcher() {
 
             <div className="space-y-3">
               {visibleReports.map((r) => (
-                <ReportCard key={r.id} report={r} onOpenDetail={openReportDetail}>
+                <ReportCard
+                  key={r.id}
+                  report={r}
+                  onOpenDetail={openReportDetail}
+                  saved={savedReportIds.has(r.id)}
+                  onToggleSaved={r.userId === user?.id ? undefined : handleToggleSaved}
+                >
                   <button
                     onClick={() => toggleCardMatches(r)}
                     className="w-full flex items-center justify-between px-3 py-2.5 border-t text-xs font-semibold"
@@ -3787,6 +3997,366 @@ export default function FelpusMatcher() {
             )}
           </div>
         )}
+
+        {/* "Mi Felpus" — perfil personal + mascotas guardadas. Se llega
+            desde el ícono del header (avatar/User), solo con sesión
+            iniciada — invitados no tienen cuenta para guardar nada ni
+            perfil que editar. */}
+        {activeTab === "mifelpus" && user && (
+          <div className="max-w-2xl mx-auto px-4 pt-2 pb-8 space-y-4">
+            <div className="rounded-2xl border p-4" style={{ borderColor: C.border, background: C.surface }}>
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-14 h-14 rounded-full overflow-hidden shrink-0 flex items-center justify-center text-lg font-bold text-white"
+                  style={{ background: C.redSolid }}
+                >
+                  {googleAvatar ? (
+                    <Image src={googleAvatar} alt="" width={56} height={56} className="w-full h-full object-cover" />
+                  ) : (
+                    (profile?.nickname || googleDisplayName || user.email || "?")[0].toUpperCase()
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold truncate" style={{ color: C.text }}>
+                    {profile?.nickname || googleDisplayName || "Sin nombre"}
+                  </p>
+                  <p className="text-xs truncate" style={{ color: C.muted }}>{user.email}</p>
+                  {profile?.whatsapp && <ProfileWhatsappLine value={profile.whatsapp} />}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setMifelpusSection("perfil");
+                  openEditProfile();
+                }}
+                className="mt-3 w-full flex items-center justify-center gap-1.5 border rounded-xl py-2 text-sm font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                style={{ borderColor: C.border, color: C.text }}
+              >
+                <Pencil className="w-3.5 h-3.5" /> Editar perfil
+              </button>
+            </div>
+
+            <div className="flex gap-2">
+              {[
+                { id: "reportes", label: "Mis reportes" },
+                { id: "guardadas", label: `Guardadas${savedReportsList.length ? ` (${savedReportsList.length})` : ""}` },
+                { id: "perfil", label: "Perfil" },
+              ].map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setMifelpusSection(s.id)}
+                  className="flex-1 text-xs font-bold py-2 rounded-lg border"
+                  style={
+                    mifelpusSection === s.id
+                      ? { background: C.ink, color: C.cream, borderColor: C.ink }
+                      : { color: C.text, borderColor: C.border, background: C.surface }
+                  }
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+
+            {mifelpusSection === "reportes" && (
+              <div className="space-y-3">
+                <div className="flex gap-1.5 overflow-x-auto pb-1">
+                  {[
+                    { id: "todas", label: "Todas" },
+                    { id: "perdida", label: "Perdidas" },
+                    { id: "encontrada", label: "Encontradas" },
+                    { id: "resuelto", label: "Reencontradas" },
+                  ].map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setMifelpusFilter(f.id)}
+                      className="shrink-0 text-[11px] font-bold px-2.5 py-1.5 rounded-full border"
+                      style={
+                        mifelpusFilter === f.id
+                          ? { background: C.ink, color: C.cream, borderColor: C.ink }
+                          : { color: C.text, borderColor: C.border, background: C.surface }
+                      }
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+
+                {myReportsFiltered.length === 0 ? (
+                  <div className="text-center py-10 space-y-3">
+                    <p className="text-sm" style={{ color: C.muted }}>
+                      {myReports.length === 0 ? "Todavía no publicaste ninguna mascota." : "No hay reportes con ese filtro."}
+                    </p>
+                    {myReports.length === 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReportKind("perdida");
+                          goToTab("reportar");
+                        }}
+                        className="rounded-xl px-4 py-2.5 text-sm font-bold text-white"
+                        style={{ background: C.redSolid }}
+                      >
+                        Reportar mascota
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {myReportsFiltered.map((r) => (
+                      <ReportCard key={r.id} report={r} onOpenDetail={openReportDetail}>
+                        {!r.resuelto && (
+                          <button
+                            type="button"
+                            onClick={() => toggleCardMatches(r)}
+                            className="w-full flex items-center justify-between px-3 py-2.5 border-t text-xs font-semibold"
+                            style={{ borderColor: C.border, color: C.red }}
+                          >
+                            <span className="flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5" />
+                              {expandedCard === r.id ? "Ocultar coincidencias" : "Ver posibles coincidencias"}
+                            </span>
+                            <ChevronRight className={`w-3.5 h-3.5 transition-transform ${expandedCard === r.id ? "rotate-90" : ""}`} />
+                          </button>
+                        )}
+                        {expandedCard === r.id && (
+                          <div className="px-3 pb-3 space-y-2">
+                            {!cardMatches[r.id] && (
+                              <p className="text-xs flex items-center gap-1.5 py-2" style={{ color: C.muted }}>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" /> calculando...
+                              </p>
+                            )}
+                            {cardMatches[r.id]?.length === 0 && (
+                              <p className="text-xs py-2" style={{ color: C.muted }}>
+                                Sin coincidencias de al menos {Math.round(SCORE_MINIMO * 100)}% por ahora.
+                              </p>
+                            )}
+                            {cardMatches[r.id]?.map((m) => (
+                              <button
+                                key={m.report.id}
+                                type="button"
+                                onClick={() => openReportDetail(m.report)}
+                                className="w-full text-left bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)] rounded-xl p-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <div className="scale-75 -m-2">
+                                    <MatchScoreRing score={m.score} />
+                                  </div>
+                                  <Image
+                                    src={m.report.foto}
+                                    alt={reportPhotoAlt(m.report)}
+                                    width={40}
+                                    height={40}
+                                    loading="lazy"
+                                    className="w-10 h-10 rounded-lg object-cover bg-white dark:bg-[var(--felpus-dark-card)]"
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-semibold truncate" style={{ color: C.text }}>
+                                      {displayColor(m.report)} · {m.report.zona}
+                                    </p>
+                                    <p className="text-[10px]" style={{ color: C.muted }}>{m.distanceLabel}</p>
+                                  </div>
+                                  <ChevronRight className="w-3.5 h-3.5 shrink-0" style={{ color: C.muted }} />
+                                </div>
+                                <MatchBreakdownChips items={matchBreakdown(r, m.report)} />
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        <div className="px-3 pb-3 pt-1 border-t flex items-center justify-between gap-2 flex-wrap" style={{ borderColor: C.border }}>
+                          {!r.resuelto &&
+                            (confirmingId === r.id ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px]" style={{ color: C.muted }}>¿Confirmás?</span>
+                                <button
+                                  onClick={() => markResolvedAndReward({ repObjs: [r], bonusFor: [{ userId: r.userId, displayName: r.nickname }] })}
+                                  className="text-[11px] font-bold text-white rounded-lg px-2.5 py-1"
+                                  style={{ background: C.greenSolid }}
+                                >
+                                  Sí, ya está en casa
+                                </button>
+                                <button onClick={() => setConfirmingId(null)} className="text-[11px] font-semibold" style={{ color: C.muted }}>
+                                  Cancelar
+                                </button>
+                              </div>
+                            ) : (
+                              <button onClick={() => handleConfirmTrigger(r)} className="text-[11px] font-bold flex items-center gap-1" style={{ color: C.green }}>
+                                {confirmButtonContent(r, "Marcar como reencontrada")}
+                              </button>
+                            ))}
+                          <ShareButton report={r} className="text-[11px] font-bold flex items-center gap-1" style={{ color: C.text }}>
+                            <Share2 className="w-3.5 h-3.5" /> Compartir
+                          </ShareButton>
+                          {myReportsDeleteConfirmId === r.id ? (
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleDeleteReport(r);
+                                  setMyReportsDeleteConfirmId(null);
+                                }}
+                                className="text-[11px] font-bold text-white rounded-lg px-2 py-1"
+                                style={{ background: C.redSolid }}
+                              >
+                                Confirmar
+                              </button>
+                              <button type="button" onClick={() => setMyReportsDeleteConfirmId(null)} className="text-[11px] font-semibold" style={{ color: C.muted }}>
+                                Cancelar
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setMyReportsDeleteConfirmId(r.id)}
+                              className="text-[11px] font-bold flex items-center gap-1"
+                              style={{ color: C.redDark }}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" /> Eliminar
+                            </button>
+                          )}
+                        </div>
+                      </ReportCard>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {mifelpusSection === "guardadas" && (
+              savedReportsList.length === 0 ? (
+                <div className="text-center py-10 space-y-2">
+                  <p className="text-sm" style={{ color: C.muted }}>Todavía no guardaste ninguna mascota.</p>
+                  <p className="text-xs" style={{ color: C.muted }}>Guardá reportes que quieras seguir o revisar más tarde.</p>
+                  <button
+                    type="button"
+                    onClick={() => goToTab("explorar")}
+                    className="rounded-xl px-4 py-2.5 text-sm font-bold text-white mt-2"
+                    style={{ background: C.redSolid }}
+                  >
+                    Explorar mascotas
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {savedReportsList.map((r) => (
+                    <ReportCard key={r.id} report={r} onOpenDetail={openReportDetail} saved onToggleSaved={handleToggleSaved}>
+                      <div className="px-3 pb-3 pt-1 border-t flex items-center justify-between gap-2" style={{ borderColor: C.border }}>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleSaved(r)}
+                          disabled={savedBusyId === r.id}
+                          className="text-[11px] font-bold flex items-center gap-1 disabled:opacity-60"
+                          style={{ color: C.redDark }}
+                        >
+                          <X className="w-3.5 h-3.5" /> Quitar de guardadas
+                        </button>
+                        <ShareButton report={r} className="text-[11px] font-bold flex items-center gap-1" style={{ color: C.text }}>
+                          <Share2 className="w-3.5 h-3.5" /> Compartir
+                        </ShareButton>
+                      </div>
+                    </ReportCard>
+                  ))}
+                </div>
+              )
+            )}
+
+            {mifelpusSection === "perfil" && (
+              <div className="rounded-2xl border p-4 space-y-3" style={{ borderColor: C.border, background: C.surface }}>
+                {profileLoading && (
+                  <p className="flex items-center gap-2 text-sm py-4 justify-center" style={{ color: C.muted }}>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Cargando...
+                  </p>
+                )}
+                {!profileLoading && profileError && (
+                  <div className="flex items-center justify-between gap-2 text-sm" style={{ color: C.redDark }}>
+                    <span className="flex items-center gap-1.5"><AlertCircle className="w-4 h-4 shrink-0" /> {profileError}</span>
+                    <button type="button" onClick={loadProfile} className="font-bold underline shrink-0">Reintentar</button>
+                  </div>
+                )}
+                {!profileLoading && !profileError && !editingProfile && (
+                  <>
+                    <div>
+                      <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Nombre</p>
+                      <p className="text-sm" style={{ color: C.text }}>{profile?.nickname || googleDisplayName || "Sin nombre"}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Email</p>
+                      <p className="text-sm" style={{ color: C.text }}>{user.email}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>WhatsApp</p>
+                      {profile?.whatsapp ? <ProfileWhatsappLine value={profile.whatsapp} textClassName="text-sm" /> : (
+                        <p className="text-sm" style={{ color: C.muted }}>No agregaste un WhatsApp de perfil.</p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={openEditProfile}
+                      className="w-full flex items-center justify-center gap-1.5 border rounded-xl py-2.5 text-sm font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                      style={{ borderColor: C.border, color: C.text }}
+                    >
+                      <Pencil className="w-3.5 h-3.5" /> Editar perfil
+                    </button>
+                  </>
+                )}
+                {editingProfile && (
+                  <>
+                    <div>
+                      <label htmlFor="profile-nombre" className="text-[11px] font-semibold mb-1 block" style={{ color: C.muted }}>Nombre</label>
+                      <input
+                        id="profile-nombre"
+                        type="text"
+                        value={profileNameDraft}
+                        onChange={(e) => setProfileNameDraft(e.target.value)}
+                        maxLength={40}
+                        className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
+                        style={{ borderColor: C.border, color: C.text }}
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="profile-whatsapp" className="text-[11px] font-semibold mb-1 block" style={{ color: C.muted }}>
+                        WhatsApp (opcional)
+                      </label>
+                      <PhoneInput
+                        id="profile-whatsapp"
+                        country={profilePhoneCountry}
+                        onCountryChange={setProfilePhoneCountry}
+                        value={profilePhoneText}
+                        onChange={setProfilePhoneText}
+                        onParsed={setProfilePhoneParsed}
+                      />
+                      <p className="text-[11px] mt-1" style={{ color: C.muted }}>
+                        Se usa como contacto por defecto al publicar una mascota.
+                      </p>
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={handleSaveProfile}
+                        disabled={profileSaving}
+                        className="flex-1 rounded-xl py-2.5 text-sm font-bold text-white disabled:opacity-60 flex items-center justify-center gap-1.5"
+                        style={{ background: C.redSolid }}
+                      >
+                        {profileSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Guardar"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingProfile(false)}
+                        disabled={profileSaving}
+                        className="text-sm font-semibold px-3 disabled:opacity-60"
+                        style={{ color: C.muted }}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </main>
 
       {/* Navegación inferior — más redondeada y con más peso visual propio,
@@ -3877,6 +4447,8 @@ export default function FelpusMatcher() {
         isLoggedIn={!!user}
         onDelete={handleDeleteReport}
         onFlagReport={handleFlagReport}
+        saved={!!detailReport && savedReportIds.has(detailReport.id)}
+        onToggleSaved={handleToggleSaved}
       />
 
       <footer className="max-w-2xl mx-auto px-4 pb-24 pt-2 space-y-1.5">

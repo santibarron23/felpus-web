@@ -927,3 +927,52 @@ drop policy if exists "felpus_photos_admin_delete" on storage.objects;
 create policy "felpus_photos_admin_delete"
   on storage.objects for delete
   using (bucket_id = 'felpus-photos' and auth.email() = 'santiagobarronlf@gmail.com');
+
+-- ---------------------------------------------------------------------------
+-- "Mi Felpus" — perfil personal + mascotas guardadas.
+--
+-- Perfil: NO se crea una tabla nueva. contributors YA ES, en los hechos, la
+-- tabla de perfil por cuenta (contributors.id = auth.uid()::text, ver
+-- awardPoints/bumpStreak en store.js — el comentario viejo de más arriba
+-- que decía "apodo normalizado" quedó desactualizado, hoy es el uuid del
+-- usuario) — reutilizarla evita el "User separado de PetReport" que
+-- duplicaría nickname/id sin necesidad. Se le agrega una sola columna
+-- nueva: el WhatsApp de perfil, que sirve como valor por defecto para
+-- publicar (mismo rol que "recordar contacto" en localStorage, ver
+-- PhoneInput.jsx, pero ligado a la cuenta en vez de al dispositivo — así
+-- no queda un teléfono de perfil y otro de reportes que puedan
+-- desincronizarse: store.js siempre escribe/lee este mismo campo).
+-- No se agrega un campo de email: el de la cuenta (auth.users.email) ya es
+-- la fuente real, mostrar uno editable aparte sería el "distintos teléfonos
+-- inconsistentes" que se pidió evitar, ahora para email.
+-- ---------------------------------------------------------------------------
+alter table contributors add column if not exists whatsapp text;
+alter table contributors drop constraint if exists contributors_whatsapp_len;
+alter table contributors add constraint contributors_whatsapp_len check (whatsapp is null or char_length(whatsapp) <= 25);
+
+-- Mascotas guardadas: relación pura User×Report, sin duplicar ningún dato
+-- del reporte (ni foto, ni zona, ni nada) — la UI vuelve a pedirle el
+-- reporte completo a "reports" por id cuando hace falta mostrarlo. La
+-- primary key compuesta (user_id, report_id) es lo que impide guardar el
+-- mismo reporte dos veces a nivel de base, no solo en el cliente.
+create table if not exists saved_reports (
+  user_id uuid not null,
+  report_id text not null references reports(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_id, report_id)
+);
+create index if not exists saved_reports_user_idx on saved_reports (user_id, created_at desc);
+alter table saved_reports enable row level security;
+
+-- Solo la propia cuenta puede ver/guardar/quitar sus guardados — ni con la
+-- anon key ni manipulando la URL se puede leer ni tocar los guardados de
+-- otra persona (el control real es este, no el que el cliente solo pida
+-- "los míos").
+drop policy if exists "saved_reports_select_own" on saved_reports;
+create policy "saved_reports_select_own" on saved_reports for select using (auth.uid() = user_id);
+
+drop policy if exists "saved_reports_insert_own" on saved_reports;
+create policy "saved_reports_insert_own" on saved_reports for insert with check (auth.uid() = user_id);
+
+drop policy if exists "saved_reports_delete_own" on saved_reports;
+create policy "saved_reports_delete_own" on saved_reports for delete using (auth.uid() = user_id);

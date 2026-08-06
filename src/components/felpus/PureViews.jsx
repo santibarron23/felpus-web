@@ -33,6 +33,7 @@ import {
   RefreshCw,
   Check,
   Flag,
+  Bookmark,
 } from "lucide-react";
 import { scoreLabel, isRecent, formatFechaAR, buildShareText, reportPhotoAlt, COLOR_OPTIONS, REPORT_FLAG_REASONS } from "../../lib/matching";
 import { SITE_URL } from "../../lib/site";
@@ -126,14 +127,35 @@ export function MatchBreakdownChips({ items }) {
   );
 }
 
-export function ReportCard({ report, onOpenDetail, children }) {
+export function ReportCard({ report, onOpenDetail, saved, onToggleSaved, children }) {
   const C = useTheme();
   const resuelto = !!report.resuelto;
   return (
     <div
-      className="felpus-card-hover group bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl border overflow-hidden shadow-sm"
+      className="felpus-card-hover group relative bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl border overflow-hidden shadow-sm"
       style={{ borderColor: resuelto ? C.successBorder : C.border, opacity: resuelto ? 0.75 : 1 }}
     >
+      {/* Guardar — HERMANO del <button> de abajo, no hijo: un <button>
+          dentro de otro <button> es HTML inválido (el navegador lo repara
+          moviendo el interno afuera al parsear, lo que React detecta como
+          mismatch de hidratación) — por eso vive posicionado absoluto sobre
+          toda la tarjeta en vez de anidado adentro de la foto. onToggleSaved
+          es opcional a propósito: los llamados existentes de ReportCard
+          (Explorar, "resultado", coincidencias expandidas) siguen sin este
+          botón hasta que de verdad tenga sentido ahí; solo aparece donde
+          FelpusMatcher lo pasa explícitamente. Al lado opuesto de "nuevo"
+          (arriba-izquierda) para no competir por el mismo rincón de la foto. */}
+      {onToggleSaved && (
+        <button
+          type="button"
+          onClick={() => onToggleSaved(report)}
+          aria-label={saved ? "Quitar de guardadas" : "Guardar"}
+          aria-pressed={!!saved}
+          className="absolute top-2 left-2 z-10 w-6 h-6 rounded-full flex items-center justify-center bg-black/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+        >
+          <Bookmark className="w-3.5 h-3.5" fill={saved ? "#fff" : "none"} style={{ color: "#fff" }} />
+        </button>
+      )}
       <button
         type="button"
         onClick={() => onOpenDetail && onOpenDetail(report)}
@@ -208,7 +230,7 @@ function contactMessage(report) {
   return `Hola! Vi en Felpus tu publicación de ${nombre} en ${report.zona}. Creo que puedo ayudar.\n${SITE_URL}/r/${report.id}`;
 }
 
-export function DetailModal({ report, contactStatus, onRetryContact, onClose, onResolve, confirming, onConfirm, onCancelConfirm, isLoggedIn, isOwner, onDelete, onFlagReport }) {
+export function DetailModal({ report, contactStatus, onRetryContact, onClose, onResolve, confirming, onConfirm, onCancelConfirm, isLoggedIn, isOwner, onDelete, onFlagReport, saved, onToggleSaved }) {
   const C = useTheme();
   const [activeIndex, setActiveIndex] = useState(0);
   const [generatingFlyer, setGeneratingFlyer] = useState(false);
@@ -453,6 +475,28 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
             </div>
           )}
           <div className="flex gap-2 pt-2">
+            {/* Guardar no tiene sentido en el propio reporte (isOwner) — ni
+                onToggleSaved llega en ese caso desde FelpusMatcher, pero el
+                chequeo acá también documenta por qué. Botón de ancho fijo
+                (no flex-1 como los otros dos): con texto sumado a
+                Compartir/Flyer, tres botones de igual ancho se apretaban
+                demasiado en mobile — un ícono solo, con aria-label, alcanza. */}
+            {onToggleSaved && !isOwner && (
+              <button
+                type="button"
+                onClick={() => onToggleSaved(report)}
+                aria-label={saved ? "Quitar de guardadas" : "Guardar"}
+                aria-pressed={!!saved}
+                className="shrink-0 w-11 flex items-center justify-center border rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                style={{
+                  borderColor: saved ? C.red : C.border,
+                  color: saved ? C.red : C.text,
+                  background: saved ? C.brandTintBg : "transparent",
+                }}
+              >
+                <Bookmark className="w-4 h-4" fill={saved ? "currentColor" : "none"} />
+              </button>
+            )}
             <ShareButton
               report={report}
               wrapperClassName="relative flex-1"

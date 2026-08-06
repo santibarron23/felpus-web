@@ -14,7 +14,17 @@ const { supabaseMock } = vi.hoisted(() => {
 
 vi.mock("./supabaseClient", () => ({ supabase: supabaseMock }));
 
-const { fetchReports, createReport, fetchReportContact, awardPoints } = await import("./store");
+const {
+  fetchReports,
+  createReport,
+  fetchReportContact,
+  awardPoints,
+  fetchProfile,
+  updateProfile,
+  fetchSavedReportIds,
+  saveReport,
+  unsaveReport,
+} = await import("./store");
 
 // Imita el query builder encadenable de supabase-js: cada método de la
 // cadena (.select/.eq/.order/...) devuelve el mismo objeto, y el objeto es
@@ -37,6 +47,10 @@ function missingColumnError(columnName) {
 
 function missingFunctionError() {
   return { code: "PGRST202", message: "Could not find the function public.get_report_contact(p_report_id) in the schema cache" };
+}
+
+function missingTableError(table) {
+  return { code: "PGRST205", message: `Could not find the table 'public.${table}' in the schema cache` };
 }
 
 beforeEach(() => {
@@ -291,6 +305,107 @@ describe("awardPoints", () => {
     const realError = { code: "P0001", message: "Solo podés sumarte puntos a vos mismo con este motivo." };
     supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: realError });
     await expect(awardPoints("otro-user", "X", 20, "reencuentro")).rejects.toBe(realError);
+    expect(supabaseMock.from).not.toHaveBeenCalled();
+  });
+});
+
+describe("fetchProfile", () => {
+  it("sin userId, devuelve null sin llamar a la base", async () => {
+    expect(await fetchProfile(null)).toBeNull();
+    expect(supabaseMock.from).not.toHaveBeenCalled();
+  });
+
+  it("devuelve la fila de contributors del usuario", async () => {
+    supabaseMock.from.mockReturnValueOnce(
+      makeBuilder({ data: { id: "user-1", nickname: "Ana", whatsapp: "5493875885427", points: 30 }, error: null })
+    );
+    expect(await fetchProfile("user-1")).toMatchObject({ nickname: "Ana", whatsapp: "5493875885427" });
+  });
+
+  it("sin fila todavía (nunca reportó ni confirmó nada), devuelve null — no es un error", async () => {
+    supabaseMock.from.mockReturnValueOnce(makeBuilder({ data: null, error: null }));
+    expect(await fetchProfile("user-nuevo")).toBeNull();
+  });
+});
+
+describe("updateProfile", () => {
+  it("sin userId, rechaza sin llamar a la base", async () => {
+    await expect(updateProfile(null, { nickname: "Ana" })).rejects.toThrow(/iniciar sesión/i);
+    expect(supabaseMock.from).not.toHaveBeenCalled();
+  });
+
+  it("hace upsert con id/nickname/whatsapp, sin tocar points/reportes/etc", async () => {
+    const builder = makeBuilder({ error: null });
+    supabaseMock.from.mockReturnValueOnce(builder);
+    await updateProfile("user-1", { nickname: "Ana", whatsapp: "+5493875885427" });
+    const upserted = builder.upsert.mock.calls[0][0];
+    expect(upserted).toMatchObject({ id: "user-1", nickname: "Ana", whatsapp: "+5493875885427" });
+    expect(upserted.points).toBeUndefined();
+  });
+
+  it("whatsapp vacío se guarda como null, no como string vacío", async () => {
+    const builder = makeBuilder({ error: null });
+    supabaseMock.from.mockReturnValueOnce(builder);
+    await updateProfile("user-1", { nickname: "Ana", whatsapp: "" });
+    expect(builder.upsert.mock.calls[0][0].whatsapp).toBeNull();
+  });
+
+  it("si la columna whatsapp todavía no existe (migración no corrida), da un mensaje claro", async () => {
+    supabaseMock.from.mockReturnValueOnce(
+      makeBuilder({ error: { code: "PGRST204", message: "Could not find the 'whatsapp' column of 'contributors'" } })
+    );
+    await expect(updateProfile("user-1", { nickname: "Ana", whatsapp: "+54" })).rejects.toThrow(/todavía no está disponible/i);
+  });
+});
+
+describe("fetchSavedReportIds / saveReport / unsaveReport", () => {
+  it("sin userId, fetchSavedReportIds devuelve [] sin llamar a la base", async () => {
+    expect(await fetchSavedReportIds(null)).toEqual([]);
+    expect(supabaseMock.from).not.toHaveBeenCalled();
+  });
+
+  it("fetchSavedReportIds devuelve solo los ids, no el reporte completo", async () => {
+    supabaseMock.from.mockReturnValueOnce(
+      makeBuilder({ data: [{ report_id: "r1" }, { report_id: "r2" }], error: null })
+    );
+    expect(await fetchSavedReportIds("user-1")).toEqual(["r1", "r2"]);
+  });
+
+  it("fetchSavedReportIds falla abierto (sin guardados) si la tabla todavía no existe", async () => {
+    supabaseMock.from.mockReturnValueOnce(makeBuilder({ data: null, error: missingTableError("saved_reports") }));
+    expect(await fetchSavedReportIds("user-1")).toEqual([]);
+  });
+
+  it("saveReport hace upsert con onConflict/ignoreDuplicates (evita duplicados en un doble click)", async () => {
+    const builder = makeBuilder({ error: null });
+    supabaseMock.from.mockReturnValueOnce(builder);
+    await saveReport("user-1", "r1");
+    expect(builder.upsert).toHaveBeenCalledWith(
+      { user_id: "user-1", report_id: "r1" },
+      { onConflict: "user_id,report_id", ignoreDuplicates: true }
+    );
+  });
+
+  it("saveReport sin userId rechaza pidiendo iniciar sesión", async () => {
+    await expect(saveReport(null, "r1")).rejects.toThrow(/iniciá sesión/i);
+  });
+
+  it("saveReport da un mensaje claro si la tabla todavía no existe", async () => {
+    supabaseMock.from.mockReturnValueOnce(makeBuilder({ error: missingTableError("saved_reports") }));
+    await expect(saveReport("user-1", "r1")).rejects.toThrow(/todavía no está disponible/i);
+  });
+
+  it("unsaveReport borra por user_id + report_id", async () => {
+    const builder = makeBuilder({ error: null });
+    supabaseMock.from.mockReturnValueOnce(builder);
+    await unsaveReport("user-1", "r1");
+    expect(builder.delete).toHaveBeenCalled();
+    expect(builder.eq).toHaveBeenCalledWith("user_id", "user-1");
+    expect(builder.eq).toHaveBeenCalledWith("report_id", "r1");
+  });
+
+  it("unsaveReport sin userId no hace nada (no rompe si se llama sin sesión)", async () => {
+    await unsaveReport(null, "r1");
     expect(supabaseMock.from).not.toHaveBeenCalled();
   });
 });
