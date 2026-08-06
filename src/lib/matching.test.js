@@ -33,6 +33,7 @@ import {
   RAZA_OPTIONS_GATO,
   RAZA_NO_SE,
   SCORE_MINIMO,
+  computeAdminBreakdowns,
 } from "./matching";
 
 // Reporte base reutilizable — cada test sobreescribe solo lo que le importa,
@@ -718,5 +719,78 @@ describe("sanitizePhoneForWhatsapp", () => {
   it("devuelve cadena vacía para entradas vacías/nulas", () => {
     expect(sanitizePhoneForWhatsapp("")).toBe("");
     expect(sanitizePhoneForWhatsapp(null)).toBe("");
+  });
+});
+
+describe("computeAdminBreakdowns", () => {
+  function findLabel(breakdown, label) {
+    return breakdown.find((e) => e.label === label);
+  }
+
+  it("con lista vacía, todos los desgloses quedan vacíos y total en 0", () => {
+    const result = computeAdminBreakdowns([]);
+    expect(result.total).toBe(0);
+    expect(result.porEspecie).toEqual([]);
+    expect(result.porRazaPerdida).toEqual([]);
+  });
+
+  it("no rompe si le pasan undefined/null en vez de un array", () => {
+    expect(computeAdminBreakdowns(undefined).total).toBe(0);
+    expect(computeAdminBreakdowns(null).total).toBe(0);
+  });
+
+  it("porEspecie/porTamano/porSexo/porEdad: cuentan y calculan % sobre el total general", () => {
+    const reports = [
+      makeReport({ id: "1", especie: "perro", tamano: "mediano", sexo: "Macho", edad: "Adulto (3-8 años)" }),
+      makeReport({ id: "2", especie: "perro", tamano: "chico", sexo: "Hembra", edad: "Adulto (3-8 años)" }),
+      makeReport({ id: "3", especie: "gato", tamano: "chico", sexo: "Hembra", edad: "Cachorro/cría (0-1 año)" }),
+      makeReport({ id: "4", especie: "gato", tamano: "chico", sexo: "Hembra", edad: "Cachorro/cría (0-1 año)" }),
+    ];
+    const result = computeAdminBreakdowns(reports);
+    expect(result.total).toBe(4);
+    expect(findLabel(result.porEspecie, "Perro")).toEqual({ label: "Perro", count: 2, pct: 50 });
+    expect(findLabel(result.porEspecie, "Gato")).toEqual({ label: "Gato", count: 2, pct: 50 });
+    expect(findLabel(result.porTamano, "Chico")).toEqual({ label: "Chico", count: 3, pct: 75 });
+    expect(findLabel(result.porEdad, "Cachorro/cría (0-1 año)").count).toBe(2);
+    // Ordenado de mayor a menor cantidad
+    expect(result.porTamano[0].label).toBe("Chico");
+  });
+
+  it('valores vacíos/undefined caen en "Sin especificar", no desaparecen', () => {
+    const reports = [
+      makeReport({ id: "1", provincia: "Salta" }),
+      makeReport({ id: "2", provincia: "" }),
+      makeReport({ id: "3", provincia: undefined }),
+    ];
+    const result = computeAdminBreakdowns(reports);
+    expect(findLabel(result.porProvincia, "Sin especificar")).toEqual({ label: "Sin especificar", count: 2, pct: 66.7 });
+    expect(findLabel(result.porProvincia, "Salta").count).toBe(1);
+    // La suma de todas las filas sigue dando el total — nada se pierde.
+    const sum = result.porProvincia.reduce((s, e) => s + e.count, 0);
+    expect(sum).toBe(3);
+  });
+
+  it("con más de 6 valores distintos, agrupa el resto en una fila Otras", () => {
+    const reports = Array.from({ length: 8 }, (_, i) => makeReport({ id: `r${i}`, ciudad: `Ciudad ${i}` }));
+    const result = computeAdminBreakdowns(reports);
+    expect(result.porCiudad).toHaveLength(7); // 6 + "Otras"
+    const otras = findLabel(result.porCiudad, "Otras");
+    expect(otras.count).toBe(2);
+    const sum = result.porCiudad.reduce((s, e) => s + e.count, 0);
+    expect(sum).toBe(8);
+  });
+
+  it("porRazaPerdida/porRazaEncontrada: % calculado sobre el total de ESA categoría, no el general", () => {
+    const reports = [
+      makeReport({ id: "1", tipo: "perdida", raza: "Labrador" }),
+      makeReport({ id: "2", tipo: "perdida", raza: "Labrador" }),
+      makeReport({ id: "3", tipo: "perdida", raza: "Mestizo" }),
+      makeReport({ id: "4", tipo: "encontrada", raza: "Labrador" }),
+    ];
+    const result = computeAdminBreakdowns(reports);
+    // 2 de 3 perdidas son Labrador -> 66.7%, no 2 de 4 (50%)
+    expect(findLabel(result.porRazaPerdida, "Labrador")).toEqual({ label: "Labrador", count: 2, pct: 66.7 });
+    // 1 de 1 encontrada es Labrador -> 100%
+    expect(findLabel(result.porRazaEncontrada, "Labrador")).toEqual({ label: "Labrador", count: 1, pct: 100 });
   });
 });

@@ -985,6 +985,73 @@ export function reportPhotoAlt(report) {
   return `${tipoTxt}: ${nombreTxt}${especieTxt}${colorTxt ? ` ${colorTxt.toLowerCase()}` : ""}`;
 }
 
+// --- Panel de administrador: desgloses de métricas ---
+// Corre 100% en el cliente sobre la lista de reportes que ya se trae
+// completa para la pestaña "Reportes" del panel (adminAllReports en
+// FelpusMatcher.jsx) — no hace falta ninguna función SQL nueva ni
+// migración: es la forma más simple y segura de sumar desgloses (zona,
+// raza, edad, etc.) sin tocar el schema ni agregar otro viaje de red.
+const ESPECIE_LABELS = { perro: "Perro", gato: "Gato", otro: "Otro" };
+const TAMANO_LABELS = { chico: "Chico", mediano: "Mediano", grande: "Grande" };
+
+// Cuenta ocurrencias de lo que devuelva keyFn para cada reporte — vacíos
+// (raza sin completar, ciudad sin la migración corrida, etc.) caen todos
+// juntos en "emptyLabel" en vez de desaparecer silenciosamente: es preferible
+// que el admin VEA cuántos reportes todavía no tienen ese dato, a que el
+// desglose sume menos que el total y parezca un error.
+function countBy(reports, keyFn, emptyLabel = "Sin especificar") {
+  const counts = new Map();
+  reports.forEach((r) => {
+    const raw = keyFn(r);
+    const label = raw && String(raw).trim() ? String(raw).trim() : emptyLabel;
+    counts.set(label, (counts.get(label) || 0) + 1);
+  });
+  return counts;
+}
+
+// Ordena de mayor a menor cantidad y calcula el porcentaje sobre `total`
+// (no necesariamente el total general — porRazaPerdida, por ejemplo, calcula
+// el porcentaje sobre el total de PERDIDAS, no de todos los reportes). Si hay
+// más entradas que `limit`, las menos frecuentes se agrupan en una fila
+// "Otras" al final — sin límite, una ciudad con un solo reporte cada una
+// podría generar una lista interminable.
+function toSortedBreakdown(counts, total, limit) {
+  const entries = Array.from(counts.entries())
+    .map(([label, count]) => ({ label, count, pct: total ? Math.round((count / total) * 1000) / 10 : 0 }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "es"));
+  if (!limit || entries.length <= limit) return entries;
+  const top = entries.slice(0, limit);
+  const restCount = entries.slice(limit).reduce((sum, e) => sum + e.count, 0);
+  if (restCount > 0) {
+    top.push({ label: "Otras", count: restCount, pct: total ? Math.round((restCount / total) * 1000) / 10 : 0 });
+  }
+  return top;
+}
+
+// Cada desglose es un array de { label, count, pct }, ya ordenado de mayor a
+// menor. porRazaPerdida/porRazaEncontrada calculan el porcentaje sobre el
+// total de esa categoría (perdidas o encontradas) en vez del total general,
+// para responder de verdad "qué % de las PERDIDAS son de tal raza" — sobre
+// el total general esos números serían mucho más chicos y menos útiles.
+export function computeAdminBreakdowns(reports) {
+  const list = Array.isArray(reports) ? reports : [];
+  const total = list.length;
+  const perdidas = list.filter((r) => r.tipo === "perdida");
+  const encontradas = list.filter((r) => r.tipo === "encontrada");
+
+  return {
+    total,
+    porEspecie: toSortedBreakdown(countBy(list, (r) => ESPECIE_LABELS[r.especie] || r.especie), total),
+    porTamano: toSortedBreakdown(countBy(list, (r) => TAMANO_LABELS[r.tamano] || r.tamano), total),
+    porSexo: toSortedBreakdown(countBy(list, (r) => r.sexo), total),
+    porEdad: toSortedBreakdown(countBy(list, (r) => r.edad), total),
+    porProvincia: toSortedBreakdown(countBy(list, (r) => r.provincia), total, 6),
+    porCiudad: toSortedBreakdown(countBy(list, (r) => r.ciudad), total, 6),
+    porRazaPerdida: toSortedBreakdown(countBy(perdidas, (r) => r.raza), perdidas.length, 6),
+    porRazaEncontrada: toSortedBreakdown(countBy(encontradas, (r) => r.raza), encontradas.length, 6),
+  };
+}
+
 export function emptyForm() {
   return {
     especie: "perro",

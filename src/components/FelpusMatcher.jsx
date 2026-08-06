@@ -84,6 +84,7 @@ import {
   PUNTOS_REENCUENTRO,
   PUNTOS_BONO_ORIGINAL,
   SCORE_MINIMO,
+  computeAdminBreakdowns,
 } from "../lib/matching";
 import {
   fetchReports,
@@ -264,6 +265,42 @@ function ProfileWhatsappLine({ value, textClassName = "text-xs" }) {
     <p className={`${textClassName} truncate flex items-center gap-1`} style={{ color: C.muted }}>
       <MessageCircle className="w-3 h-3 shrink-0" /> {display}
     </p>
+  );
+}
+
+// Una tarjeta de desglose del panel de admin (ver computeAdminBreakdowns en
+// matching.js): título + lista de barras horizontales, cada una con
+// etiqueta, cantidad y porcentaje. Mismo patrón que ProfileWhatsappLine de
+// arriba — componente a nivel de módulo con su propio useTheme(), no recibe
+// C por prop, para no tener que enhebrarlo desde FelpusMatcher.
+function AdminBreakdownCard({ title, items }) {
+  const C = useTheme();
+  return (
+    <div className="rounded-xl p-3.5 border" style={{ borderColor: C.border, background: C.surface }}>
+      <p className="text-[11px] uppercase font-bold mb-2.5" style={{ color: C.muted }}>{title}</p>
+      {items.length === 0 ? (
+        <p className="text-xs" style={{ color: C.muted }}>Todavía no hay datos.</p>
+      ) : (
+        <div className="space-y-2">
+          {items.map((item) => (
+            <div key={item.label}>
+              <div className="flex items-baseline justify-between gap-2 mb-0.5">
+                <span className="text-xs font-semibold truncate" style={{ color: C.text }}>{item.label}</span>
+                <span className="felpus-mono text-[11px] shrink-0" style={{ color: C.muted }}>
+                  {item.count} · {item.pct}%
+                </span>
+              </div>
+              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: C.surfaceMuted }}>
+                <div
+                  className="h-full rounded-full"
+                  style={{ width: `${Math.max(item.pct, item.count > 0 ? 2 : 0)}%`, background: C.orangeInkSolid }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -647,6 +684,17 @@ export default function FelpusMatcher() {
     if (activeTab === "admin" && isAdmin) loadAdminData();
   }, [activeTab, isAdmin, loadAdminData]);
 
+  // adminListFlaggedReports() devuelve una forma recortada (reportId,
+  // fotoUrl, nombre... lo justo para la fila de denuncias) — no alcanza
+  // para abrir el DetailModal completo (le faltan descripcion, fotos[],
+  // contacto, etc.). adminAllReports en cambio SÍ trae el reporte
+  // completo (misma forma que usa toda la app) y siempre se carga en
+  // paralelo con las denuncias (ver loadAdminData) — se busca ahí por id.
+  function openAdminFlaggedReportDetail(flaggedReportId) {
+    const full = adminAllReports.find((r) => r.id === flaggedReportId);
+    if (full) openReportDetail(full);
+  }
+
   // Elimina de verdad (foto de Storage + fila) — no hay deshacer, por eso
   // pasa por adminDeleteConfirmId en vez de borrar directo al primer click.
   async function handleAdminDelete(report) {
@@ -683,6 +731,13 @@ export default function FelpusMatcher() {
       setAdminBusyId(null);
     }
   }
+
+  // Desgloses de la pestaña "Métricas" (especie/tamaño/sexo/edad/
+  // provincia/ciudad/raza por tipo) — se calculan 100% en el cliente a
+  // partir de adminAllReports, que ya se trae completo para "Reportes"
+  // (ver loadAdminData): no hace falta ningún viaje de red extra ni
+  // función SQL nueva (ver computeAdminBreakdowns en matching.js).
+  const adminBreakdowns = useMemo(() => computeAdminBreakdowns(adminAllReports), [adminAllReports]);
 
   const adminSearchNormalized = normalizeText(adminSearch.trim());
   const adminFilteredReports = adminSearchNormalized
@@ -3851,6 +3906,27 @@ export default function FelpusMatcher() {
                     <p className="felpus-mono text-xl font-bold" style={{ color: C.text }}>{value ?? "–"}</p>
                   </div>
                 ))}
+
+                {/* Desgloses (especie/tamaño/sexo/edad/ubicación/raza) —
+                    calculados en el cliente sobre adminAllReports, ver
+                    computeAdminBreakdowns en matching.js. col-span-2 para
+                    que cada tarjeta use todo el ancho de la grilla de 2
+                    columnas de arriba, en vez de quedar apretada a la mitad. */}
+                <div className="col-span-2">
+                  <p className="text-xs font-bold mt-2 mb-2" style={{ color: C.text }}>
+                    Desgloses ({adminBreakdowns.total} reporte{adminBreakdowns.total === 1 ? "" : "s"})
+                  </p>
+                </div>
+                <div className="col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <AdminBreakdownCard title="Por especie" items={adminBreakdowns.porEspecie} />
+                  <AdminBreakdownCard title="Por tamaño" items={adminBreakdowns.porTamano} />
+                  <AdminBreakdownCard title="Por sexo" items={adminBreakdowns.porSexo} />
+                  <AdminBreakdownCard title="Por edad" items={adminBreakdowns.porEdad} />
+                  <AdminBreakdownCard title="Por provincia" items={adminBreakdowns.porProvincia} />
+                  <AdminBreakdownCard title="Por ciudad" items={adminBreakdowns.porCiudad} />
+                  <AdminBreakdownCard title="Razas más perdidas" items={adminBreakdowns.porRazaPerdida} />
+                  <AdminBreakdownCard title="Razas más encontradas" items={adminBreakdowns.porRazaEncontrada} />
+                </div>
               </div>
             )}
 
@@ -3860,7 +3936,25 @@ export default function FelpusMatcher() {
               ) : (
                 <div className="space-y-2">
                   {adminFlags.map((f) => (
-                    <div key={f.reportId} className="rounded-xl p-3 border space-y-2" style={{ borderColor: C.border, background: C.surface }}>
+                    <div
+                      key={f.reportId}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openAdminFlaggedReportDetail(f.reportId)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openAdminFlaggedReportDetail(f.reportId);
+                        }
+                      }}
+                      // Mismo patrón que la fila de "Reportes" (ver más
+                      // abajo): toda la tarjeta abre el detalle completo
+                      // para poder ver la publicación denunciada antes de
+                      // decidir, salvo la fila de botones de acción (tiene
+                      // su propio stopPropagation).
+                      className="rounded-xl p-3 border space-y-2 text-left cursor-pointer felpus-card-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                      style={{ borderColor: C.border, background: C.surface }}
+                    >
                       <div className="flex items-start gap-2.5">
                         <div className="relative w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)]">
                           <Image src={f.fotoUrl} alt="" fill sizes="48px" className="object-cover" />
@@ -3887,7 +3981,10 @@ export default function FelpusMatcher() {
                           )}
                         </div>
                       </div>
-                      <div className="flex gap-2">
+                      {/* stopPropagation: sin esto, tocar cualquiera de
+                          estos botones también dispara el onClick de la
+                          tarjeta entera y abre el detalle por encima. */}
+                      <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
                           onClick={() => handleAdminToggleOculto({ id: f.reportId, oculto: f.oculto })}
