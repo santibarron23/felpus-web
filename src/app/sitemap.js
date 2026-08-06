@@ -34,6 +34,18 @@ export default async function sitemap() {
       changeFrequency: "daily",
       priority: 1,
     },
+    {
+      url: `${SITE_URL}/privacidad`,
+      lastModified: new Date("2026-08-06"),
+      changeFrequency: "yearly",
+      priority: 0.3,
+    },
+    {
+      url: `${SITE_URL}/terminos`,
+      lastModified: new Date("2026-08-06"),
+      changeFrequency: "yearly",
+      priority: 0.3,
+    },
     ...reports.map((r) => ({
       url: `${SITE_URL}/r/${r.id}`,
       lastModified: r.creado_en ? new Date(r.creado_en) : new Date(),

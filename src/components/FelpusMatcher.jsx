@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import {
   PawPrint,
   Search,
@@ -4457,6 +4458,18 @@ export default function FelpusMatcher() {
         </p>
         <p className="text-[10px] flex items-center gap-1 justify-center" style={{ color: C.muted }}>
           <HelpCircle className="w-3 h-3" /> Prototipo — no reemplaza denunciar ante autoridades o refugios locales.
+        </p>
+        {/* Enlaces legales — únicos dos links de "salida" de la SPA (todo el
+            resto navega con goToTab(), sin cambiar de ruta), por eso van acá
+            en vez de ocupar un lugar en la bottom nav de 4 ítems. */}
+        <p className="text-[10px] flex items-center gap-1.5 justify-center pt-0.5" style={{ color: C.muted }}>
+          <Link href="/privacidad" className="underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded">
+            Política de Privacidad
+          </Link>
+          <span aria-hidden="true">·</span>
+          <Link href="/terminos" className="underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded">
+            Términos y Condiciones
+          </Link>
         </p>
       </footer>
     </div>
