@@ -28,6 +28,10 @@ function rowToReport(row) {
     edad: row.edad || "",
     peso: row.peso || "",
     zona: row.zona,
+    // Estructuradas a partir de Google Places (ver ZonaAutocomplete.jsx) —
+    // vacías para reportes viejos o publicados con zona tipeada a mano.
+    ciudad: row.ciudad || "",
+    provincia: row.provincia || "",
     lat: row.lat,
     lng: row.lng,
     fecha: row.fecha,
@@ -109,7 +113,7 @@ const REPORT_LIST_BASE_FIELDS = [
 // select— así que fetchReports/createReport reintentan automáticamente sin
 // la columna puntual que falte, en vez de dejar la app entera sin poder
 // cargar/publicar reportes hasta que se corra la migración.
-const REPORT_LIST_OPTIONAL_COLUMNS = ["raza", "detalles", "oculto"];
+const REPORT_LIST_OPTIONAL_COLUMNS = ["raza", "detalles", "oculto", "ciudad", "provincia"];
 
 function reportListColumns(excluded) {
   const fields = [...REPORT_LIST_BASE_FIELDS];
@@ -352,6 +356,8 @@ export async function createReport(report) {
     edad: report.edad || null,
     peso: report.peso || null,
     zona: report.zona,
+    ciudad: report.ciudad || null,
+    provincia: report.provincia || null,
     lat: report.lat,
     lng: report.lng,
     fecha: report.fecha,

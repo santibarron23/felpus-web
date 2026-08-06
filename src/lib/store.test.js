@@ -137,6 +137,24 @@ describe("fetchReports", () => {
     expect(result[0].raza).toBe("");
   });
 
+  it("con ciudad/provincia disponibles, las mapea al reporte", async () => {
+    supabaseMock.from.mockReturnValueOnce(
+      makeBuilder({ data: [baseRow({ ciudad: "Salta", provincia: "Salta" })], error: null })
+    );
+    const result = await fetchReports();
+    expect(result[0]).toMatchObject({ ciudad: "Salta", provincia: "Salta" });
+  });
+
+  it("si falta la columna 'ciudad' (migración no corrida), reintenta sin ella y de ahí en más funciona", async () => {
+    supabaseMock.from
+      .mockReturnValueOnce(makeBuilder({ data: null, error: missingColumnError("ciudad") }))
+      .mockReturnValueOnce(makeBuilder({ data: [baseRow({ ciudad: undefined, provincia: undefined })], error: null }));
+    const result = await fetchReports();
+    expect(supabaseMock.from).toHaveBeenCalledTimes(2);
+    expect(result[0].ciudad).toBe("");
+    expect(result[0].provincia).toBe("");
+  });
+
   it("si faltan 'raza' Y 'detalles', reintenta hasta 3 veces y termina funcionando", async () => {
     supabaseMock.from
       .mockReturnValueOnce(makeBuilder({ data: null, error: missingColumnError("raza") }))
@@ -176,6 +194,8 @@ describe("createReport", () => {
     edad: "",
     peso: "",
     zona: "Recoleta",
+    ciudad: "Buenos Aires",
+    provincia: "Buenos Aires",
     lat: null,
     lng: null,
     fecha: "2026-08-05",
@@ -188,10 +208,24 @@ describe("createReport", () => {
   };
 
   it("inserta en un solo intento cuando todas las columnas existen", async () => {
-    supabaseMock.from.mockReturnValueOnce(makeBuilder({ error: null }));
+    const builder = makeBuilder({ error: null });
+    supabaseMock.from.mockReturnValueOnce(builder);
     const saved = await createReport(draft);
     expect(supabaseMock.from).toHaveBeenCalledTimes(1);
     expect(saved.foto).toContain("https://fake.supabase.co/");
+    expect(builder.insert.mock.calls[0][0]).toMatchObject({ ciudad: "Buenos Aires", provincia: "Buenos Aires" });
+  });
+
+  it("si falta 'ciudad' (migración no corrida), reintenta sin esa clave y no pierde el resto", async () => {
+    const builder1 = makeBuilder({ error: missingColumnError("ciudad") });
+    const builder2 = makeBuilder({ error: null });
+    supabaseMock.from.mockReturnValueOnce(builder1).mockReturnValueOnce(builder2);
+
+    await createReport(draft);
+
+    const secondInsertRow = builder2.insert.mock.calls[0][0];
+    expect(secondInsertRow).not.toHaveProperty("ciudad");
+    expect(secondInsertRow.provincia).toBe("Buenos Aires");
   });
 
   it("si falta 'detalles', reintenta el insert sin esa clave en la fila", async () => {

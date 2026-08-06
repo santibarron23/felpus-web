@@ -52,12 +52,24 @@ export default function ZonaAutocomplete({
         el.addEventListener("gmp-select", async (event) => {
           try {
             const place = event.placePrediction.toPlace();
-            await place.fetchFields({ fields: ["displayName", "formattedAddress", "location"] });
+            await place.fetchFields({
+              fields: ["displayName", "formattedAddress", "location", "addressComponents"],
+            });
             const zona = place.displayName || place.formattedAddress;
             if (!zona) return;
             const lat = place.location?.lat();
             const lng = place.location?.lng();
-            onSelectPlace(zona, lat, lng);
+            // Ciudad/provincia, cuando Google las devuelve como parte de la
+            // dirección elegida (no todas las sugerencias las traen, ej. un
+            // punto de interés muy específico) — se usan para completar la
+            // línea de zona del flyer imprimible (ver composeZonaDisplay en
+            // flyer.js). "locality" es el tipo que Google usa para "ciudad"
+            // en la gran mayoría de direcciones argentinas.
+            const components = place.addressComponents || [];
+            const findComponent = (type) => components.find((c) => c.types?.includes(type))?.longText || "";
+            const ciudad = findComponent("locality");
+            const provincia = findComponent("administrative_area_level_1");
+            onSelectPlace(zona, lat, lng, ciudad, provincia);
           } catch (e) {
             logError("No se pudo leer el lugar seleccionado", e);
           }

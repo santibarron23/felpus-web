@@ -976,3 +976,19 @@ create policy "saved_reports_insert_own" on saved_reports for insert with check 
 
 drop policy if exists "saved_reports_delete_own" on saved_reports;
 create policy "saved_reports_delete_own" on saved_reports for delete using (auth.uid() = user_id);
+
+-- Ciudad/provincia estructuradas: además de "zona" (texto libre que ya
+-- existía, ej. "Villa San Lorenzo"), cuando la persona elige la dirección
+-- del autocompletado de Google Places (ZonaAutocomplete.jsx) ahora también
+-- se guardan estos dos campos aparte, extraídos de los address_components
+-- de esa selección ("locality" y "administrative_area_level_1"). Se usan
+-- para completar la línea de zona del flyer imprimible (ver flyer.js) con
+-- ciudad + provincia cuando esa info está disponible — quedan null cuando
+-- la persona tipeó la zona a mano (sin pasar por el autocompletado), igual
+-- que zona seguía funcionando antes de este cambio.
+alter table reports add column if not exists ciudad text;
+alter table reports add column if not exists provincia text;
+alter table reports drop constraint if exists reports_ciudad_len;
+alter table reports add constraint reports_ciudad_len check (ciudad is null or char_length(ciudad) <= 80) not valid;
+alter table reports drop constraint if exists reports_provincia_len;
+alter table reports add constraint reports_provincia_len check (provincia is null or char_length(provincia) <= 80) not valid;

@@ -997,6 +997,12 @@ export function emptyForm() {
     edad: "",
     peso: "",
     zona: "",
+    // Ciudad/provincia estructuradas — solo se completan cuando la persona
+    // elige una sugerencia del autocompletado de Google Places
+    // (ZonaAutocomplete.jsx); si tipea la zona a mano, quedan vacías, igual
+    // que antes de que existieran estos dos campos.
+    ciudad: "",
+    provincia: "",
     lat: null,
     lng: null,
     fecha: new Date().toISOString().slice(0, 10),

@@ -416,6 +416,29 @@ export function splitSentences(text) {
     .filter(Boolean);
 }
 
+// Arma la línea de zona del flyer: arranca del texto libre que ya existía
+// (report.zona) y, si hay ciudad/provincia estructuradas (ver
+// ZonaAutocomplete.jsx — solo se completan cuando la persona elige una
+// sugerencia del autocompletado, no cuando tipea a mano), las agrega —
+// salvo que ya estén repetidas dentro de lo que se acumuló hasta ahí (ej.
+// si la zona elegida ya dice "Salta" y la provincia también es "Salta", no
+// queda duplicado). Reportes viejos o con zona tipeada a mano (sin
+// ciudad/provincia) dan exactamente el mismo texto que antes de que
+// existieran estos dos campos.
+export function composeZonaDisplay(report) {
+  const parts = [];
+  const seenNorm = [];
+  [report?.zona, report?.ciudad, report?.provincia].forEach((raw) => {
+    const part = String(raw || "").trim();
+    if (!part) return;
+    const norm = normalizeForMatch(part);
+    if (seenNorm.some((s) => s.includes(norm) || norm.includes(s))) return;
+    parts.push(part);
+    seenNorm.push(norm);
+  });
+  return parts.join(", ");
+}
+
 export function reportPublicUrl(report) {
   if (typeof window === "undefined") return "";
   // Misma URL canónica que usa ShareButton (/r/[id]) — antes este QR apuntaba
@@ -493,7 +516,7 @@ export async function buildFlyerBlob(report, colorText) {
   contentHeight += 20 + rowsBlockHeight + 20; // contenedor con borde de las filas
   contentHeight += 26;
   if (hasContact) contentHeight += 150 + 26;
-  contentHeight += 110; // footer con QR
+  contentHeight += 140; // footer con QR (más grande que antes, ver qrSize)
 
   const H = Math.round(contentHeight);
 
@@ -612,9 +635,13 @@ export async function buildFlyerBlob(report, colorText) {
   ctx.stroke();
   y += 26;
 
-  // Zona (fila centrada con ícono)
-  ctx.font = `800 24px ${FONT_FAMILY}`;
-  const zonaText = `ZONA: ${(report.zona || "").toUpperCase()}`;
+  // Zona (fila centrada con ícono) — incluye ciudad/provincia cuando están
+  // disponibles (ver composeZonaDisplay), así que el texto puede ser más
+  // largo que antes: se achica con fitFontSize si no entra en una línea, en
+  // vez de desbordar el margen del flyer.
+  const zonaText = `ZONA: ${composeZonaDisplay(report).toUpperCase()}`;
+  const zonaFontSize = fitFontSize(ctx, zonaText, CONTENT_W - 80, 24, 14);
+  ctx.font = `800 ${zonaFontSize}px ${FONT_FAMILY}`;
   const zonaTextWidth = ctx.measureText(zonaText).width;
   const zonaIconR = 18;
   const zonaGroupWidth = zonaIconR * 2 + 12 + zonaTextWidth;
@@ -663,7 +690,11 @@ export async function buildFlyerBlob(report, colorText) {
     const iconCx = MARGIN + 50;
     const iconCy2 = y + 50;
     iconCircleBg(ctx, iconCx, iconCy2, 26, "#ffffff");
-    drawIcon(ctx, "phone", iconCx, iconCy2, 16, accent);
+    // Antes un teléfono rotado — un globo de chat se lee más directo como
+    // "contacto" (WhatsApp/mensaje), en vez de asumir que siempre es una
+    // llamada. bg="#ffffff" (igual que el círculo de fondo) para que los
+    // puntitos del globo queden como "recorte", no como un color suelto.
+    drawIcon(ctx, "chat", iconCx, iconCy2, 18, accent, "#ffffff");
 
     ctx.textAlign = "left";
     ctx.fillStyle = "#ffffff";
@@ -711,7 +742,7 @@ export async function buildFlyerBlob(report, colorText) {
         errorCorrectionLevel: "M",
         color: { dark: accent, light: "#00000000" },
       });
-      const qrSize = 68;
+      const qrSize = 96; // antes 68 — más grande para que se pueda escanear con margen (ver contentHeight arriba)
       const qrX = W - MARGIN - qrSize;
       const qrY = footerTop - 4;
       ctx.drawImage(qrCanvas, qrX, qrY, qrSize, qrSize);

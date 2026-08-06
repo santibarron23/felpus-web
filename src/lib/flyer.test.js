@@ -10,6 +10,7 @@ import {
   classifySentenceIcon,
   splitSentences,
   reportPublicUrl,
+  composeZonaDisplay,
 } from "./flyer";
 
 describe("capitalize", () => {
@@ -162,5 +163,43 @@ describe("reportPublicUrl", () => {
 
   it("sin window (SSR) devuelve cadena vacía en vez de romper", () => {
     expect(reportPublicUrl({ id: "abc123" })).toBe("");
+  });
+});
+
+describe("composeZonaDisplay", () => {
+  it("con solo zona (reportes viejos o zona tipeada a mano), devuelve exactamente lo mismo que antes", () => {
+    expect(composeZonaDisplay({ zona: "Villa San Lorenzo" })).toBe("Villa San Lorenzo");
+  });
+
+  it("agrega ciudad y provincia cuando están disponibles", () => {
+    expect(composeZonaDisplay({ zona: "Villa San Lorenzo", ciudad: "Salta", provincia: "Salta" })).toBe(
+      "Villa San Lorenzo, Salta"
+    );
+  });
+
+  it("agrega ciudad y provincia cuando son distintas entre sí", () => {
+    expect(
+      composeZonaDisplay({ zona: "Palermo", ciudad: "Buenos Aires", provincia: "Buenos Aires" })
+    ).toBe("Palermo, Buenos Aires");
+  });
+
+  it("no duplica cuando ciudad y provincia son iguales entre sí, sólo agrega una vez", () => {
+    expect(composeZonaDisplay({ zona: "Centro", ciudad: "Salta", provincia: "Salta" })).toBe("Centro, Salta");
+  });
+
+  it("no duplica cuando la zona ya incluye la ciudad/provincia (case-insensitive, con acentos)", () => {
+    expect(
+      composeZonaDisplay({ zona: "Cerca de Plaza Güemes, Salta", ciudad: "SALTA", provincia: "Salta" })
+    ).toBe("Cerca de Plaza Güemes, Salta");
+  });
+
+  it("ignora ciudad/provincia vacías (sin pasar por el autocompletado)", () => {
+    expect(composeZonaDisplay({ zona: "Palermo", ciudad: "", provincia: "" })).toBe("Palermo");
+    expect(composeZonaDisplay({ zona: "Palermo" })).toBe("Palermo");
+  });
+
+  it("no rompe sin report", () => {
+    expect(composeZonaDisplay(undefined)).toBe("");
+    expect(composeZonaDisplay({})).toBe("");
   });
 });

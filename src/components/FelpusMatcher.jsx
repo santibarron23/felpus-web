@@ -111,7 +111,7 @@ import {
 } from "../lib/store";
 import { playTap, playSuccess } from "../lib/sound";
 import { loadGoogleMaps } from "../lib/googleMaps";
-import { requestLocation } from "../lib/geolocation";
+import { requestLocation, geolocationErrorMessage } from "../lib/geolocation";
 import { subscribeReportPush, isPushSupported } from "../lib/push";
 import { logError } from "../lib/log";
 import { displayColor } from "../lib/theme";
@@ -302,6 +302,12 @@ export default function FelpusMatcher() {
   const [detalleLibre, setDetalleLibre] = useState("");
   const [dictating, setDictating] = useState(false);
   const [geoStatus, setGeoStatus] = useState("idle");
+  // Mensaje específico del último error de geolocalización (ver
+  // geolocationErrorMessage en lib/geolocation.js) — antes geoStatus="error"
+  // siempre mostraba el mismo texto genérico, sin distinguir el caso más
+  // confuso (permiso ya bloqueado antes, sin cartel del navegador) de un
+  // simple timeout.
+  const [geoErrorMessage, setGeoErrorMessage] = useState("");
   // El mapa interactivo no se monta hasta que la persona lo pide — antes
   // MapPicker disparaba la carga del script de Google Maps apenas se entraba
   // al tab "Reportar", aunque terminara usando el botón "Ubicación" (GPS) o
@@ -1401,7 +1407,10 @@ export default function FelpusMatcher() {
         setForm((f) => ({ ...f, lat, lng }));
         setGeoStatus("done");
       },
-      () => setGeoStatus("error")
+      (err) => {
+        setGeoErrorMessage(geolocationErrorMessage(err));
+        setGeoStatus("error");
+      }
     );
   }
 
@@ -1413,9 +1422,9 @@ export default function FelpusMatcher() {
         setSortBy("cercania");
         setLocatingMe(false);
       },
-      () => {
+      (err) => {
         setLocatingMe(false);
-        pushToast("error", "No pudimos acceder a tu ubicación.");
+        pushToast("error", geolocationErrorMessage(err));
       }
     );
   }
@@ -1517,6 +1526,8 @@ export default function FelpusMatcher() {
         edad: form.edad,
         peso: form.peso,
         zona: form.zona.trim(),
+        ciudad: form.ciudad.trim(),
+        provincia: form.provincia.trim(),
         lat: form.lat,
         lng: form.lng,
         fecha: form.fecha,
@@ -2425,8 +2436,15 @@ export default function FelpusMatcher() {
                   <ZonaAutocomplete
                     id="form-zona"
                     value={form.zona}
-                    onManualChange={(zona) => setForm((f) => ({ ...f, zona }))}
-                    onSelectPlace={(zona, lat, lng) => {
+                    onManualChange={(zona) =>
+                      // Si tipea a mano (en vez de elegir una sugerencia),
+                      // ciudad/provincia de una selección anterior quedarían
+                      // desactualizadas respecto del texto nuevo — se limpian
+                      // acá, igual que ya se hacía implícitamente antes de
+                      // que existieran estos dos campos.
+                      setForm((f) => ({ ...f, zona, ciudad: "", provincia: "" }))
+                    }
+                    onSelectPlace={(zona, lat, lng, ciudad, provincia) => {
                       // El widget de Google no respeta el maxLength del input
                       // (ese límite solo aplica al fallback de texto plano) —
                       // sin este recorte, una dirección larga puede superar el
@@ -2435,6 +2453,8 @@ export default function FelpusMatcher() {
                       setForm((f) => ({
                         ...f,
                         zona: zona.slice(0, 100),
+                        ciudad: (ciudad || "").slice(0, 80),
+                        provincia: (provincia || "").slice(0, 80),
                         ...(lat != null && lng != null ? { lat, lng } : {}),
                       }));
                       if (lat != null && lng != null) setGeoStatus("done");
@@ -2470,7 +2490,9 @@ export default function FelpusMatcher() {
                   <p className="text-[11px] mt-1" style={{ color: C.green }}>Ubicación capturada — mejora mucho la precisión del match.</p>
                 )}
                 {geoStatus === "error" && (
-                  <p className="text-[11px] mt-1" style={{ color: C.muted }}>No pudimos acceder a tu ubicación, se usará solo la zona escrita.</p>
+                  <p className="text-[11px] mt-1" style={{ color: C.muted }}>
+                    {geoErrorMessage} Mientras tanto se usa solo la zona escrita.
+                  </p>
                 )}
                 <div className="mt-2">
                   {showMapPicker ? (
@@ -3928,7 +3950,29 @@ export default function FelpusMatcher() {
                   {adminFilteredReports.length > 200 ? " — mostrando los primeros 200" : ""}
                 </p>
                 {adminFilteredReports.slice(0, 200).map((r) => (
-                  <div key={r.id} className="rounded-xl p-3 border flex items-center gap-2.5" style={{ borderColor: C.border, background: C.surface }}>
+                  <div
+                    key={r.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openReportDetail(r)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openReportDetail(r);
+                      }
+                    }}
+                    // Toda la fila es clickeable para abrir el detalle
+                    // completo (mismo DetailModal que ve cualquier usuario) —
+                    // así se puede ver la publicación entera antes de decidir
+                    // ocultarla o eliminarla, en vez de solo el nombre/zona
+                    // recortados que entran en esta fila compacta. No es un
+                    // <button> (los botones de Ocultar/Eliminar de al lado ya
+                    // son <button> — anidar uno adentro de otro es HTML
+                    // inválido), por eso lleva role="button" + manejo de
+                    // teclado a mano.
+                    className="rounded-xl p-3 border flex items-center gap-2.5 text-left cursor-pointer felpus-card-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                    style={{ borderColor: C.border, background: C.surface }}
+                  >
                     <div className="relative w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)]">
                       <Image src={r.foto} alt="" fill sizes="48px" className="object-cover" />
                     </div>
@@ -3949,7 +3993,10 @@ export default function FelpusMatcher() {
                         </span>
                       )}
                     </div>
-                    <div className="flex flex-col gap-1.5 shrink-0">
+                    {/* stopPropagation: sin esto, tocar Ocultar/Eliminar
+                        también dispara el onClick de la fila entera y abre
+                        el detalle por encima. */}
+                    <div className="flex flex-col gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                       {adminDeleteConfirmId === r.id ? (
                         <>
                           <button
