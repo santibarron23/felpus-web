@@ -15,7 +15,13 @@ const csp = [
   `script-src 'self' 'unsafe-inline' ${isDev ? "'unsafe-eval' " : ""}https://maps.googleapis.com https://accounts.google.com`,
   // La app usa mucho style={{...}} inline (atributos style="..."), así que
   // style-src necesita 'unsafe-inline' — si no, se rompe todo el diseño.
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  // accounts.google.com: hoja de estilos que carga el propio script de
+  // Google Identity Services (accounts.google.com/gsi/style) para poder
+  // pintar el cartel de "One Tap" — confirmado en vivo: sin esto acá, ESE
+  // pedido puntual fallaba (bloqueado por este mismo CSP, no por
+  // script-src) y el cartel nunca llegaba a mostrarse, cayendo siempre al
+  // flujo clásico con redirect aunque el script ya cargara bien.
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com",
   "font-src 'self' https://fonts.gstatic.com",
   // data:/blob: para las fotos redimensionadas en canvas y los placeholders
   // SVG generados en el cliente; googleusercontent.com para el avatar de Google.
