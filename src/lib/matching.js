@@ -50,6 +50,14 @@ export const REPORT_FLAG_REASONS = [
   { id: "otro", label: "Otro motivo" },
 ];
 
+// El panel de admin recibe los ids crudos (report_flags.reason) desde la
+// RPC admin_list_flagged_reports — esto los traduce al label legible sin
+// duplicar la lista de motivos en otro lugar. Cae al id tal cual si algún
+// día aparece un motivo viejo que ya no está en la lista de arriba.
+export function reportFlagReasonLabel(id) {
+  return REPORT_FLAG_REASONS.find((r) => r.id === id)?.label || id;
+}
+
 export const EDAD_OPTIONS = [
   "Cachorro/cría (0-1 año)",
   "Joven (1-3 años)",

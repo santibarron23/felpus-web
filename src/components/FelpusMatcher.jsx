@@ -33,6 +33,12 @@ import {
   Square,
   Images,
   Coffee,
+  ShieldCheck,
+  Eye,
+  EyeOff,
+  AlertTriangle,
+  AlertCircle,
+  Trash2,
 } from "lucide-react";
 import {
   normalizeText,
@@ -57,6 +63,7 @@ import {
   PESO_OPTIONS,
   getRazaOptions,
   RAZA_NO_SE,
+  reportFlagReasonLabel,
   ACCESORIO_OPTIONS,
   REACCION_OPTIONS,
   MARCA_OPTIONS,
@@ -87,6 +94,11 @@ import {
   bumpStreak,
   seedIfEmpty,
   flagReport,
+  adminListAllReports,
+  adminDeleteReport,
+  adminSetOculto,
+  adminListFlaggedReports,
+  adminFetchMetrics,
 } from "../lib/store";
 import { playTap, playSuccess } from "../lib/sound";
 import { loadGoogleMaps } from "../lib/googleMaps";
@@ -135,6 +147,13 @@ const MAX_FOTO_MB = 15;
 // de Inicio/Explorar/Reportar, que son el flujo real de buscar o publicar
 // una mascota — ahí un pedido de plata sería mal timing.
 const DONATION_URL = "https://link.mercadopago.com.ar/felpus";
+// Panel de administrador — un solo dueño, sin sistema de roles (ver el
+// comentario largo junto a las funciones admin_* en schema.sql). El botón y
+// la pestaña de abajo se esconden por completo para cualquier otro email;
+// la barrera real vive del lado del servidor (cada función admin_* vuelve a
+// chequear auth.email() ahí), esto es solo para no confundir a nadie más
+// mostrando un botón que de todos modos le va a fallar.
+const ADMIN_EMAIL = "santiagobarronlf@gmail.com";
 const SCAN_STEP_INTERVAL_MS = 900;
 // Delay artificial en el submit — sin esto la pantalla de "escaneo" (que
 // muestra los pasos del matching) parpadea y desaparece antes de que la
@@ -342,6 +361,90 @@ export default function FelpusMatcher() {
   const { user, authLoading, googleDisplayName, googleAvatar, signInWithGoogle, signOut } = useAuth(pushToast);
   const fileInputRef = useRef(null);
   const deepLinkHandled = useRef(false);
+  const isAdmin = user?.email === ADMIN_EMAIL;
+
+  // Panel de administrador — estado propio, separado del resto de la app a
+  // propósito: solo lo toca una persona, así que no vale la pena acoplarlo a
+  // `reports`/`loadingReports` (que sí necesitan servir a todo el mundo).
+  // "metricas" | "denuncias" | "reportes"
+  const [adminSection, setAdminSection] = useState("metricas");
+  const [adminMetrics, setAdminMetrics] = useState(null);
+  const [adminFlags, setAdminFlags] = useState([]);
+  const [adminAllReports, setAdminAllReports] = useState([]);
+  const [adminSearch, setAdminSearch] = useState("");
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminError, setAdminError] = useState("");
+  const [adminBusyId, setAdminBusyId] = useState(null);
+  const [adminDeleteConfirmId, setAdminDeleteConfirmId] = useState(null);
+
+  const loadAdminData = useCallback(async () => {
+    if (!isAdmin) return;
+    setAdminLoading(true);
+    setAdminError("");
+    try {
+      const [metrics, flags, allReports] = await Promise.all([
+        adminFetchMetrics(),
+        adminListFlaggedReports(),
+        adminListAllReports(),
+      ]);
+      setAdminMetrics(metrics);
+      setAdminFlags(flags);
+      setAdminAllReports(allReports);
+    } catch (e) {
+      logError("No se pudo cargar el panel de administrador", e);
+      setAdminError(e?.message || "No se pudo cargar el panel de administrador.");
+    } finally {
+      setAdminLoading(false);
+    }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (activeTab === "admin" && isAdmin) loadAdminData();
+  }, [activeTab, isAdmin, loadAdminData]);
+
+  // Elimina de verdad (foto de Storage + fila) — no hay deshacer, por eso
+  // pasa por adminDeleteConfirmId en vez de borrar directo al primer click.
+  async function handleAdminDelete(report) {
+    setAdminBusyId(report.id);
+    try {
+      await adminDeleteReport(report);
+      setAdminAllReports((prev) => prev.filter((r) => r.id !== report.id));
+      setAdminFlags((prev) => prev.filter((f) => f.reportId !== report.id));
+      setAdminDeleteConfirmId(null);
+      pushToast("success", "Publicación eliminada.");
+    } catch (e) {
+      logError("No se pudo eliminar la publicación (admin)", e);
+      pushToast("error", e?.message || "No se pudo eliminar la publicación.");
+    } finally {
+      setAdminBusyId(null);
+    }
+  }
+
+  // Ocultar/mostrar es reversible (a diferencia de eliminar), así que no
+  // pide confirmación — sirve tanto para esconder algo a mano como para
+  // revertir un auto-ocultamiento por denuncias infundadas.
+  async function handleAdminToggleOculto(report) {
+    const nextOculto = !report.oculto;
+    setAdminBusyId(report.id);
+    try {
+      await adminSetOculto(report.id, nextOculto);
+      setAdminAllReports((prev) => prev.map((r) => (r.id === report.id ? { ...r, oculto: nextOculto } : r)));
+      setAdminFlags((prev) => prev.map((f) => (f.reportId === report.id ? { ...f, oculto: nextOculto } : f)));
+      pushToast("success", nextOculto ? "Publicación ocultada." : "Publicación visible de nuevo.");
+    } catch (e) {
+      logError("No se pudo cambiar la visibilidad de la publicación (admin)", e);
+      pushToast("error", e?.message || "No se pudo cambiar la visibilidad.");
+    } finally {
+      setAdminBusyId(null);
+    }
+  }
+
+  const adminSearchNormalized = normalizeText(adminSearch.trim());
+  const adminFilteredReports = adminSearchNormalized
+    ? adminAllReports.filter((r) =>
+        [r.nombre, r.zona, r.especie, r.color, r.nickname].some((v) => normalizeText(v || "").includes(adminSearchNormalized))
+      )
+    : adminAllReports;
 
   // Apenas la persona toca cualquier campo del formulario, los errores
   // marcados quedan obsoletos — sin esto, el borde rojo de un campo ya
@@ -1392,6 +1495,21 @@ export default function FelpusMatcher() {
             </div>
           </button>
           <div className="flex items-center gap-2 shrink-0">
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  playTap();
+                  goToTab("admin");
+                }}
+                aria-label="Panel de administrador"
+                title="Panel de administrador"
+                className="w-8 h-8 rounded-full flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                style={{ background: activeTab === "admin" ? C.orangeInkSolid : C.cream }}
+              >
+                <ShieldCheck className="w-4 h-4" style={{ color: activeTab === "admin" ? "#fff" : C.orangeInk }} />
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -3298,6 +3416,253 @@ export default function FelpusMatcher() {
               </span>
               <ChevronRight className="w-4 h-4 shrink-0" style={{ color: C.muted }} />
             </a>
+          </div>
+        )}
+
+        {/* Panel de administrador — no está en la navegación inferior a
+            propósito (agregarla ahí desbalancearía el layout para las demás
+            5000+ personas que no son admin). Se llega solo desde el ícono
+            del header, visible únicamente para ADMIN_EMAIL. La barrera real
+            no es esta condición de React (visual/UX), sino que cada RPC
+            admin_* vuelve a chequear auth.email() del lado del servidor. */}
+        {activeTab === "admin" && isAdmin && (
+          <div className="max-w-2xl mx-auto px-4 pt-2 pb-8 space-y-4">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5" style={{ color: C.orangeInk }} />
+              <h2 className="felpus-display text-lg" style={{ color: C.text }}>Panel de administrador</h2>
+            </div>
+
+            <div className="flex gap-2">
+              {[
+                { id: "metricas", label: "Métricas" },
+                { id: "denuncias", label: `Denuncias${adminFlags.length ? ` (${adminFlags.length})` : ""}` },
+                { id: "reportes", label: "Reportes" },
+              ].map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setAdminSection(s.id)}
+                  className="flex-1 text-xs font-bold py-2 rounded-lg border"
+                  style={
+                    adminSection === s.id
+                      ? { background: C.ink, color: C.cream, borderColor: C.ink }
+                      : { color: C.text, borderColor: C.border, background: C.surface }
+                  }
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+
+            {adminLoading && (
+              <div className="flex items-center justify-center gap-2 py-10 text-sm" style={{ color: C.muted }}>
+                <Loader2 className="w-4 h-4 animate-spin" /> Cargando...
+              </div>
+            )}
+
+            {!adminLoading && adminError && (
+              <div
+                className="rounded-xl p-3.5 border text-sm flex items-center justify-between gap-2 flex-wrap"
+                style={{ borderColor: C.border, background: C.dangerBg, color: C.redDark }}
+              >
+                <span className="flex items-center gap-1.5"><AlertCircle className="w-4 h-4 shrink-0" /> {adminError}</span>
+                <button type="button" onClick={loadAdminData} className="shrink-0 font-bold underline">
+                  Reintentar
+                </button>
+              </div>
+            )}
+
+            {!adminLoading && !adminError && adminSection === "metricas" && (
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  ["Total reportes", adminMetrics?.total],
+                  ["Perdidas", adminMetrics?.perdidas],
+                  ["Encontradas", adminMetrics?.encontradas],
+                  ["Reencontradas", adminMetrics?.resueltos],
+                  ["Últimas 24h", adminMetrics?.last24h],
+                  ["Últimos 7 días", adminMetrics?.last7d],
+                  ["Colaboradores", adminMetrics?.contributors],
+                  ["Ocultos por denuncia", adminMetrics?.ocultos],
+                  ["Denuncias totales", adminMetrics?.flagsTotal],
+                  ["Errores (24h)", adminMetrics?.errors24h],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-xl p-3 border" style={{ borderColor: C.border, background: C.surface }}>
+                    <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>{label}</p>
+                    <p className="felpus-mono text-xl font-bold" style={{ color: C.text }}>{value ?? "–"}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!adminLoading && !adminError && adminSection === "denuncias" && (
+              adminFlags.length === 0 ? (
+                <p className="text-sm text-center py-10" style={{ color: C.muted }}>No hay publicaciones denunciadas.</p>
+              ) : (
+                <div className="space-y-2">
+                  {adminFlags.map((f) => (
+                    <div key={f.reportId} className="rounded-xl p-3 border space-y-2" style={{ borderColor: C.border, background: C.surface }}>
+                      <div className="flex items-start gap-2.5">
+                        <div className="relative w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)]">
+                          <Image src={f.fotoUrl} alt="" fill sizes="48px" className="object-cover" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold truncate" style={{ color: C.text }}>
+                            {f.nombre || `${f.especie} sin nombre`}
+                          </p>
+                          <p className="text-xs truncate" style={{ color: C.muted }}>{f.zona} · {f.tipo}</p>
+                          <p className="text-[11px] mt-0.5 flex items-center gap-1" style={{ color: C.redDark }}>
+                            <AlertTriangle className="w-3 h-3 shrink-0" />
+                            {f.flagCount} denuncia{f.flagCount === 1 ? "" : "s"} · {f.distinctIps} IP{f.distinctIps === 1 ? "" : "s"} distinta{f.distinctIps === 1 ? "" : "s"}
+                          </p>
+                          <p className="text-[11px] mt-0.5 truncate" style={{ color: C.muted }}>
+                            {f.reasons.map(reportFlagReasonLabel).join(" · ")}
+                          </p>
+                          {f.oculto && (
+                            <span
+                              className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                              style={{ background: C.dangerBg, color: C.redDark }}
+                            >
+                              Oculta automáticamente
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleAdminToggleOculto({ id: f.reportId, oculto: f.oculto })}
+                          disabled={adminBusyId === f.reportId}
+                          className="flex-1 flex items-center justify-center gap-1.5 text-xs font-bold py-2 rounded-lg border disabled:opacity-60"
+                          style={{ borderColor: C.border, color: C.text }}
+                        >
+                          {f.oculto ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                          {f.oculto ? "Mostrar" : "Ocultar"}
+                        </button>
+                        {adminDeleteConfirmId === f.reportId ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleAdminDelete({ id: f.reportId, fotos: [{ url: f.fotoUrl }] })}
+                              disabled={adminBusyId === f.reportId}
+                              className="flex-1 text-xs font-bold py-2 rounded-lg text-white disabled:opacity-60 flex items-center justify-center"
+                              style={{ background: C.redSolid }}
+                            >
+                              {adminBusyId === f.reportId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Confirmar"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setAdminDeleteConfirmId(null)}
+                              className="text-xs font-semibold px-2"
+                              style={{ color: C.muted }}
+                            >
+                              Cancelar
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setAdminDeleteConfirmId(f.reportId)}
+                            className="flex-1 flex items-center justify-center gap-1.5 text-xs font-bold py-2 rounded-lg text-white"
+                            style={{ background: C.redSolid }}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Eliminar
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+
+            {!adminLoading && !adminError && adminSection === "reportes" && (
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={adminSearch}
+                  onChange={(e) => setAdminSearch(e.target.value)}
+                  placeholder="Buscar por nombre, zona, especie, color, apodo..."
+                  className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)]"
+                  style={{ borderColor: C.border, color: C.text }}
+                />
+                <p className="text-[11px]" style={{ color: C.muted }}>
+                  {adminFilteredReports.length} de {adminAllReports.length} reportes
+                  {adminFilteredReports.length > 200 ? " — mostrando los primeros 200" : ""}
+                </p>
+                {adminFilteredReports.slice(0, 200).map((r) => (
+                  <div key={r.id} className="rounded-xl p-3 border flex items-center gap-2.5" style={{ borderColor: C.border, background: C.surface }}>
+                    <div className="relative w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)]">
+                      <Image src={r.foto} alt="" fill sizes="48px" className="object-cover" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold truncate" style={{ color: C.text }}>
+                        {r.nombre || `${r.especie} sin nombre`}
+                      </p>
+                      <p className="text-xs truncate" style={{ color: C.muted }}>
+                        {r.zona} · {r.tipo}
+                        {r.resuelto ? " · reencontrada" : ""}
+                      </p>
+                      {r.oculto && (
+                        <span
+                          className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                          style={{ background: C.dangerBg, color: C.redDark }}
+                        >
+                          Oculta
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-1.5 shrink-0">
+                      {adminDeleteConfirmId === r.id ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setAdminDeleteConfirmId(null)}
+                            aria-label="Cancelar eliminación"
+                            className="w-8 h-8 rounded-full flex items-center justify-center border"
+                            style={{ borderColor: C.border }}
+                          >
+                            <X className="w-3.5 h-3.5" style={{ color: C.text }} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAdminDelete(r)}
+                            disabled={adminBusyId === r.id}
+                            aria-label="Confirmar eliminación"
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-white disabled:opacity-60"
+                            style={{ background: C.redSolid }}
+                          >
+                            {adminBusyId === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleAdminToggleOculto(r)}
+                            disabled={adminBusyId === r.id}
+                            aria-label={r.oculto ? "Mostrar publicación" : "Ocultar publicación"}
+                            title={r.oculto ? "Mostrar" : "Ocultar"}
+                            className="w-8 h-8 rounded-full flex items-center justify-center border disabled:opacity-60"
+                            style={{ borderColor: C.border }}
+                          >
+                            {r.oculto ? <Eye className="w-3.5 h-3.5" style={{ color: C.text }} /> : <EyeOff className="w-3.5 h-3.5" style={{ color: C.text }} />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAdminDeleteConfirmId(r.id)}
+                            aria-label="Eliminar publicación"
+                            className="w-8 h-8 rounded-full flex items-center justify-center border"
+                            style={{ borderColor: C.border }}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" style={{ color: C.redDark }} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </main>

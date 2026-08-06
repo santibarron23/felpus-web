@@ -128,7 +128,12 @@ function missingOptionalColumn(error, candidates) {
   return candidates.find((c) => new RegExp(`\\b${c}\\b`, "i").test(text)) || null;
 }
 
-export async function fetchReports() {
+// includeHidden: true trae también las publicaciones ocultas (denunciadas
+// 3+ veces o escondidas a mano por el admin) — solo lo usa el panel de
+// administrador (ver adminListAllReports más abajo). El resto de la app
+// (Explorar, mapa, matching) sigue llamando fetchReports() sin argumentos,
+// que se comporta exactamente igual que antes.
+export async function fetchReports({ includeHidden = false } = {}) {
   const excluded = new Set();
   for (let attempt = 0; attempt <= REPORT_LIST_OPTIONAL_COLUMNS.length; attempt++) {
     const columns = reportListColumns(excluded);
@@ -142,7 +147,8 @@ export async function fetchReports() {
       // y el matching. Si "oculto" todavía no existe (falta correr la
       // migración), row.oculto es undefined y nada se filtra: falla abierto,
       // igual que el resto de este mecanismo de columnas opcionales.
-      return (result.data || []).filter((row) => row.oculto !== true).map(rowToReport);
+      const rows = includeHidden ? result.data || [] : (result.data || []).filter((row) => row.oculto !== true);
+      return rows.map((row) => ({ ...rowToReport(row), oculto: row.oculto === true }));
     }
     excluded.add(missing);
   }
@@ -203,6 +209,102 @@ export async function flagReport(reportId, reason) {
     }
     throw error;
   }
+}
+
+// Mensaje compartido por las 4 funciones de admin de abajo: todas dependen
+// de RPCs que todavía no existen hasta correr la migración de schema.sql
+// (ver PENDIENTE_DECISION.md), y todas fallan de la misma forma cuando eso
+// pasa — un solo texto en vez de repetirlo 4 veces.
+const ADMIN_RPC_MISSING_MSG = "El panel de administrador todavía no está disponible en este momento. Probá de nuevo más tarde.";
+
+// Trae TODOS los reportes, incluidos los ocultos — es fetchReports() con
+// includeHidden, nombrado aparte para que se lea claro en el panel de admin
+// qué se está pidiendo y por qué (no hace falta una función nueva: el
+// filtro por fila ya lo controla la columna "oculto" del lado del cliente,
+// igual que el resto de fetchReports).
+export async function adminListAllReports() {
+  return fetchReports({ includeHidden: true });
+}
+
+// Borra CUALQUIER publicación (no solo la propia) — vía RPC security
+// definer (admin_delete_report en schema.sql), gateada por el email del
+// admin del lado del servidor. Mismo flujo de dos pasos que deleteReport()
+// (borrar la foto de Storage primero, después la fila): la policy
+// felpus_photos_admin_delete es lo que le permite al admin borrar una foto
+// que no es suya.
+export async function adminDeleteReport(report) {
+  const paths = (report.fotos || []).map((f) => storagePathFromPublicUrl(f.url)).filter(Boolean);
+  if (paths.length > 0) {
+    const { error: storageError } = await supabase.storage.from(PHOTOS_BUCKET).remove(paths);
+    if (storageError) {
+      logError("No se pudieron borrar todas las fotos de Storage (admin)", storageError);
+    }
+  }
+  const { error } = await supabase.rpc("admin_delete_report", { p_report_id: report.id });
+  if (error) {
+    if (isMissingFunctionError(error)) throw new Error(ADMIN_RPC_MISSING_MSG);
+    throw error;
+  }
+}
+
+// Ocultar/mostrar una publicación a mano — mismo campo "oculto" que usa el
+// auto-ocultamiento de flag_report, así que esto también sirve para
+// revertir un falso positivo (una publicación legítima que llegó a 3
+// denuncias infundadas).
+export async function adminSetOculto(reportId, oculto) {
+  const { error } = await supabase.rpc("admin_set_oculto", { p_report_id: reportId, p_oculto: oculto });
+  if (error) {
+    if (isMissingFunctionError(error)) throw new Error(ADMIN_RPC_MISSING_MSG);
+    throw error;
+  }
+}
+
+// Denuncias agrupadas por reporte (ver admin_list_flagged_reports en
+// schema.sql) — report_flags no tiene política de SELECT propia, así que
+// esta RPC es el único camino para leerlas desde el cliente.
+export async function adminListFlaggedReports() {
+  const { data, error } = await supabase.rpc("admin_list_flagged_reports");
+  if (error) {
+    if (isMissingFunctionError(error)) throw new Error(ADMIN_RPC_MISSING_MSG);
+    throw error;
+  }
+  return (data || []).map((row) => ({
+    reportId: row.report_id,
+    tipo: row.tipo,
+    especie: row.especie,
+    nombre: row.nombre || "",
+    zona: row.zona,
+    fotoUrl: row.foto_url,
+    oculto: row.oculto === true,
+    flagCount: Number(row.flag_count) || 0,
+    distinctIps: Number(row.distinct_ips) || 0,
+    reasons: row.reasons || [],
+    lastFlaggedAt: row.last_flagged_at ? new Date(row.last_flagged_at).getTime() : null,
+  }));
+}
+
+// Métricas básicas del panel de admin (ver admin_metrics en schema.sql) —
+// un solo viaje de red en vez de varios counts sueltos desde el cliente.
+export async function adminFetchMetrics() {
+  const { data, error } = await supabase.rpc("admin_metrics");
+  if (error) {
+    if (isMissingFunctionError(error)) throw new Error(ADMIN_RPC_MISSING_MSG);
+    throw error;
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    total: Number(row?.total) || 0,
+    perdidas: Number(row?.perdidas) || 0,
+    encontradas: Number(row?.encontradas) || 0,
+    resueltos: Number(row?.resueltos) || 0,
+    ocultos: Number(row?.ocultos) || 0,
+    last24h: Number(row?.last_24h) || 0,
+    last7d: Number(row?.last_7d) || 0,
+    contributors: Number(row?.contributors) || 0,
+    flagsTotal: Number(row?.flags_total) || 0,
+    flaggedReportsPending: Number(row?.flagged_reports_pending) || 0,
+    errors24h: Number(row?.errors_24h) || 0,
+  };
 }
 
 export async function createReport(report) {

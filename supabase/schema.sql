@@ -791,3 +791,139 @@ $$;
 
 revoke all on function public.flag_report(text, text) from public;
 grant execute on function public.flag_report(text, text) to anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Panel de administrador — un solo dueño (santiagobarronlf@gmail.com), sin
+-- tabla de roles: mismo criterio de "lo mínimo que resuelve el problema
+-- real" que el resto de este archivo. El email admin queda hardcodeado en
+-- cada función (no en una tabla ni env var) porque hoy es un valor de un
+-- solo bit (es/no es el dueño) que no va a rotar seguido — si alguna vez
+-- hace falta más de un admin, ahí sí vale una tabla de roles; hasta
+-- entonces sería complejidad sin un problema real que resolver. Requiere
+-- estar logueado con Google con ESE email exacto (auth.email() lee el
+-- email del JWT de Supabase Auth) — el cliente además esconde la UI del
+-- panel para cualquier otro usuario, pero la barrera real es esta.
+-- ---------------------------------------------------------------------------
+
+create or replace function public.admin_delete_report(p_report_id text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.email() is distinct from 'santiagobarronlf@gmail.com' then
+    raise exception 'No autorizado.';
+  end if;
+  delete from reports where id = p_report_id;
+end;
+$$;
+
+revoke all on function public.admin_delete_report(text) from public;
+grant execute on function public.admin_delete_report(text) to authenticated;
+
+-- Ocultar/mostrar a mano — mismo campo "oculto" que usa el auto-ocultamiento
+-- de flag_report, así que esto también sirve para revertir un falso
+-- positivo (un reporte legítimo que llegó a 3 denuncias infundadas).
+create or replace function public.admin_set_oculto(p_report_id text, p_oculto boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.email() is distinct from 'santiagobarronlf@gmail.com' then
+    raise exception 'No autorizado.';
+  end if;
+  update reports set oculto = p_oculto where id = p_report_id;
+  if not found then
+    raise exception 'No se encontró ese reporte.';
+  end if;
+end;
+$$;
+
+revoke all on function public.admin_set_oculto(text, boolean) from public;
+grant execute on function public.admin_set_oculto(text, boolean) to authenticated;
+
+-- Denuncias agrupadas por reporte — report_flags no tiene política de SELECT
+-- (a propósito, ver más arriba), así que sin esto ni siquiera el admin
+-- podría leerlas desde el cliente.
+create or replace function public.admin_list_flagged_reports()
+returns table(
+  report_id text,
+  tipo text,
+  especie text,
+  nombre text,
+  zona text,
+  foto_url text,
+  oculto boolean,
+  flag_count bigint,
+  distinct_ips bigint,
+  reasons text[],
+  last_flagged_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.email() is distinct from 'santiagobarronlf@gmail.com' then
+    raise exception 'No autorizado.';
+  end if;
+  return query
+    select r.id, r.tipo, r.especie, r.nombre, r.zona, r.foto_url, r.oculto,
+           count(f.id), count(distinct f.ip), array_agg(distinct f.reason), max(f.created_at)
+    from report_flags f
+    join reports r on r.id = f.report_id
+    group by r.id
+    order by max(f.created_at) desc;
+end;
+$$;
+
+revoke all on function public.admin_list_flagged_reports() from public;
+grant execute on function public.admin_list_flagged_reports() to authenticated;
+
+-- Métricas básicas — un solo viaje en vez de que el cliente arme varios
+-- counts sueltos (y varios de esos counts, como error_logs, ni son legibles
+-- desde el cliente sin esto).
+create or replace function public.admin_metrics()
+returns table(
+  total bigint, perdidas bigint, encontradas bigint, resueltos bigint, ocultos bigint,
+  last_24h bigint, last_7d bigint, contributors bigint, flags_total bigint,
+  flagged_reports_pending bigint, errors_24h bigint
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.email() is distinct from 'santiagobarronlf@gmail.com' then
+    raise exception 'No autorizado.';
+  end if;
+  return query
+    select
+      (select count(*) from reports),
+      (select count(*) from reports where tipo = 'perdida'),
+      (select count(*) from reports where tipo = 'encontrada'),
+      (select count(*) from reports where resuelto),
+      (select count(*) from reports where oculto),
+      (select count(*) from reports where creado_en > now() - interval '24 hours'),
+      (select count(*) from reports where creado_en > now() - interval '7 days'),
+      (select count(*) from contributors),
+      (select count(*) from report_flags),
+      (select count(distinct report_id) from report_flags where report_id in (select id from reports where not oculto)),
+      (select count(*) from error_logs where created_at > now() - interval '24 hours');
+end;
+$$;
+
+revoke all on function public.admin_metrics() from public;
+grant execute on function public.admin_metrics() to authenticated;
+
+-- Le permite al admin borrar la foto de CUALQUIER reporte de Storage (la
+-- política de owner-delete de más arriba solo alcanza al dueño real) — mismo
+-- flujo de dos pasos que ya usa deleteReport() en store.js (borrar la foto,
+-- después la fila), solo que sin el filtro .eq("user_id", ...).
+drop policy if exists "felpus_photos_admin_delete" on storage.objects;
+create policy "felpus_photos_admin_delete"
+  on storage.objects for delete
+  using (bucket_id = 'felpus-photos' and auth.email() = 'santiagobarronlf@gmail.com');
