@@ -4,9 +4,15 @@ const csp = [
   "default-src 'self'",
   // Google Maps inyecta sus propios <script> dinámicamente; los fonts de
   // Google se cargan por <link>/@import, no necesitan estar acá.
+  // accounts.google.com: script de Google Identity Services (login con
+  // Google embebido, ver googleAuth.js/useAuth.js) — sin esto acá, el CSP
+  // bloqueaba la carga de ese script ANTES de que llegara a intentar nada,
+  // y el error cae silencioso al flujo clásico con redirect (por diseño,
+  // así no rompe el login) — pero entonces el login nunca deja de rebotar
+  // por el dominio de Supabase, que es justo lo que este SDK vino a evitar.
   // 'unsafe-eval' solo en desarrollo: el hot-reload de Next.js (webpack) lo
   // necesita para funcionar; el build de producción no usa eval().
-  `script-src 'self' 'unsafe-inline' ${isDev ? "'unsafe-eval' " : ""}https://maps.googleapis.com`,
+  `script-src 'self' 'unsafe-inline' ${isDev ? "'unsafe-eval' " : ""}https://maps.googleapis.com https://accounts.google.com`,
   // La app usa mucho style={{...}} inline (atributos style="..."), así que
   // style-src necesita 'unsafe-inline' — si no, se rompe todo el diseño.
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
@@ -25,7 +31,10 @@ const csp = [
   // Supabase) y toda la publicación se cae con un error genérico de red,
   // sin ningún aviso de CSP visible salvo en la consola.
   // ws://localhost solo en desarrollo: el socket de hot-reload de Next.js.
-  `connect-src 'self' data: https://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://places.googleapis.com${isDev ? " ws://localhost:* http://localhost:*" : ""}`,
+  // accounts.google.com acá también: Google Identity Services hace sus
+  // propios pedidos (fetch/FedCM) contra ese origen para pedir/emitir el ID
+  // token, además de la sola carga inicial del script (ver script-src).
+  `connect-src 'self' data: https://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://places.googleapis.com https://accounts.google.com${isDev ? " ws://localhost:* http://localhost:*" : ""}`,
   "frame-src 'self' https://accounts.google.com",
   "object-src 'none'",
   "base-uri 'self'",
