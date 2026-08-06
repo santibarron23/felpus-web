@@ -32,6 +32,7 @@ import {
   Mic,
   Square,
   Images,
+  Coffee,
 } from "lucide-react";
 import {
   normalizeText,
@@ -128,6 +129,12 @@ const LOGO_WHITE = "/assets/logo_full_white.png";
 const MASCOT_HERO = "/assets/mascot_hero.png";
 const PAW_MAGNIFIER = "/assets/paw_magnifier.png";
 const MAX_FOTO_MB = 15;
+// Link externo de donación (Mercado Pago) — la app no procesa pagos, solo
+// linkea afuera. Vive en Colaboradores, debajo del ranking: es donde ya está
+// instalada la idea de "aportar a la comunidad" (puntos, corazones), y lejos
+// de Inicio/Explorar/Reportar, que son el flujo real de buscar o publicar
+// una mascota — ahí un pedido de plata sería mal timing.
+const DONATION_URL = "https://link.mercadopago.com.ar/felpus";
 const SCAN_STEP_INTERVAL_MS = 900;
 // Delay artificial en el submit — sin esto la pantalla de "escaneo" (que
 // muestra los pasos del matching) parpadea y desaparece antes de que la
@@ -3262,6 +3269,35 @@ export default function FelpusMatcher() {
               <p>+{PUNTOS_REENCUENTRO} pts · confirmar un reencuentro real</p>
               <p>+{PUNTOS_BONO_ORIGINAL} pts · bono para quien reportó originalmente esa mascota</p>
             </div>
+
+            {/* Donación — deliberadamente el último elemento de la pantalla,
+                mismo tono discreto que el resto de esta sección (no es un
+                banner llamativo, es un extra para quien ya está mirando el
+                ranking de la comunidad). Link externo a Mercado Pago: la app
+                no procesa el pago, solo abre la página en una pestaña nueva. */}
+            <a
+              href={DONATION_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 rounded-xl p-3.5 border felpus-focus"
+              style={{ borderColor: C.border, background: C.surface }}
+            >
+              <span
+                className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                style={{ background: C.emphasisBg }}
+              >
+                <Coffee className="w-4 h-4" style={{ color: C.orangeInk }} />
+              </span>
+              <span className="flex-1">
+                <span className="block text-xs font-bold" style={{ color: C.text }}>
+                  Felpus es gratis y sin publicidad
+                </span>
+                <span className="block text-[11px]" style={{ color: C.muted }}>
+                  Si te sirvió, podés donar con Mercado Pago
+                </span>
+              </span>
+              <ChevronRight className="w-4 h-4 shrink-0" style={{ color: C.muted }} />
+            </a>
           </div>
         )}
       </main>
