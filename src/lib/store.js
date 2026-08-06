@@ -109,7 +109,7 @@ const REPORT_LIST_BASE_FIELDS = [
 // select— así que fetchReports/createReport reintentan automáticamente sin
 // la columna puntual que falte, en vez de dejar la app entera sin poder
 // cargar/publicar reportes hasta que se corra la migración.
-const REPORT_LIST_OPTIONAL_COLUMNS = ["raza", "detalles"];
+const REPORT_LIST_OPTIONAL_COLUMNS = ["raza", "detalles", "oculto"];
 
 function reportListColumns(excluded) {
   const fields = [...REPORT_LIST_BASE_FIELDS];
@@ -136,7 +136,13 @@ export async function fetchReports() {
     const missing = missingOptionalColumn(result.error, REPORT_LIST_OPTIONAL_COLUMNS);
     if (!missing || excluded.has(missing)) {
       if (result.error) throw result.error;
-      return (result.data || []).map(rowToReport);
+      // Publicaciones denunciadas por 3+ IPs distintas (ver flag_report en
+      // schema.sql) se quedan en la base para revisión manual, pero
+      // desaparecen de acá — el único lugar del que salen Explorar, el mapa
+      // y el matching. Si "oculto" todavía no existe (falta correr la
+      // migración), row.oculto es undefined y nada se filtra: falla abierto,
+      // igual que el resto de este mecanismo de columnas opcionales.
+      return (result.data || []).filter((row) => row.oculto !== true).map(rowToReport);
     }
     excluded.add(missing);
   }
@@ -178,6 +184,25 @@ function isMissingFunctionError(error) {
   if (!error) return false;
   const text = `${error.message || ""} ${error.code || ""}`;
   return text.includes("42883") || text.includes("PGRST202") || /could not find the function|does not exist/i.test(text);
+}
+
+// Denunciar una publicación como falsa/errónea/inapropiada. Va por RPC
+// (flag_report en schema.sql), no por un insert directo a report_flags —
+// esa tabla no tiene política de INSERT para anon/authenticated a propósito
+// (mismo motivo que get_report_contact: el rate limiting por IP y el conteo
+// de IPs distintas para autoocultar tienen que vivir en el servidor, no
+// depender de que el cliente los respete).
+export async function flagReport(reportId, reason) {
+  const { error } = await supabase.rpc("flag_report", { p_report_id: reportId, p_reason: reason });
+  if (error) {
+    // Antes de correr la migración que agrega flag_report, la función
+    // todavía no existe — un mensaje claro en vez del error crudo de
+    // PostgREST ("could not find the function...").
+    if (isMissingFunctionError(error)) {
+      throw new Error("Denunciar todavía no está disponible en este momento. Probá de nuevo más tarde.");
+    }
+    throw error;
+  }
 }
 
 export async function createReport(report) {

@@ -85,6 +85,7 @@ import {
   sendHeart,
   bumpStreak,
   seedIfEmpty,
+  flagReport,
 } from "../lib/store";
 import { playTap, playSuccess } from "../lib/sound";
 import { loadGoogleMaps } from "../lib/googleMaps";
@@ -467,6 +468,21 @@ export default function FelpusMatcher() {
     } catch (e) {
       logError("No se pudo cargar el contacto del reporte", e);
       setContactStatus("error");
+    }
+  }
+
+  // Denunciar — se pasa tal cual a DetailModal (ver onFlagReport), que ya
+  // maneja sus propios estados de carga/éxito/error en el botón mismo; acá
+  // solo hace falta el pushToast como refuerzo (por si el modal se cierra
+  // antes de que la persona llegue a leer el mensaje inline) y no volver a
+  // tragarse el error: DetailModal lo necesita para mostrar "Reintentar".
+  async function handleFlagReport(report, reasonId) {
+    try {
+      await flagReport(report.id, reasonId);
+      pushToast("success", "Gracias por avisar — vamos a revisar esta publicación.");
+    } catch (e) {
+      logError("No se pudo enviar la denuncia", e);
+      throw e;
     }
   }
 
@@ -3337,6 +3353,7 @@ export default function FelpusMatcher() {
         onCancelConfirm={() => setConfirmingId(null)}
         isLoggedIn={!!user}
         onDelete={handleDeleteReport}
+        onFlagReport={handleFlagReport}
       />
 
       <footer className="max-w-2xl mx-auto px-4 pb-24 pt-2 space-y-1.5">

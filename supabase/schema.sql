@@ -682,3 +682,112 @@ create trigger trg_enforce_error_log_rate_limit
 
 drop policy if exists "error_logs_insert_all" on error_logs;
 create policy "error_logs_insert_all" on error_logs for insert with check (true);
+
+-- ---------------------------------------------------------------------------
+-- Denunciar publicaciones falsas/erróneas. No hay panel de admin en esta
+-- app (ver el resto de este archivo: todo lo delicado se revisa a mano
+-- desde el Table Editor de Supabase), así que en vez de sumar una pieza de
+-- arquitectura nueva, esto sigue el mismo molde ya probado acá: tabla sin
+-- política de SELECT (nadie la lee vía la API, solo vos desde el Table
+-- Editor) + inserción mediada por una función security definer con rate
+-- limiting por IP.
+--
+-- La única automatización es defensiva, no editorial: si 3 IPs DISTINTAS
+-- denuncian el mismo reporte, se oculta del listado público (columna
+-- "oculto", filtrada en fetchReports — ver store.js). No se borra: el
+-- registro queda para que lo revises vos y decidas. Publicar sigue abierto
+-- a invitados a propósito (alguien angustiado no debería tener que crear
+-- una cuenta para reportar), así que 3 denuncias reales es un umbral bajo
+-- adrede — el objetivo es frenar el daño rápido, no juzgar con certeza.
+-- ---------------------------------------------------------------------------
+alter table reports add column if not exists oculto boolean not null default false;
+
+create table if not exists report_flags (
+  id bigint generated always as identity primary key,
+  report_id text not null references reports(id) on delete cascade,
+  reason text not null,
+  ip text,
+  created_at timestamptz not null default now()
+);
+-- Único por (report_id, ip) cuando hay IP real — evita que una sola persona
+-- infle el conteo de "IPs distintas" reenviando la denuncia, y de paso hace
+-- que el conteo de abajo sea directo (count(distinct ip) sin duplicados).
+-- Parcial (where ip is not null) porque las llamadas sin IP identificable
+-- (poco frecuentes — ver el mismo patrón en get_report_contact más arriba)
+-- no deberían chocar entre sí.
+create unique index if not exists report_flags_report_ip_uidx on report_flags (report_id, ip) where ip is not null;
+alter table report_flags enable row level security;
+-- Sin políticas: nadie lee ni escribe esta tabla directamente vía la API —
+-- solo la toca flag_report() de abajo.
+
+create table if not exists flag_submissions (
+  ip text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists flag_submissions_ip_created_idx on flag_submissions (ip, created_at);
+alter table flag_submissions enable row level security;
+
+create or replace function public.flag_report(p_report_id text, p_reason text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  client_ip text;
+  recent_count integer;
+  distinct_ips integer;
+begin
+  if p_reason not in ('falsa', 'info_incorrecta', 'inapropiado', 'otro') then
+    raise exception 'Motivo de denuncia no reconocido.';
+  end if;
+
+  if not exists (select 1 from reports where id = p_report_id) then
+    raise exception 'No se encontró ese reporte.';
+  end if;
+
+  begin
+    client_ip := nullif(trim(split_part(current_setting('request.headers', true)::json->>'x-forwarded-for', ',', 1)), '');
+  exception when others then
+    client_ip := null;
+  end;
+
+  -- Mismo criterio que report_submissions/contact_requests: sin IP
+  -- identificable se deja pasar sin contar hacia el límite (llamado
+  -- servidor-a-servidor, o desde el SQL Editor).
+  if client_ip is not null then
+    delete from flag_submissions where created_at < now() - interval '1 day';
+
+    select count(*) into recent_count
+      from flag_submissions
+      where ip = client_ip and created_at > now() - interval '1 hour';
+
+    if recent_count >= 10 then
+      raise exception 'Se alcanzó el límite de denuncias por hora desde esta conexión. Probá de nuevo más tarde.';
+    end if;
+
+    insert into flag_submissions (ip) values (client_ip);
+  end if;
+
+  insert into report_flags (report_id, reason, ip)
+    values (p_report_id, p_reason, client_ip)
+    on conflict (report_id, ip) where ip is not null do nothing;
+
+  -- El auto-ocultamiento exige IP real de los denunciantes (si no, alguien
+  -- sin x-forwarded-for identificable podría, en teoría, mandar muchas
+  -- denuncias con ip null que nunca chocan entre sí por el índice parcial
+  -- de arriba, e inflar el conteo si contáramos filas en vez de IPs).
+  if client_ip is not null then
+    select count(distinct ip) into distinct_ips
+      from report_flags
+      where report_id = p_report_id and ip is not null;
+
+    if distinct_ips >= 3 then
+      update reports set oculto = true where id = p_report_id;
+    end if;
+  end if;
+end;
+$$;
+
+revoke all on function public.flag_report(text, text) from public;
+grant execute on function public.flag_report(text, text) to anon, authenticated;

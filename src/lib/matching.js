@@ -39,6 +39,17 @@ export const COLOR_OPTIONS = [
 
 export const SEXO_OPTIONS = ["Macho", "Hembra", "No sé"];
 
+// Motivos de denuncia — ids estables (se guardan tal cual en
+// report_flags.reason vía la función flag_report, ver schema.sql); el label
+// es sólo lo que se muestra en el botón y puede cambiar de redacción sin
+// romper denuncias ya guardadas.
+export const REPORT_FLAG_REASONS = [
+  { id: "falsa", label: "Es falsa o engañosa" },
+  { id: "info_incorrecta", label: "Información incorrecta" },
+  { id: "inapropiado", label: "Contenido inapropiado" },
+  { id: "otro", label: "Otro motivo" },
+];
+
 export const EDAD_OPTIONS = [
   "Cachorro/cría (0-1 año)",
   "Joven (1-3 años)",

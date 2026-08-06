@@ -32,8 +32,9 @@ import {
   AlertCircle,
   RefreshCw,
   Check,
+  Flag,
 } from "lucide-react";
-import { scoreLabel, isRecent, formatFechaAR, buildShareText, reportPhotoAlt, COLOR_OPTIONS } from "../../lib/matching";
+import { scoreLabel, isRecent, formatFechaAR, buildShareText, reportPhotoAlt, COLOR_OPTIONS, REPORT_FLAG_REASONS } from "../../lib/matching";
 import { downloadFlyer } from "../../lib/flyer";
 import { logError } from "../../lib/log";
 import { useFocusTrap } from "./useFocusTrap";
@@ -210,13 +211,16 @@ function contactMessage(report) {
   return `Hola! Vi en Felpus tu publicación de ${nombre} en ${report.zona}. Creo que puedo ayudar.\n${SITE_URL}/r/${report.id}`;
 }
 
-export function DetailModal({ report, contactStatus, onRetryContact, onClose, onResolve, confirming, onConfirm, onCancelConfirm, isLoggedIn, isOwner, onDelete }) {
+export function DetailModal({ report, contactStatus, onRetryContact, onClose, onResolve, confirming, onConfirm, onCancelConfirm, isLoggedIn, isOwner, onDelete, onFlagReport }) {
   const C = useTheme();
   const [activeIndex, setActiveIndex] = useState(0);
   const [generatingFlyer, setGeneratingFlyer] = useState(false);
   const [deleteConfirming, setDeleteConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  // idle → reasons (eligiendo motivo) → submitting → done | error
+  const [flagState, setFlagState] = useState("idle");
+  const [flagErrorMsg, setFlagErrorMsg] = useState("");
   const modalRef = useRef(null);
   // Si la lightbox de foto está abierta, Escape la cierra a ELLA (no todo
   // el detalle atrás) — misma lógica que ya usan el botón "X" y el click en
@@ -227,6 +231,7 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
     setActiveIndex(0);
     setDeleteConfirming(false);
     setLightboxOpen(false);
+    setFlagState("idle");
   }, [report?.id]);
   if (!report) return null;
   const fotos = report.fotos?.length ? report.fotos : [{ url: report.foto }];
@@ -256,6 +261,17 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
       await onDelete(report);
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function handleFlagSubmit(reasonId) {
+    setFlagState("submitting");
+    try {
+      await onFlagReport(report, reasonId);
+      setFlagState("done");
+    } catch (e) {
+      setFlagErrorMsg(e?.message || "No se pudo enviar la denuncia.");
+      setFlagState("error");
     }
   }
   return (
@@ -527,6 +543,70 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
                 >
                   <Trash2 className="w-3.5 h-3.5" /> Eliminar publicación
                 </button>
+              )}
+            </div>
+          )}
+          {/* Denunciar — no tiene sentido para el propio autor. Deliberadamente
+              menos visible que Contactar o Compartir (texto chico, gris, al
+              final): sirve para el caso real de publicaciones falsas o con
+              datos incorrectos, no para que compita por atención con las
+              acciones principales. El umbral de auto-ocultamiento (3 IPs
+              distintas) vive en el servidor — ver flag_report en schema.sql. */}
+          {!isOwner && (
+            <div className="pt-1">
+              {flagState === "idle" && (
+                <button
+                  type="button"
+                  onClick={() => setFlagState("reasons")}
+                  className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold py-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50 rounded-lg"
+                  style={{ color: C.muted }}
+                >
+                  <Flag className="w-3.5 h-3.5" /> Denunciar esta publicación
+                </button>
+              )}
+              {flagState === "reasons" && (
+                <div className="rounded-xl p-3 space-y-2" style={{ background: C.surfaceSubtle }}>
+                  <p className="text-xs font-semibold" style={{ color: C.text }}>¿Por qué la denunciás?</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {REPORT_FLAG_REASONS.map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => handleFlagSubmit(r.id)}
+                        className="text-xs font-semibold px-2.5 py-1.5 rounded-full border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                        style={{ borderColor: C.border, color: C.text, background: C.surface }}
+                      >
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFlagState("idle")}
+                    className="text-xs font-semibold"
+                    style={{ color: C.muted }}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              )}
+              {flagState === "submitting" && (
+                <div className="flex items-center justify-center gap-2 text-xs py-2" style={{ color: C.muted }} aria-live="polite">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Enviando denuncia...
+                </div>
+              )}
+              {flagState === "done" && (
+                <p className="flex items-center justify-center gap-1.5 text-xs font-semibold py-2" style={{ color: C.successText }} aria-live="polite">
+                  <Check className="w-3.5 h-3.5" /> Gracias, la vamos a revisar.
+                </p>
+              )}
+              {flagState === "error" && (
+                <div className="flex items-center justify-center gap-2 text-xs py-2 flex-wrap" style={{ color: C.redDark }} aria-live="polite">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {flagErrorMsg}
+                  <button type="button" onClick={() => setFlagState("reasons")} className="font-bold underline">
+                    Reintentar
+                  </button>
+                </div>
               )}
             </div>
           )}
