@@ -30,6 +30,7 @@ import {
   Instagram,
   Copy,
   AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import { scoreLabel, isRecent, formatFechaAR, buildShareText, reportPhotoAlt, COLOR_OPTIONS } from "../../lib/matching";
 import { downloadFlyer } from "../../lib/flyer";
@@ -162,7 +163,7 @@ export function ReportCard({ report, onOpenDetail, children }) {
   );
 }
 
-export function DetailModal({ report, onClose, onResolve, confirming, onConfirm, onCancelConfirm, isLoggedIn, isOwner, onDelete }) {
+export function DetailModal({ report, contactStatus, onRetryContact, onClose, onResolve, confirming, onConfirm, onCancelConfirm, isLoggedIn, isOwner, onDelete }) {
   const C = useTheme();
   const [activeIndex, setActiveIndex] = useState(0);
   const [generatingFlyer, setGeneratingFlyer] = useState(false);
@@ -320,39 +321,79 @@ export function DetailModal({ report, onClose, onResolve, confirming, onConfirm,
             <p className="text-sm" style={{ color: C.text }}>{report.descripcion}</p>
           </div>
           {report.nickname && <p className="text-xs" style={{ color: C.muted }}>Reportado por {report.nickname}</p>}
-          {(report.contactoWhatsapp || report.contactoEmail) && (
+          {/* Contactar — antes esta sección entera dependía de que
+              report.contactoWhatsapp/contactoEmail ya estuvieran cargados, y
+              se piden aparte de forma asíncrona (ver openReportDetail en
+              FelpusMatcher.jsx, por privacidad — ya no vienen en el listado
+              general). Mientras esa espera está en curso, o si falla (rate
+              limit, red), acá no aparecía NADA: ni carga ni error, dejando a
+              quien mira el reporte sin ninguna forma visible de contactar ni
+              de entender por qué. Ahora se distinguen los tres estados. */}
+          {!report.resuelto && (
             <div className="space-y-2">
               <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Contactar</p>
-              <div className="flex gap-2">
-                {report.contactoWhatsapp && (
-                  <a
-                    href={`https://wa.me/${report.contactoWhatsapp}?text=${encodeURIComponent(
-                      `Hola! Vi en Felpus tu publicación de ${report.nombre || `un/a ${report.especie}`} en ${report.zona}. Creo que puedo ayudar.`
-                    )}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold text-white"
-                    // Verde oficial de marca de WhatsApp — a propósito no usa
-                    // C.green (5.95:1 vs. blanco): la gente reconoce este botón
-                    // por su color exacto, igual que el "F" azul de Facebook.
-                    // Es la única excepción de marca de terceros en toda la app.
-                    style={{ background: "#25D366" }}
+              {contactStatus === "loading" && (
+                <div
+                  className="flex items-center gap-2 rounded-xl py-2.5 px-3 text-sm"
+                  style={{ background: C.surfaceSubtle, color: C.muted }}
+                  aria-live="polite"
+                >
+                  <Loader2 className="w-4 h-4 animate-spin shrink-0" /> Cargando datos de contacto...
+                </div>
+              )}
+              {contactStatus === "error" && (
+                <div
+                  className="flex items-center justify-between gap-2 rounded-xl py-2.5 px-3 text-sm border"
+                  style={{ borderColor: C.border, background: C.dangerBg, color: C.redDark }}
+                  aria-live="polite"
+                >
+                  <span className="flex items-center gap-1.5"><AlertCircle className="w-4 h-4 shrink-0" /> No pudimos cargar el contacto.</span>
+                  <button
+                    type="button"
+                    onClick={onRetryContact}
+                    className="shrink-0 flex items-center gap-1 font-bold underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded"
                   >
-                    <MessageCircle className="w-4 h-4" /> WhatsApp
-                  </a>
-                )}
-                {report.contactoEmail && (
-                  <a
-                    href={`mailto:${report.contactoEmail}?subject=${encodeURIComponent("Sobre tu mascota en Felpus")}&body=${encodeURIComponent(
-                      `Hola! Vi en Felpus tu publicación de ${report.nombre || `un/a ${report.especie}`} en ${report.zona}. Creo que puedo ayudar.`
-                    )}`}
-                    className="flex-1 flex items-center justify-center gap-1.5 border rounded-xl py-2.5 text-sm font-bold"
-                    style={{ borderColor: C.border, color: C.text }}
-                  >
-                    <Mail className="w-4 h-4" /> Email
-                  </a>
-                )}
-              </div>
+                    <RefreshCw className="w-3.5 h-3.5" /> Reintentar
+                  </button>
+                </div>
+              )}
+              {contactStatus === "ready" && !report.contactoWhatsapp && !report.contactoEmail && (
+                <p className="text-sm rounded-xl py-2.5 px-3" style={{ background: C.surfaceSubtle, color: C.muted }}>
+                  Esta publicación no dejó un contacto directo.
+                </p>
+              )}
+              {contactStatus === "ready" && (report.contactoWhatsapp || report.contactoEmail) && (
+                <div className="flex gap-2">
+                  {report.contactoWhatsapp && (
+                    <a
+                      href={`https://wa.me/${report.contactoWhatsapp}?text=${encodeURIComponent(
+                        `Hola! Vi en Felpus tu publicación de ${report.nombre || `un/a ${report.especie}`} en ${report.zona}. Creo que puedo ayudar.`
+                      )}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold text-white"
+                      // Verde oficial de marca de WhatsApp — a propósito no usa
+                      // C.green (5.95:1 vs. blanco): la gente reconoce este botón
+                      // por su color exacto, igual que el "F" azul de Facebook.
+                      // Es la única excepción de marca de terceros en toda la app.
+                      style={{ background: "#25D366" }}
+                    >
+                      <MessageCircle className="w-4 h-4" /> WhatsApp
+                    </a>
+                  )}
+                  {report.contactoEmail && (
+                    <a
+                      href={`mailto:${report.contactoEmail}?subject=${encodeURIComponent("Sobre tu mascota en Felpus")}&body=${encodeURIComponent(
+                        `Hola! Vi en Felpus tu publicación de ${report.nombre || `un/a ${report.especie}`} en ${report.zona}. Creo que puedo ayudar.`
+                      )}`}
+                      className="flex-1 flex items-center justify-center gap-1.5 border rounded-xl py-2.5 text-sm font-bold"
+                      style={{ borderColor: C.border, color: C.text }}
+                    >
+                      <Mail className="w-4 h-4" /> Email
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
           )}
           <div className="flex gap-2 pt-2">

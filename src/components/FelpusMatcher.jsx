@@ -241,6 +241,14 @@ export default function FelpusMatcher() {
   // al tab "Reportar", aunque terminara usando el botón "Ubicación" (GPS) o
   // escribiendo la zona a mano, que cubren la mayoría de los casos.
   const [showMapPicker, setShowMapPicker] = useState(false);
+  // Auditoría UX mobile: el formulario mostraba ~12 campos en fila, todos
+  // con el mismo peso visual, aunque el propio checklist de la app (más
+  // abajo) ya sabe que solo Foto/Zona/Sexo/Color/Contacto son necesarios
+  // para publicar — raza, nombre, edad, peso, fecha y "Detalles para
+  // reconocerlo" son datos que ayudan pero nunca bloquean. Colapsados acá
+  // detrás de un solo toque: "Foto → Ubicación → esencial → publicar" en
+  // vez de scrollear 12 campos con el pulgar antes de poder publicar.
+  const [showMoreDetails, setShowMoreDetails] = useState(false);
   const [filterTipo, setFilterTipo] = useState("todos");
   const [filterEspecie, setFilterEspecie] = useState("todos");
   const [searchQuery, setSearchQuery] = useState("");
@@ -304,6 +312,16 @@ export default function FelpusMatcher() {
   const [showResueltas, setShowResueltas] = useState(false);
   const { toasts, pushToast } = useToasts();
   const [detailReport, setDetailReport] = useState(null);
+  // Hallazgo real de UX: el contacto (WhatsApp/email) se pide aparte, de
+  // forma asíncrona, recién al abrir el detalle (ver openReportDetail) —
+  // por privacidad, ya no viene en el listado general (ver PENDIENTE_DECISION.md).
+  // Sin este estado, mientras esa espera está en curso (o si falla: rate
+  // limit de 30/hora por IP, red lenta, etc.) la sección "Contactar" del
+  // modal simplemente no aparecía — nada, ni carga ni error — dejando a
+  // quien mira el reporte sin ninguna forma visible de comunicarse ni de
+  // entender por qué. Ahora el modal distingue "cargando" / "no se pudo,
+  // reintentar" / "listo" en vez de solo "aparece o no aparece".
+  const [contactStatus, setContactStatus] = useState("idle"); // idle | loading | ready | error
   const [sortBy, setSortBy] = useState("recientes");
   const [myLocation, setMyLocation] = useState(null);
   const [locatingMe, setLocatingMe] = useState(false);
@@ -410,12 +428,39 @@ export default function FelpusMatcher() {
   // acá ni desde afuera de la app— que pueda traer el contacto en bloque.
   async function openReportDetail(report) {
     setDetailReport(report);
-    if (!report || report.resuelto) return; // resuelto: la base ya lo borró, no hay nada que pedir
+    // resuelto: la base ya borró el contacto al confirmar el reencuentro
+    // (ver resolveReports en store.js) — no hay nada que pedir, y no es un
+    // error: "idle" hace que el modal no muestre ni carga ni "no se pudo".
+    if (!report || report.resuelto) {
+      setContactStatus("idle");
+      return;
+    }
+    setContactStatus("loading");
     try {
       const contact = await fetchReportContact(report.id);
       setDetailReport((prev) => (prev?.id === report.id ? { ...prev, ...contact } : prev));
+      setContactStatus("ready");
     } catch (e) {
       logError("No se pudo cargar el contacto del reporte", e);
+      setContactStatus("error");
+    }
+  }
+
+  // Reintentar sin cerrar y reabrir el modal — para el botón "Reintentar"
+  // del estado de error (ver DetailModal). No usa openReportDetail directo
+  // porque ese vuelve a pisar detailReport con el objeto "report" que le
+  // pasan (perdería cualquier otro dato ya mergeado); acá solo se repite el
+  // pedido de contacto para el reporte que ya está abierto.
+  async function retryFetchContact() {
+    if (!detailReport || detailReport.resuelto) return;
+    setContactStatus("loading");
+    try {
+      const contact = await fetchReportContact(detailReport.id);
+      setDetailReport((prev) => (prev?.id === detailReport.id ? { ...prev, ...contact } : prev));
+      setContactStatus("ready");
+    } catch (e) {
+      logError("No se pudo cargar el contacto del reporte", e);
+      setContactStatus("error");
     }
   }
 
@@ -547,6 +592,15 @@ export default function FelpusMatcher() {
     const reaccionAporta = reaccionChips.length > 0 && !(reaccionChips.length === 1 && reaccionChips[0] === "no_se");
     return accesorioChips.length > 0 || reaccionAporta || marcaChips.length > 0 || !!detalleLibre.trim();
   }, [accesorioChips, reaccionChips, marcaChips, detalleLibre]);
+
+  // La sección "opcional" del formulario (ver showMoreDetails) queda
+  // expandida sola si ya hay algo cargado ahí adentro — por ejemplo, el
+  // texto libre que llega precargado desde el share-target (ver el useEffect
+  // de "shareTarget" más abajo). Sin esto, esa información quedaría oculta
+  // detrás de un toggle colapsado, invisible hasta que alguien lo abra.
+  const hasOptionalFieldsFilled =
+    !!form.raza.trim() || !!form.nombre.trim() || !!form.edad || !!form.peso || hasMeaningfulDetails;
+  const moreDetailsExpanded = showMoreDetails || hasOptionalFieldsFilled;
 
   const reportChecklist = useMemo(() => {
     const whatsappDigits = sanitizePhoneForWhatsapp(form.contactoWhatsapp);
@@ -3157,6 +3211,8 @@ export default function FelpusMatcher() {
 
       <DetailModal
         report={detailReport}
+        contactStatus={contactStatus}
+        onRetryContact={retryFetchContact}
         onClose={() => {
           setDetailReport(null);
           setConfirmingId(null);
