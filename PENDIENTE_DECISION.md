@@ -1,5 +1,79 @@
 # Decisiones pendientes — requieren acción o información tuya
 
+## -11. Login con Google mostraba el dominio de Supabase, no el de Felpus (2026-08-06) — requiere 2 pasos tuyos, opcional
+
+**Qué encontré:** en el proceso de verificación de marca de Google OAuth
+(ver los 3 motivos de rechazo que Google fue dando — dominio no verificado,
+propósito no explicado, nombre de la app sin coincidir), vos mismo
+detectaste algo que los mensajes de Google no decían explícitamente: al
+tocar "Acceder con Google" en la app, la pantalla "Elige una cuenta" de
+Google muestra *"Ir a woqckndwnxdqcwbrvluj.supabase.co"* — el dominio propio
+de tu proyecto de Supabase, no `felpus.com`.
+
+Es así porque el login usa `supabase.auth.signInWithOAuth()` (flujo clásico
+de OAuth con redirect): Supabase arma la URL de autorización con
+`redirect_uri = https://<tu-proyecto>.supabase.co/auth/v1/callback`, y esa
+es la URL que Google le muestra al usuario antes de continuar. Cosméticamente
+raro para cualquier visitante, y un candidato muy plausible para seguir
+trabando la verificación de marca aunque los otros 3 puntos ya estén
+resueltos.
+
+**Arreglo evaluado y descartado (por ahora): dominio propio de Supabase.**
+Supabase permite servir toda su API (incluida la de Auth) bajo un
+subdominio propio (ej. `auth.felpus.com`), lo que resolvería esto de raíz —
+pero es una función paga (plan Pro + add-on de Custom Domains), y el
+proyecto está en el plan Free. Se descartó por costo, no por dificultad
+técnica.
+
+**Qué hice en su lugar (gratis):** agregué un segundo camino de login,
+opcional, con **Google Identity Services** (el SDK oficial de "Acceder con
+Google" que corre embebido en la propia página, sin redirect por ningún
+dominio ajeno):
+
+1. `src/lib/googleAuth.js` — carga perezosa del script de Google (mismo
+   patrón que `googleMaps.js`) + generación del nonce que exige
+   `supabase.auth.signInWithIdToken()` para verificar que el token no fue
+   reutilizado de otro contexto.
+2. `src/components/felpus/useAuth.js` — si hay
+   `NEXT_PUBLIC_GOOGLE_CLIENT_ID` configurada, inicializa Google Identity
+   Services en segundo plano al montar. `signInWithGoogle()` (la misma
+   función que ya llamaban los 5 lugares de la app que ofrecen login)
+   primero intenta el One Tap de Google (`prompt()`) — si Google puede
+   mostrarlo, todo el intercambio ocurre embebido en `felpus.com`, sin pisar
+   ningún dominio de Supabase. Si no se puede mostrar (enfriamiento por un
+   cierre previo, navegador sin soporte, cookies de terceros bloqueadas),
+   cae automáticamente al flujo clásico de siempre — nadie se queda sin
+   poder loguearse.
+3. **Sin tocar ningún botón/JSX existente**: como los 5 lugares de la app ya
+   llamaban a la misma función `signInWithGoogle()` de `useAuth.js`, el
+   cambio quedó contenido ahí adentro — cero riesgo de romper el diseño o el
+   layout de los botones.
+4. Sin `NEXT_PUBLIC_GOOGLE_CLIENT_ID` configurada, nada de esto se activa:
+   la app sigue funcionando exactamente como antes, con el flujo clásico de
+   siempre.
+
+**Paso pendiente — 2 cosas, ambas gratis (ver README.md, sección 2.1.1):**
+1. Agregar `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (el mismo Client ID que ya usás
+   para el login, no el secreto) en `.env.local` y en las variables de
+   entorno de producción.
+2. En el Dashboard de Supabase → *Authentication → Providers → Google* →
+   agregar ese mismo Client ID al campo **"Authorized Client IDs"**.
+
+**No pude probarlo end-to-end:** no tengo forma de completar un login real
+de Google en este entorno (necesitaría entrar con una cuenta de Google real,
+algo que no hago por vos bajo ninguna circunstancia). Confirmé que el script
+carga sin errores de consola, que el flujo clásico sigue intacto (tests +
+build limpios), y que la lógica de nonce/hash está cubierta por tests
+(`src/lib/googleAuth.test.js`) — pero **la primera vez que actives esto,
+probá vos mismo el botón "Acceder con Google" de punta a punta** (desktop y
+mobile) antes de confiar en que ya está resuelto.
+
+**Si después de probarlo la pantalla de Google sigue mostrando
+`supabase.co`** (por ejemplo porque el navegador no soporta One Tap y cae
+siempre al flujo clásico), significa que esta vía gratuita no alcanza para
+tu caso — ahí sí valdría la pena evaluar pagar el dominio propio de Supabase
+mencionado arriba.
+
 ## -10. Bono de puntos al confirmar reencuentro nunca se otorgaba (y rompía el flujo entero) (2026-08-05) — requiere 1 paso tuyo
 
 **Qué encontré, auditando el flujo de "confirmar reencuentro":** al marcar

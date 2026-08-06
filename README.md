@@ -89,6 +89,29 @@ configurás nada de esto, ese botón no va a completar el login — la gente pue
 seguir reportando como invitado, pero nadie va a poder sumar puntos ni
 confirmar reencuentros hasta que esto esté activo.
 
+### 2.1.1 Que el login no muestre el dominio de Supabase (opcional)
+
+Con la configuración de arriba nada más, cuando alguien toca "Acceder con
+Google" el navegador rebota por el dominio propio de tu proyecto de Supabase
+antes de volver — la pantalla "Elige una cuenta" de Google le muestra de paso
+ese dominio (`xxxx.supabase.co`), no el tuyo. Es un detalle cosmético (el
+login funciona igual), pero puede llamar la atención o complicar la
+verificación de marca de Google OAuth si en algún momento la pedís. Para
+evitarlo, sin pagar nada:
+
+1. Copiá el mismo **Client ID** que ya usaste en el paso 2.1 (Google Cloud
+   Console → *Credentials* → tu OAuth Client → campo "Client ID", termina en
+   `.apps.googleusercontent.com`). No es el Client Secret, y no hace falta
+   crear uno nuevo.
+2. Agregalo como `NEXT_PUBLIC_GOOGLE_CLIENT_ID` en tu `.env.local` (y en las
+   variables de entorno de tu hosting en producción).
+3. En **Supabase Dashboard → Authentication → Providers → Google**, buscá el
+   campo **"Authorized Client IDs"** y agregá ahí el mismo Client ID.
+4. Redesplegá.
+
+Sin este paso, todo sigue funcionando exactamente igual que antes (es
+100% opcional) — el botón usa el flujo con redirect de siempre.
+
 ---
 
 ## 2.2 Activar reconocimiento visual real con IA (opcional)
