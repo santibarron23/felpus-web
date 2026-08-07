@@ -254,6 +254,33 @@ describe("scoreMatch", () => {
     ).score;
     expect(soloRuido).toBe(sinDetalles);
   });
+
+  it("'Otro color' sin texto de ninguno de los dos lados no aporta señal (no es un match perfecto por default)", () => {
+    // Antes del fix, dos reportes con color:"Otro color" y colorOtro:"" vacío
+    // puntuaban como coincidencia PERFECTA de color solo por ausencia de dato
+    // — mismo bug de fondo que "Mestizo/a" en raza, ya cubierto arriba.
+    const a = makeReport({ color: "Otro color", colorOtro: "" });
+    const b = makeReport({ id: "r2", color: "Otro color", colorOtro: "" });
+    const sinColorOtro = scoreMatch(a, b).score;
+
+    const sinColorDato = scoreMatch(makeReport({ color: "" }), makeReport({ id: "r3", color: "" })).score;
+    expect(sinColorOtro).toBe(sinColorDato);
+  });
+
+  it("'Otro color' con el mismo texto escrito de ambos lados sí sube el score", () => {
+    // El sexo distinto evita que ambos escenarios empaten en un score
+    // "perfecto" de 1.0 por los demás campos — así se puede ver el efecto
+    // real de sumar (o no) la señal de color.
+    const conTextoIgual = scoreMatch(
+      makeReport({ sexo: "Macho", color: "Otro color", colorOtro: "Tricolor" }),
+      makeReport({ id: "r2", sexo: "Hembra", color: "Otro color", colorOtro: "Tricolor" })
+    ).score;
+    const sinTexto = scoreMatch(
+      makeReport({ sexo: "Macho", color: "Otro color", colorOtro: "" }),
+      makeReport({ id: "r3", sexo: "Hembra", color: "Otro color", colorOtro: "" })
+    ).score;
+    expect(conTextoIgual).toBeGreaterThan(sinTexto);
+  });
 });
 
 describe("matchBreakdown", () => {
@@ -277,6 +304,13 @@ describe("matchBreakdown", () => {
     expect(byKey.color).toEqual({ key: "color", label: "Color", coincide: false, detail: "Negro / Blanco" });
     expect(byKey.tamano.coincide).toBe(false);
     expect(byKey.sexo.coincide).toBe(false);
+  });
+
+  it("omite el ítem 'color' si ambos eligieron 'Otro color' pero ninguno escribió el detalle", () => {
+    const a = makeReport({ color: "Otro color", colorOtro: "" });
+    const b = makeReport({ id: "r2", color: "Otro color", colorOtro: "" });
+    const keys = matchBreakdown(a, b).map((i) => i.key);
+    expect(keys).not.toContain("color");
   });
 
   it("omite un campo si alguno de los dos reportes no lo completó (no es 'diferencia', es 'sin dato')", () => {

@@ -458,11 +458,14 @@ function ordinalSimilarity(aVal, bVal, options) {
 
 // Cuando ambos reportes eligieron "Otro color", compara el detalle escrito
 // a mano (colorOtro) en vez de darlos por iguales solo porque cayeron en la
-// misma categoría genérica.
+// misma categoría genérica. Si a alguno le falta el texto, no hay señal real
+// que comparar — devuelve null (se excluye del promedio, mismo patrón que
+// "No sé" en sexo/edad/peso) en vez de 1, que antes lo trataba como
+// coincidencia perfecta solo por ausencia de dato.
 function colorOtroSimilarity(colorOtroA, colorOtroB) {
   const ca = normalizeText(colorOtroA).trim();
   const cb = normalizeText(colorOtroB).trim();
-  if (!ca || !cb) return 1;
+  if (!ca || !cb) return null;
   if (ca === cb || ca.includes(cb) || cb.includes(ca)) return 1;
   return jaccard(tokenize(colorOtroA), tokenize(colorOtroB));
 }
@@ -535,9 +538,16 @@ function structuredFieldSimilarity(a, b) {
   const parts = [];
 
   if (a.color && b.color) {
-    const colorMatch =
-      a.color !== b.color ? 0 : a.color === "Otro color" ? colorOtroSimilarity(a.colorOtro, b.colorOtro) : 1;
-    parts.push({ weight: 0.35, value: colorMatch });
+    if (a.color !== b.color) {
+      parts.push({ weight: 0.35, value: 0 });
+    } else if (a.color === "Otro color") {
+      const colorMatch = colorOtroSimilarity(a.colorOtro, b.colorOtro);
+      // Si ninguno de los dos escribió el detalle, no hay señal — se excluye
+      // del promedio en vez de sumar como si coincidiera.
+      if (colorMatch != null) parts.push({ weight: 0.35, value: colorMatch });
+    } else {
+      parts.push({ weight: 0.35, value: 1 });
+    }
   }
   // En perro, peso alto (a la par de color): cuando ambos lados la
   // completan con una raza real, es de las señales más fuertes que hay. En
@@ -669,14 +679,19 @@ export function matchBreakdown(a, b) {
   };
 
   if (a.color && b.color) {
-    const coincide =
-      a.color !== b.color ? false : a.color === "Otro color" ? colorOtroSimilarity(a.colorOtro, b.colorOtro) >= 0.5 : true;
-    push(
-      "color",
-      "Color",
-      coincide,
-      coincide ? null : `${a.color === "Otro color" ? a.colorOtro || a.color : a.color} / ${b.color === "Otro color" ? b.colorOtro || b.color : b.color}`
-    );
+    if (a.color !== b.color) {
+      push("color", "Color", false, `${a.color} / ${b.color}`);
+    } else if (a.color === "Otro color") {
+      const colorMatch = colorOtroSimilarity(a.colorOtro, b.colorOtro);
+      // Ninguno de los dos escribió el detalle: sin señal real, se omite el
+      // ítem entero en vez de mostrarlo como coincidencia o diferencia.
+      if (colorMatch != null) {
+        const coincide = colorMatch >= 0.5;
+        push("color", "Color", coincide, coincide ? null : `${a.colorOtro || a.color} / ${b.colorOtro || b.color}`);
+      }
+    } else {
+      push("color", "Color", true);
+    }
   }
 
   if (a.tamano && b.tamano) {
