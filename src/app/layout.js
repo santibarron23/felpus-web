@@ -113,7 +113,7 @@ const THEME_INIT_SCRIPT = `
 })();
 `;
 
-export default function RootLayout({ children }) {
+export default async function RootLayout({ children }) {
   // Server Component: leer la cookie acá es lo que le permite al HTML
   // generado por el servidor arrancar ya con el `mode` de React correcto
   // (pasado como prop a ThemeProvider más abajo) — así cualquier
@@ -126,7 +126,10 @@ export default function RootLayout({ children }) {
   // cookies() vuelve dinámico este layout (no se puede pre-generar en
   // build) — costo aceptado: la app ya es interactiva de punta a punta
   // (Supabase en runtime), no había ganancia real de estático acá.
-  const stored = cookies().get("felpus-theme")?.value;
+  // Desde Next 15, cookies() devuelve una Promise (antes era síncrono) —
+  // de ahí que RootLayout ahora sea async.
+  const cookieStore = await cookies();
+  const stored = cookieStore.get("felpus-theme")?.value;
   const initialMode = stored === "dark" ? "dark" : "light";
 
   return (

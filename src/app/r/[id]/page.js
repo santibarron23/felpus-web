@@ -29,7 +29,9 @@ async function fetchReport(id) {
 // del servidor, sin ejecutar el JS de la SPA, así que la única forma de
 // lograrlo es con una ruta propia por reporte.
 export async function generateMetadata({ params }) {
-  const report = await fetchReport(params.id);
+  // Desde Next 15, `params` es una Promise (antes era un objeto plano).
+  const { id } = await params;
+  const report = await fetchReport(id);
   if (!report) {
     // El reporte no existe (borrado, id inválido): la página igual responde
     // 200 (RedirectClient decide el destino en el cliente), así que sin
@@ -49,7 +51,7 @@ export async function generateMetadata({ params }) {
     ? report.descripcion.slice(0, 200)
     : "Ayudanos a reencontrar esta mascota con su familia.";
   const image = report.foto_url;
-  const canonical = `${SITE_URL}/r/${params.id}`;
+  const canonical = `${SITE_URL}/r/${id}`;
 
   return {
     title,
@@ -78,14 +80,16 @@ export async function generateMetadata({ params }) {
 }
 
 export default async function ReportPage({ params }) {
-  const report = await fetchReport(params.id);
+  // Desde Next 15, `params` es una Promise (antes era un objeto plano).
+  const { id } = await params;
+  const report = await fetchReport(id);
   const jsonLd = report
     ? {
         "@context": "https://schema.org",
         "@type": "WebPage",
         name: `${report.tipo === "perdida" ? "Perdida" : "Encontrada"}: ${report.nombre || report.especie} en ${report.zona}`,
         description: report.descripcion || undefined,
-        url: `${SITE_URL}/r/${params.id}`,
+        url: `${SITE_URL}/r/${id}`,
         image: report.foto_url || undefined,
         datePublished: report.creado_en || undefined,
       }
@@ -101,7 +105,7 @@ export default async function ReportPage({ params }) {
         // explotable con solo abrir el link /r/<id> que se comparte).
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLdString(jsonLd) }} />
       )}
-      <RedirectClient id={params.id} />
+      <RedirectClient id={id} />
     </>
   );
 }
