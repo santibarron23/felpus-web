@@ -1275,7 +1275,13 @@ export default function FelpusMatcher() {
       localStorage.setItem("felpus_hearted_ids", JSON.stringify(updated));
     } catch (e) {
       logError(e);
-      pushToast("error", "No pudimos enviar el corazón. Probá de nuevo.");
+      // e.message: cuando el límite server-side de send_heart (ver
+      // schema.sql) rechaza el pedido — quien llega hasta acá ya pasó el
+      // chequeo de heartedIds del propio navegador, así que en la práctica
+      // solo se dispara desde otra pestaña/navegador o tras borrar ese
+      // localStorage — igual vale mostrar el motivo real en vez de uno
+      // genérico.
+      pushToast("error", e?.message || "No pudimos enviar el corazón. Probá de nuevo.");
     }
   }
 

@@ -387,6 +387,70 @@ revoke all on function public.send_heart(text) from public;
 grant execute on function public.send_heart(text) to authenticated;
 
 -- ---------------------------------------------------------------------------
+-- Hallazgo de auditoría de anti-abuso (2026-08-07): send_heart no tenía
+-- NINGÚN límite server-side — "heartedIds" en localStorage (FelpusMatcher.jsx)
+-- es pura UX (evita el click doble sin querer en el mismo navegador), no un
+-- control de seguridad real: cualquiera podía llamar a la RPC directo (otra
+-- pestaña, otro navegador, o simplemente borrando ese localStorage) y
+-- mandarle miles de corazones seguidos al mismo colaborador, o mandárselos a
+-- sí mismo para inflar su propia reputación visible en el ranking. Bajo
+-- impacto real (hearts es un gesto decorativo, no afecta el matching ni
+-- expone nada), pero es exactamente el "anti-abuse" que pide auditar.
+--
+-- heart_sends registra cada envío real (remitente autenticado, no IP —
+-- mandar corazones YA exige login, así que atarlo a la cuenta es más fuerte
+-- que por IP) y el índice único de abajo limita a 1 por remitente/destino
+-- por día calendario (en el huso horario del servidor — un límite
+-- anti-abuso, no una mecánica fina como la racha, así que no hace falta
+-- calcularlo en el huso horario de quien lo usa).
+-- ---------------------------------------------------------------------------
+create table if not exists heart_sends (
+  sender_id uuid not null,
+  target_id text not null,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists heart_sends_sender_target_day_uidx
+  on heart_sends (sender_id, target_id, (created_at::date));
+alter table heart_sends enable row level security;
+-- Sin políticas: nadie lee ni escribe esta tabla directamente vía la API —
+-- solo la toca send_heart() (security definer), reemplazada abajo.
+
+create or replace function public.send_heart(target_id text)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  new_hearts integer;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión para mandar corazones.';
+  end if;
+  if auth.uid()::text = target_id then
+    raise exception 'No podés mandarte un corazón a vos mismo.';
+  end if;
+
+  begin
+    insert into heart_sends (sender_id, target_id) values (auth.uid(), target_id);
+  exception when unique_violation then
+    raise exception 'Ya le mandaste un corazón hoy a este colaborador. Probá mañana.';
+  end;
+
+  update contributors set hearts = hearts + 1
+    where id = target_id
+    returning hearts into new_hearts;
+  if new_hearts is null then
+    raise exception 'No se encontró ese colaborador.';
+  end if;
+  return new_hearts;
+end;
+$$;
+
+revoke all on function public.send_heart(text) from public;
+grant execute on function public.send_heart(text) to authenticated;
+
+-- ---------------------------------------------------------------------------
 -- award_points: suma puntos/reportes/reencuentros de forma atómica. Mismo
 -- motivo que send_heart de arriba, y el mismo problema real que encontró: al
 -- confirmar un reencuentro, quien confirma le suma un bono al DUEÑO DEL OTRO
@@ -1110,3 +1174,24 @@ create policy "reports_insert_own_or_guest" on reports
 -- decidir el propio autor del reporte.
 -- ---------------------------------------------------------------------------
 revoke update (oculto) on reports from anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Hallazgo de auditoría de performance (2026-08-07): "reports" nunca tuvo
+-- ningún índice más allá de la primary key (id) — cada consulta hace un
+-- full table scan. Con el volumen de hoy no se nota, pero ya es el patrón
+-- real de acceso de la app:
+--  - fetchReports() (store.js): "order by creado_en desc" en cada carga del
+--    listado/Explorar.
+--  - sitemap.js / r/[id]/page.js: "where resuelto=eq.false order by
+--    creado_en.desc" contra la REST API directa.
+--  - notify-match/route.js: "where tipo=eq.X and especie=eq.Y and
+--    resuelto=eq.false" — corre en CADA publicación nueva (el trigger la
+--    dispara siempre), es la consulta más sensible a volumen de toda la app.
+--  - admin_metrics(): varios "count(*) where oculto"/"where not oculto".
+-- Los tres índices de abajo cubren esos cuatro patrones sin tocar ninguna
+-- query existente — son puramente aditivos, "if not exists" (no rompen nada
+-- si ya corriste esta migración antes).
+-- ---------------------------------------------------------------------------
+create index if not exists reports_creado_en_idx on reports (creado_en desc);
+create index if not exists reports_resuelto_tipo_especie_idx on reports (resuelto, tipo, especie);
+create index if not exists reports_oculto_idx on reports (oculto) where oculto = true;

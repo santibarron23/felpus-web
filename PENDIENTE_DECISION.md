@@ -38,10 +38,23 @@ propio reporte, marcarlo resuelto, sumar puntos reales, mandar corazones,
 editar tu perfil — todo sigue igual. Agregué tests para `bumpStreak()` (RPC
 + fallback) siguiendo el mismo patrón que ya cubría `awardPoints()`.
 
+**De paso, en la misma pasada de auditoría (mismo commit, misma migración):**
+- **`send_heart()` no tenía ningún límite server-side** — el "ya le mandaste
+  un corazón" que se ve en la UI es solo un `localStorage` del navegador
+  (UX, no seguridad real): cualquiera podía llamar a la RPC directo y
+  mandarle miles de corazones seguidos a alguien, o mandárselos a sí mismo.
+  Ahora exige 1 por remitente/destino por día (tabla `heart_sends`) y
+  bloquea mandarte un corazón a vos mismo.
+- **La tabla `reports` no tenía ningún índice** más allá del id — cada
+  consulta (listado, sitemap, el matching que corre en cada publicación
+  nueva) hacía un full table scan. Agregué 3 índices que cubren los
+  patrones de acceso reales; puramente aditivo, no cambia ningún resultado.
+
 **Paso pendiente:**
 1. Abrí el SQL Editor de tu proyecto Supabase.
 2. Pegá y ejecutá todo `supabase/schema.sql` de nuevo (agrega la función
-   `bump_streak` y los 3 `revoke`/policy nuevos, no borra nada existente).
+   `bump_streak`, los 3 `revoke`/policy de autorización, `heart_sends` +
+   el límite de corazones, y los 3 índices nuevos — no borra nada existente).
 3. Listo — no hace falta ningún otro paso ni cambio de configuración.
 
 **No pude probarlo end-to-end contra la base real** (no tengo una sesión de
