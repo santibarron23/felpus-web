@@ -1,3 +1,5 @@
+import { logError } from "../../../lib/log";
+
 // Esta ruta corre en el servidor (nunca en el navegador), así que el token
 // de Hugging Face nunca queda expuesto al público.
 export const runtime = "nodejs";
@@ -107,6 +109,10 @@ export async function POST(request) {
 
     return Response.json({ embedding });
   } catch (e) {
-    return Response.json({ error: String(e?.message || e) }, { status: 500 });
+    // El detalle real (ruta interna, stack, nombre de librería) se loguea
+    // server-side; al cliente solo le sirve saber que falló, para caer al
+    // histograma de color de respaldo — no hay necesidad de exponer más.
+    logError("Fallo inesperado en /api/embed", e);
+    return Response.json({ error: "No se pudo generar el embedding de la imagen." }, { status: 500 });
   }
 }

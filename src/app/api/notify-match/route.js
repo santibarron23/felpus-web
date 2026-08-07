@@ -1,7 +1,22 @@
+import { timingSafeEqual } from "node:crypto";
 import webpush from "web-push";
 import { findMatches } from "../../../lib/matching";
 import { logError } from "../../../lib/log";
 import { SITE_URL } from "../../../lib/site";
+
+// Comparación de tiempo constante para el secreto del webhook: `!==` sobre
+// strings corta apenas encuentra el primer carácter distinto, lo que en
+// teoría deja adivinar el secreto midiendo cuánto tarda cada intento
+// carácter a carácter. timingSafeEqual exige buffers de igual longitud (si
+// no, tira), así que primero se descarta la longitud — eso sí es seguro de
+// filtrar, ya que la longitud del secreto no es información sensible en sí.
+function secretsMatch(received, expected) {
+  if (!received || !expected) return false;
+  const a = Buffer.from(received);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
 
 // Corre en el servidor: lo dispara un Database Webhook de Supabase cada vez
 // que se inserta un reporte nuevo (ver PENDIENTE_DECISION.md para la
@@ -160,7 +175,7 @@ if (pushConfigured) {
 
 export async function POST(request) {
   const secret = request.headers.get("x-webhook-secret");
-  if (!process.env.NOTIFY_WEBHOOK_SECRET || secret !== process.env.NOTIFY_WEBHOOK_SECRET) {
+  if (!secretsMatch(secret, process.env.NOTIFY_WEBHOOK_SECRET)) {
     return Response.json({ error: "No autorizado." }, { status: 401 });
   }
 
