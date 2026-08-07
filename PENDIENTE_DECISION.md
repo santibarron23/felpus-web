@@ -1,5 +1,68 @@
 # Decisiones pendientes — requieren acción o información tuya
 
+## -14. CRÍTICO: el rate limiting por IP de toda la app se evade falsificando X-Forwarded-For (2026-08-07) — necesito tu decisión antes de tocar nada
+
+**No lo arreglé todavía a propósito** — la corrección real necesita un
+secreto nuevo que no tenés configurado (`SUPABASE_SERVICE_ROLE_KEY`) y
+cambiar cómo se llaman 3-4 funciones desde el cliente. Prefiero explicarte
+exactamente qué pasa y qué hace falta antes de tocar algo que, si lo hago
+mal, puede romper publicar reportes o ver el contacto de una publicación —
+dos de los flujos más importantes de toda la app.
+
+**Lo que probé (contra tu base real, sin tocar datos de nadie):** todos los
+límites por IP de `schema.sql` (`get_report_contact` 30/hora,
+`enforce_report_rate_limit` 8/hora al publicar, `flag_report` 10/hora,
+el rate limit de `error_logs` 40/hora) leen la IP desde
+`request.headers->>'x-forwarded-for'` — un header HTTP que, llamando a la
+API de Supabase DIRECTO (no a través de tu app, con un script cualquiera),
+**el que llama puede escribir lo que quiera**. Hice la prueba real:
+
+1. Disparé 32 pedidos a `get_report_contact` con el mismo
+   `X-Forwarded-For: 203.0.113.50` falso — al pedido 31 el límite de 30/hora
+   frenó correctamente (`"Demasiadas consultas de contacto..."`). El
+   mecanismo en sí funciona bien.
+2. Con el límite ya agotado, mandé UN pedido más cambiando el header a
+   `X-Forwarded-For: 203.0.113.77` (un valor que nunca había usado) — pasó
+   sin problema. Repetí con otro valor más (`198.51.100.1`) — también pasó.
+
+Es decir: alcanza con rotar un header de texto plano para que el límite se
+resetee cada vez, sin necesidad de cambiar de red, IP real, ni nada — un
+script de 5 líneas puede saltarse CUALQUIERA de los 4 límites de arriba sin
+límite real. Esto no expone nada por sí solo, pero **anula la protección
+real** contra:
+- Scraping masivo de teléfonos/emails de todos los reportes
+  (`get_report_contact`).
+- Publicar reportes/fotos en bucle sin ningún techo real.
+- Denuncias falsas en cadena para ocultar reportes ajenos a propósito
+  (`flag_report` exige 3 IPs *distintas* — con IPs falsas ilimitadas, alguien
+  podría ocultar el reporte de cualquier otra persona en segundos).
+
+**Por qué no lo arreglé ya:** la causa raíz es de arquitectura, no un typo.
+Hoy el navegador llama a la API de Supabase DIRECTO (sin pasar por tu
+servidor de Next.js), así que la única IP que Supabase puede "confiar" es
+la que le llega en el header HTTP de ese pedido — y ese header lo controla
+quien llama. La única forma real de arreglarlo es que la IP la determine
+TU SERVIDOR (Vercel sí identifica la IP real de forma confiable en el
+`request` que le llega a tus API routes, como ya hace `api/embed/route.js`)
+y se la pase a Supabase de forma que un cliente cualquiera no pueda
+pisarla — lo cual requiere mover estas 3-4 funciones detrás de rutas propias
+de Next.js, usando la **service role key** de Supabase (nunca expuesta al
+navegador) en vez de la anon key para esas llamadas puntuales.
+
+**Lo que necesito de vos para poder implementarlo:**
+1. Confirmame que puedo proceder con este cambio (toca cómo se publican
+   reportes, se ve el contacto, y se denuncia — quiero tu OK antes, no
+   solo el mío).
+2. La `SUPABASE_SERVICE_ROLE_KEY` de tu proyecto (Settings → API en el
+   dashboard de Supabase) — nunca debe ir en el repo ni en `NEXT_PUBLIC_*`,
+   solo como variable de entorno del servidor en Vercel.
+
+**Mientras tanto, el riesgo real hoy es:** bajo-medio. Nadie puede leer
+datos que no fueran ya públicos (los reportes ya son públicos por diseño),
+y explotar esto requiere saber que existe y escribir un script — no es algo
+que un usuario común vaya a tropezarse. Pero si Felpus crece, es el tipo de
+hueco que un bot de scraping de teléfonos encuentra tarde o temprano.
+
 ## -13. Auditoría de seguridad: 3 huecos reales de autorización en Supabase (2026-08-07) — requiere 1 paso tuyo
 
 **Qué encontré (auditoría adversarial):** revisando cada policy RLS y
