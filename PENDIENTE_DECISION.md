@@ -1,5 +1,56 @@
 # Decisiones pendientes — requieren acción o información tuya
 
+## -13. Auditoría de seguridad: 3 huecos reales de autorización en Supabase (2026-08-07) — requiere 1 paso tuyo
+
+**Qué encontré (auditoría adversarial):** revisando cada policy RLS y
+función RPC de `schema.sql` como si fuera un atacante llamando a la API de
+Supabase directo (sin pasar por la UI), encontré 3 huecos reales de
+autorización — ninguno permitía leer datos privados de otra persona, pero
+sí permitían manipular datos que no deberían estar al alcance del cliente:
+
+1. **Suplantación de autoría en reportes nuevos**: `reports_insert_all` era
+   `with check (true)` — sin ninguna restricción sobre `user_id`. Cualquiera
+   (ni hacía falta estar logueado) podía insertar un reporte con
+   `user_id` = el UUID de OTRA persona real, y ese reporte falso le
+   aparecería listado en "Mis reportes" la próxima vez que esa persona
+   inicie sesión. No daba control sobre la fila (eso lo sigue protegiendo
+   `reports_update_owner`), pero sí suplantación de autoría.
+2. **Inflar puntos/racha sin límite**: `contributors_update_own` (auth.uid()
+   = id) solo restringe la FILA, no las columnas — cualquier usuario
+   logueado podía poner su propio `points`/`streak_days`/`reencuentros` en
+   lo que quisiera llamando al cliente directo, sin pasar por
+   `award_points()`/`send_heart()` (que sí están bien acotadas, pero ya no
+   eran el único camino). Esto también afectaba a `bumpStreak()` — era el
+   único lee-y-escribe directo que quedaba sin una función atómica de por
+   medio; ahora usa una RPC nueva, `bump_streak()`.
+3. **Reactivar el propio reporte oculto por denuncias**: `reports_update_owner`
+   tampoco distinguía columnas — el dueño de un reporte auto-ocultado por 3
+   denuncias reales (`flag_report`) podía poner `oculto: false` en su propia
+   fila directo, sin pasar por ningún admin. Rompía la moderación por
+   completo para cualquiera que supiera llamar a la API de Supabase directo.
+
+**Qué hice:** revoqué el UPDATE/INSERT de esas columnas puntuales a nivel de
+Postgres para `anon`/`authenticated` (mismo patrón ya usado para
+`contacto_whatsapp`/`contacto_email`), y agregué la función `bump_streak()`
+para que la racha diaria siga funcionando sin necesitar esas columnas
+abiertas. Nada de esto saca ninguna función legítima: publicar, editar tu
+propio reporte, marcarlo resuelto, sumar puntos reales, mandar corazones,
+editar tu perfil — todo sigue igual. Agregué tests para `bumpStreak()` (RPC
++ fallback) siguiendo el mismo patrón que ya cubría `awardPoints()`.
+
+**Paso pendiente:**
+1. Abrí el SQL Editor de tu proyecto Supabase.
+2. Pegá y ejecutá todo `supabase/schema.sql` de nuevo (agrega la función
+   `bump_streak` y los 3 `revoke`/policy nuevos, no borra nada existente).
+3. Listo — no hace falta ningún otro paso ni cambio de configuración.
+
+**No pude probarlo end-to-end contra la base real** (no tengo una sesión de
+Google real en este entorno para autenticarme como un usuario de verdad y
+confirmar que un intento de spoofing efectivamente falla) — la lectura de
+cada policy/función es directa desde el SQL y no deja ambigüedad sobre el
+comportamiento, y `bump_streak()` sí tiene tests unitarios cubriendo el
+camino RPC y el de respaldo.
+
 ## -12. Ciudad/provincia estructuradas en el flyer (2026-08-06) — requiere 1 paso tuyo
 
 **Qué hice:** agregué dos columnas nuevas a `reports` (`ciudad`, `provincia`),

@@ -19,6 +19,7 @@ const {
   createReport,
   fetchReportContact,
   awardPoints,
+  bumpStreak,
   fetchProfile,
   updateProfile,
   fetchSavedReportIds,
@@ -339,6 +340,55 @@ describe("awardPoints", () => {
     const realError = { code: "P0001", message: "Solo podés sumarte puntos a vos mismo con este motivo." };
     supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: realError });
     await expect(awardPoints("otro-user", "X", 20, "reencuentro")).rejects.toBe(realError);
+    expect(supabaseMock.from).not.toHaveBeenCalled();
+  });
+});
+
+// Hallazgo de auditoría de seguridad (2026-08-07): contributors_update_own
+// (RLS) solo exige "auth.uid() = id" — no restringe QUÉ columnas se pueden
+// tocar, así que el lee-y-escribe directo de antes dejaba que cualquier
+// usuario logueado se pusiera streak_days (o points/reportes/reencuentros)
+// en lo que quisiera para SU PROPIA fila, sin pasar por ninguna validación.
+// bump_streak (RPC) cierra ese hueco; estos tests fijan que bumpStreak() la
+// use primero y sólo caiga al viejo comportamiento si todavía no existe.
+describe("bumpStreak", () => {
+  it("con la RPC disponible, la llama con los parámetros correctos y no toca .from()", async () => {
+    supabaseMock.rpc.mockResolvedValueOnce({ data: [{ streak_days: 3, is_new_today: true }], error: null });
+    const result = await bumpStreak("user-1", "Ana");
+    expect(supabaseMock.rpc).toHaveBeenCalledWith(
+      "bump_streak",
+      expect.objectContaining({ p_user_id: "user-1", p_display_name: "Ana" })
+    );
+    expect(supabaseMock.from).not.toHaveBeenCalled();
+    expect(result).toEqual({ streakDays: 3, isNewToday: true });
+  });
+
+  it("sin userId, no llama a nada (invitado sin cuenta)", async () => {
+    expect(await bumpStreak(null, "Invitado")).toBeNull();
+    expect(supabaseMock.rpc).not.toHaveBeenCalled();
+    expect(supabaseMock.from).not.toHaveBeenCalled();
+  });
+
+  it("si la RPC todavía no existe (migración no corrida), cae al lee-y-escribe de siempre", async () => {
+    supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: missingFunctionError() });
+    supabaseMock.from.mockReturnValueOnce(
+      makeBuilder({ data: { id: "user-1", nickname: "Ana", streak_days: 2, last_active_date: null }, error: null })
+    );
+    const upsertBuilder = makeBuilder({ error: null });
+    supabaseMock.from.mockReturnValueOnce(upsertBuilder);
+
+    const result = await bumpStreak("user-1", "Ana");
+
+    expect(supabaseMock.from).toHaveBeenCalledTimes(2);
+    const upserted = upsertBuilder.upsert.mock.calls[0][0];
+    expect(upserted.streak_days).toBe(1);
+    expect(result.isNewToday).toBe(true);
+  });
+
+  it("un error real de la RPC (no 'función no existe') se propaga, sin caer al lee-y-escribe", async () => {
+    const realError = { code: "P0001", message: "Solo podés actualizar tu propia racha." };
+    supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: realError });
+    await expect(bumpStreak("user-1", "Ana")).rejects.toBe(realError);
     expect(supabaseMock.from).not.toHaveBeenCalled();
   });
 });

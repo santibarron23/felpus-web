@@ -588,8 +588,38 @@ function localDateStr(d = new Date()) {
 // emblemática de apps tipo Duolingo. Se llama una vez por sesión apenas hay
 // un usuario logueado; si "hoy" ya se contó, no hace nada (evita duplicar
 // al recargar la página varias veces el mismo día).
+//
+// Hallazgo de auditoría de seguridad (2026-08-07): esta era la última
+// escritura directa a "contributors" que tocaba columnas sensibles
+// (streak_days) sin pasar por una función — igual que awardPoints/sendHeart,
+// ahora usa bump_streak (RPC, ver schema.sql), que corre server-side con
+// auth.uid() verificado. today/yesterday se calculan ACÁ (no en el RPC) a
+// propósito: son el huso horario local de quien usa la app, no el del
+// servidor — ver el comentario largo en schema.sql.
 export async function bumpStreak(userId, displayName) {
   if (!userId) return null;
+  const today = localDateStr();
+  const yesterday = localDateStr(new Date(Date.now() - 24 * 3600 * 1000));
+
+  const rpcResult = await supabase.rpc("bump_streak", {
+    p_user_id: userId,
+    p_display_name: displayName || null,
+    p_today: today,
+    p_yesterday: yesterday,
+  });
+  if (!rpcResult.error) {
+    const row = Array.isArray(rpcResult.data) ? rpcResult.data[0] : rpcResult.data;
+    if (!row) return null;
+    return { streakDays: row.streak_days ?? 0, isNewToday: !!row.is_new_today };
+  }
+  if (!isMissingFunctionError(rpcResult.error)) throw rpcResult.error;
+
+  // Antes de correr la migración que crea bump_streak (ver
+  // PENDIENTE_DECISION.md): cae al lee-y-escribe de siempre. Sin la
+  // migración corrida, esta escritura directa TODAVÍA no está protegida por
+  // el revoke de columnas (que se agrega en la misma migración) — es el
+  // mismo estado que ya tenía la app antes de este hallazgo, no una
+  // regresión nueva.
   const { data: existing, error: fetchError } = await supabase
     .from(CONTRIBUTORS_TABLE)
     .select("*")
@@ -597,7 +627,6 @@ export async function bumpStreak(userId, displayName) {
     .maybeSingle();
   if (fetchError) throw fetchError;
 
-  const today = localDateStr();
   const current = existing || {
     id: userId,
     nickname: displayName,
@@ -613,7 +642,6 @@ export async function bumpStreak(userId, displayName) {
     return { streakDays: current.streak_days || 0, isNewToday: false };
   }
 
-  const yesterday = localDateStr(new Date(Date.now() - 24 * 3600 * 1000));
   const continued = current.last_active_date === yesterday;
   current.nickname = displayName || current.nickname;
   current.streak_days = continued ? (current.streak_days || 0) + 1 : 1;

@@ -992,3 +992,121 @@ alter table reports drop constraint if exists reports_ciudad_len;
 alter table reports add constraint reports_ciudad_len check (ciudad is null or char_length(ciudad) <= 80) not valid;
 alter table reports drop constraint if exists reports_provincia_len;
 alter table reports add constraint reports_provincia_len check (provincia is null or char_length(provincia) <= 80) not valid;
+
+-- ---------------------------------------------------------------------------
+-- Hallazgo de auditoría de seguridad (2026-08-07): mass assignment real en
+-- "contributors". contributors_update_own/insert_own (más arriba) solo
+-- restringen la FILA ("auth.uid() = id"), no las COLUMNAS — cualquier
+-- usuario logueado podía, llamando al cliente de Supabase directo (sin pasar
+-- por award_points/send_heart, que sí están bien acotadas), hacer:
+--   supabase.from('contributors').update({ points: 999999999 }).eq('id', miPropioId)
+-- e inflar su propio puntaje/racha/reencuentros arbitrariamente en el
+-- ranking público — exactamente el "Mass Assignment" que pide revisar OWASP.
+-- award_points()/send_heart() ya existían para el caso de tocar la fila de
+-- OTRA persona, pero nunca protegían la fila PROPIA porque para eso ni
+-- hacía falta una función: la policy de update ya lo permitía directo.
+--
+-- Mismo patrón que la columna de contacto (revoke select más arriba): en vez
+-- de sacar la policy de update entera (updateProfile() la necesita para
+-- nickname/whatsapp) o intentar validar "no cambiaste este valor" dentro de
+-- una policy RLS (no se puede comparar OLD/NEW ahí), se revoca a nivel de
+-- Postgres el UPDATE/INSERT de las columnas sensibles para authenticated —
+-- updateProfile() nunca las toca, así que sigue funcionando igual; points/
+-- reportes/reencuentros/hearts/streak_days/last_active_date quedan
+-- alcanzables SOLO por las funciones security definer de abajo.
+-- ---------------------------------------------------------------------------
+revoke update (points, reportes, reencuentros, hearts, streak_days, last_active_date)
+  on contributors from anon, authenticated;
+revoke insert (points, reportes, reencuentros, hearts, streak_days, last_active_date)
+  on contributors from anon, authenticated;
+
+-- bump_streak: la racha (bumpStreak en store.js) era el único lee-y-escribe
+-- directo que quedaba tocando esas columnas para la FILA PROPIA — a
+-- diferencia de award_points/send_heart, nunca se había migrado a una
+-- función, porque nunca tocaba la fila de otra persona (por eso no rompía
+-- con la policy de update). El revoke de arriba lo habría dejado sin forma
+-- de funcionar sin esto. p_today/p_yesterday se calculan en el cliente (no
+-- acá) a propósito: son fechas en el huso horario LOCAL de quien usa la
+-- app, y calcularlas en el servidor (UTC) correría el corte de "día" varias
+-- horas para Argentina, cambiando cuándo se corta la racha.
+create or replace function public.bump_streak(p_user_id text, p_display_name text, p_today date, p_yesterday date)
+returns table(streak_days integer, is_new_today boolean)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  cur record;
+  new_streak integer;
+begin
+  if auth.uid() is null or auth.uid()::text <> p_user_id then
+    raise exception 'Solo podés actualizar tu propia racha.';
+  end if;
+
+  select * into cur from contributors where id = p_user_id;
+
+  if cur.id is not null and cur.last_active_date = p_today then
+    return query select coalesce(cur.streak_days, 0), false;
+    return;
+  end if;
+
+  if cur.id is not null and cur.last_active_date = p_yesterday then
+    new_streak := coalesce(cur.streak_days, 0) + 1;
+  else
+    new_streak := 1;
+  end if;
+
+  insert into contributors (id, nickname, points, reportes, reencuentros, streak_days, last_active_date, updated_at)
+  values (p_user_id, coalesce(p_display_name, p_user_id), 0, 0, 0, new_streak, p_today, now())
+  on conflict (id) do update set
+    nickname = coalesce(p_display_name, contributors.nickname),
+    streak_days = new_streak,
+    last_active_date = p_today,
+    updated_at = now();
+
+  return query select new_streak, true;
+end;
+$$;
+
+revoke all on function public.bump_streak(text, text, date, date) from public;
+grant execute on function public.bump_streak(text, text, date, date) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Hallazgo de auditoría de seguridad (2026-08-07): reports_insert_all (más
+-- arriba) es "with check (true)" — sin ninguna restricción sobre user_id.
+-- Cualquiera (ni siquiera hace falta estar logueado) podía insertar un
+-- reporte directo contra la API de Supabase con user_id = el UUID de OTRA
+-- persona real. Quien insertó así no gana control sobre esa fila después
+-- (reports_update_owner/reports_delete_owner comparan auth.uid() DE QUIEN
+-- ACTÚA contra user_id, no importa quién insertó originalmente), pero sí
+-- logra que un reporte falso/ofensivo aparezca listado como propio en "Mis
+-- reportes" de la cuenta de la víctima la próxima vez que inicie sesión —
+-- suplantación de autoría, no takeover de la fila.
+--
+-- El fix preserva el comportamiento actual para los dos casos legítimos
+-- (invitado sin cuenta: user_id null: y usuario logueado publicando a su
+-- propio nombre: user_id = auth.uid()) y bloquea el resto. Sin sesión,
+-- auth.uid() es null, así que un anónimo solo puede insertar con user_id
+-- null — no puede spoofear ningún UUID ajeno ni logueado.
+-- ---------------------------------------------------------------------------
+drop policy if exists "reports_insert_all" on reports;
+create policy "reports_insert_own_or_guest" on reports
+  for insert with check (user_id is null or user_id = auth.uid());
+
+-- ---------------------------------------------------------------------------
+-- Hallazgo de auditoría de seguridad (2026-08-07): reports_update_owner
+-- (auth.uid() = user_id) es correcto para "sos el dueño de la fila", pero no
+-- distingue COLUMNAS — el dueño de un reporte podía, llamando al cliente
+-- directo, revertir su propio "oculto" a false:
+--   supabase.from('reports').update({ oculto: false }).eq('id', miReporte)
+-- Eso rompe por completo la moderación: alguien cuyo reporte se auto-ocultó
+-- por 3 denuncias reales (flag_report) simplemente se lo reactivaba solo,
+-- sin que ningún admin lo revise. "oculto" tiene que quedar alcanzable
+-- ÚNICAMENTE por admin_set_oculto() (admin) y flag_report() (auto-ocultado
+-- por denuncias) — mismo patrón que el revoke de columnas de contacto y de
+-- puntos/racha más arriba. El resto de los campos de un reporte propio
+-- (color, zona, resuelto, etc.) se siguen pudiendo editar directo — esto no
+-- les saca ningún permiso legítimo, "oculto" es lo único que nunca debería
+-- decidir el propio autor del reporte.
+-- ---------------------------------------------------------------------------
+revoke update (oculto) on reports from anon, authenticated;
