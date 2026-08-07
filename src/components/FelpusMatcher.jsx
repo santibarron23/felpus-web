@@ -372,6 +372,24 @@ export default function FelpusMatcher() {
   const [filterRadioKm, setFilterRadioKm] = useState(null);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [exploreView, setExploreView] = useState("lista");
+  // La sección "Explorar" (y con ella el mapa, que en desktop se muestra
+  // siempre lado a lado con la lista — ver más abajo) antes vivía detrás de
+  // {activeTab === "explorar" && (...)}: cada vez que alguien SALÍA de esa
+  // pestaña y volvía a ENTRAR, React desmontaba y volvía a montar todo el
+  // bloque de cero, incluido <ReportsMap>. Cada remount de ReportsMap crea
+  // una instancia NUEVA de google.maps.Map — y Google factura cada una como
+  // una "carga" de mapa nueva, aunque sea la misma persona en la misma
+  // visita yendo y viniendo entre pestañas. exploreVisited es un cerrojo de
+  // una sola dirección (una vez true, nunca vuelve a false): la primera vez
+  // que se entra a Explorar se monta el bloque, y de ahí en más solo se
+  // oculta/muestra con CSS (ver className más abajo) en vez de destruirse —
+  // el mapa (si se cargó) queda vivo en memoria entre visitas a la pestaña,
+  // sin generar cargas facturables extra. Mobile, que nunca monta el mapa a
+  // menos que la persona toque "Mapa", no se ve afectado por este cambio.
+  const [exploreVisited, setExploreVisited] = useState(false);
+  useEffect(() => {
+    if (activeTab === "explorar") setExploreVisited(true);
+  }, [activeTab]);
   // En desktop (lg+) el mapa de Explorar se muestra siempre, lado a lado con
   // la lista, en vez de detrás del toggle Lista/Mapa. Se rastrea con JS (no
   // solo CSS) para no montar el mapa —y su costo de llamadas a la API de
@@ -3311,9 +3329,16 @@ export default function FelpusMatcher() {
           </div>
         )}
 
-        {/* EXPLORAR */}
-        {activeTab === "explorar" && (
-          <div key="explorar" className="max-w-2xl lg:max-w-6xl mx-auto space-y-4 felpus-fadein">
+        {/* EXPLORAR — se queda montado (oculto por CSS) después de la primera
+            visita en vez de destruirse al cambiar de pestaña, para no volver
+            a facturar una carga de Google Maps por cada ida y vuelta a esta
+            pestaña dentro de la misma sesión. Ver comentario de
+            exploreVisited más arriba. */}
+        {exploreVisited && (
+          <div
+            key="explorar"
+            className={`max-w-2xl lg:max-w-6xl mx-auto space-y-4 felpus-fadein ${activeTab === "explorar" ? "" : "hidden"}`}
+          >
             <div className="relative">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: C.muted }} />
               <input
@@ -3433,7 +3458,10 @@ export default function FelpusMatcher() {
                 lado a lado — abajo de eso, cada columna respeta el toggle
                 Lista/Mapa como antes. El mapa además solo se monta si está
                 activo o si ya estamos en desktop, para no gastar llamadas a
-                la API de Google en mobile cuando nunca se abre esa vista. */}
+                la API de Google en mobile cuando nunca se abre esa vista.
+                Ese primer montaje en desktop es 1 sola carga facturable por
+                sesión (no una por cada ida y vuelta a esta pestaña) gracias
+                a exploreVisited, ver comentario donde se declara. */}
             <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:gap-5 lg:items-start">
               <div className={exploreView === "lista" ? "" : "hidden lg:block"}>
                 {loadingReports && (

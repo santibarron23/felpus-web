@@ -315,12 +315,15 @@ cuántas veces se use el botón "Ubicación".)*
 
 1. **Configurá una alerta de presupuesto en Google Cloud Console** para el
    proyecto de Maps Platform — es el único de los cinco servicios sin techo
-   automático; un pico de tráfico (o abuso/scraping) ahí sí puede doler.
-2. **Cargar el mapa de "Explorar" bajo demanda también en desktop**, igual
-   que ya funciona en mobile (`exploreView === "mapa"`), en vez de
-   automáticamente en cada visita — hoy es la fuga de costo más fácil de
-   evitar sin sacrificar nada de producto. No implementado en esta sesión:
-   queda como mejora P2 recomendada si el tráfico de Explorar crece.
+   automático; un pico de tráfico (o abuso/scraping) ahí sí puede doler. Esto
+   es un paso tuyo en la consola de Google, no algo que se resuelva en el
+   código.
+2. ✅ **Resuelto**: el mapa de "Explorar" en desktop se cargaba de nuevo
+   —y facturaba una carga nueva de Google Maps— cada vez que alguien salía
+   de esa pestaña y volvía a entrar, aunque fuera la misma visita. Ahora la
+   sección se queda montada (oculta con CSS, no destruida) después de la
+   primera vez, así que como máximo factura 1 carga por sesión en vez de una
+   por cada ida y vuelta (ver `exploreVisited` en `FelpusMatcher.jsx`).
 3. Si el volumen de fotos crece rápido, revisar el tamaño de Storage en
    Supabase — cada foto ya se comprime a máx. 1000px/calidad 0.85 antes de
    subir, así que el costo por foto es bajo, pero es lo que más rápido llena
