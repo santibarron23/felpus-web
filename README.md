@@ -264,8 +264,64 @@ de mañana cambiás de proveedor, sólo tocás ese archivo.
 
 ## 7. Costos esperados
 
-Con tráfico bajo/moderado (cientos de usuarios activos), esto corre
-íntegramente en los tiers gratuitos de Supabase y Vercel — **$0/mes**. Los
-primeros costos reales aparecen si el volumen de fotos o reportes crece mucho
-(Supabase Pro ronda los $25/mes) o si necesitás más ancho de banda del que
-regala el tier gratuito de Vercel.
+Felpus depende de 5 servicios con algún componente pago: Vercel (hosting),
+Supabase (base de datos + storage + auth), Google Maps Platform (mapa,
+autocompletado de zona, geocodificación inversa), Hugging Face (embeddings de
+imagen para el matching por IA) y Resend (email de "posible coincidencia").
+El dominio (felpus.com) es aparte y se paga anual, no mensual.
+
+**Por lejos el que más pesa a escala es Google Maps Platform** — es el único
+de los cinco con precio por llamada sin ningún tope automático (Google cobra
+lo que se use salvo que vos mismo configures una alerta/límite de
+presupuesto en Cloud Console — no viene activado por default). Los otros
+cuatro tienen un tier gratuito real que aguanta bastante antes de cobrar
+nada.
+
+| Servicio | Qué paga | Tier gratis | Primer escalón pago |
+|---|---|---|---|
+| Vercel | Hosting del sitio | 100GB banda ancha, 1M invocaciones/mes (uso NO comercial) | Pro: $20/mes por asiento |
+| Supabase | DB + Storage de fotos + Auth | 500MB DB, 1GB storage, 5GB egreso, 50k usuarios activos/mes | Pro: $25/mes + excedentes |
+| Google Maps Platform | Mapa, autocompletado de zona, geocodificación al usar "Ubicación" | ~10.000 llamadas/mes por API (varía por SKU) | Pago por uso, sin tope automático |
+| Hugging Face | Embedding CLIP de cada foto subida (matching por IA) | Créditos mínimos ($0.10/mes gratis) | PRO: $9/mes (más límite de uso) |
+| Resend | Email de "posible coincidencia" | 3.000 emails/mes (100/día) | Pro: $20/mes → 50.000 emails |
+
+### Estimado por volumen
+
+Supuestos usados (ajustables, pero razonables dado cómo está construido el
+producto): 2 fotos promedio por reporte, la mitad de los reportes usa el
+botón "Ubicación" (geocodificación), casi todos usan el autocompletado de
+zona, y ~60% de los reportes nuevos generan al menos un email de
+coincidencia. El mapa de "Explorar" (`ReportsMap`) se carga automáticamente
+en **cada visita desde desktop** (no solo al tocar "Ver mapa" como en
+mobile) — ver nota al final, es el mayor "leak" de costo evitable.
+
+| | Piloto (1 ciudad, arrancando) | Adopción real (1 ciudad activa) | Multi-ciudad / escala |
+|---|---|---|---|
+| Reportes nuevos/mes | ~50 | ~400 | ~3.000 |
+| Visitas/mes | ~2.000 | ~20.000 | ~150.000 |
+| **Vercel** | $0 (Hobby) | $0–20 | $20+ |
+| **Supabase** | $0 (Free) | ~$25 (Pro, storage de fotos ya no entra en el tier gratis) | ~$25–50 |
+| **Google Maps** | $0–5 | ~$15–50 | **~$250–350** |
+| **Hugging Face** | $0 | ~$9–20 | ~$50–150 |
+| **Resend** | $0 | $0 | $0–20 |
+| **Total aprox./mes** | **$0–10** | **$50–115** | **$400–570** |
+
+*(Estimado en dólares, con precios públicos vigentes de cada proveedor al
+2026 — no una cotización real. Google Maps es la variable más incierta:
+depende muchísimo de cuánta gente entra a "Explorar" desde computadora y de
+cuántas veces se use el botón "Ubicación".)*
+
+### Cómo controlar el costo si el uso crece
+
+1. **Configurá una alerta de presupuesto en Google Cloud Console** para el
+   proyecto de Maps Platform — es el único de los cinco servicios sin techo
+   automático; un pico de tráfico (o abuso/scraping) ahí sí puede doler.
+2. **Cargar el mapa de "Explorar" bajo demanda también en desktop**, igual
+   que ya funciona en mobile (`exploreView === "mapa"`), en vez de
+   automáticamente en cada visita — hoy es la fuga de costo más fácil de
+   evitar sin sacrificar nada de producto. No implementado en esta sesión:
+   queda como mejora P2 recomendada si el tráfico de Explorar crece.
+3. Si el volumen de fotos crece rápido, revisar el tamaño de Storage en
+   Supabase — cada foto ya se comprime a máx. 1000px/calidad 0.85 antes de
+   subir, así que el costo por foto es bajo, pero es lo que más rápido llena
+   el tier gratuito.
