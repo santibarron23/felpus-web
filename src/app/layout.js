@@ -1,10 +1,30 @@
 import { cookies } from "next/headers";
+import { Inter, Baloo_2, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import ServiceWorkerRegister from "../components/felpus/ServiceWorkerRegister";
 import { ThemeProvider } from "../components/felpus/ThemeProvider";
 import { C, CD } from "../lib/theme";
 import { safeJsonLdString } from "../lib/jsonLd";
 import { SITE_URL } from "../lib/site";
+
+// Self-hosteadas por next/font en vez de @import en globals.css (como
+// estaban antes, junto con Montserrat) — @import agrega una petición extra
+// en cadena bloqueante ANTES de poder pedir el archivo de fuente real
+// (HTML → CSS del bundle → CSS de Google Fonts → fonts.gstatic.com), 100%
+// evitable: next/font descarga los archivos en build time y los sirve desde
+// el propio dominio, sin ese round-trip externo. Cada una expone su familia
+// como variable CSS (--font-*) en vez de un nombre fijo, así que
+// globals.css/FelpusMatcher.jsx la referencian con var(--font-...).
+// Montserrat se queda en el @import de globals.css a propósito: flyer.js la
+// usa para dibujar texto en un <canvas> con `ctx.font = "... Montserrat"`, y
+// necesita el nombre LITERAL "Montserrat" tal cual está registrado en
+// document.fonts — next/font renombra la familia internamente a un nombre
+// ofuscado, lo que rompería ese `ctx.font` (no se testeó romper esto a
+// propósito: se optó por dejar Montserrat como está, ya que solo carga en el
+// momento de generar un flyer, no en el camino crítico de la carga inicial).
+const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-inter", display: "swap" });
+const baloo2 = Baloo_2({ subsets: ["latin"], weight: ["600", "700", "800"], variable: "--font-baloo", display: "swap" });
+const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], weight: ["500", "700"], variable: "--font-jetbrains-mono", display: "swap" });
 const TITLE = "Felpus - Buscador inteligente de mascotas perdidas y encontradas";
 const DESCRIPTION =
   "Reportá una mascota perdida o encontrada con foto y descripción. Felpus busca coincidencias automáticamente por imagen, texto y zona.";
@@ -116,7 +136,14 @@ export default function RootLayout({ children }) {
     // en cada carga, porque el HTML que generó el servidor nunca tuvo ese
     // atributo. No oculta errores reales: sólo aplica al único atributo que
     // sabemos que cambia a propósito antes de hidratar.
-    <html lang="es" suppressHydrationWarning>
+    <html lang="es" suppressHydrationWarning className={`${inter.variable} ${baloo2.variable} ${jetbrainsMono.variable}`}>
+      <head>
+        {/* Único dominio externo de fuentes que queda (Montserrat, ver
+            comentario arriba) — preconectar ahorra el round-trip de
+            DNS+TLS antes del @import de globals.css. */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+      </head>
       <body>
         {/* Primero que nada en <body>, antes de cualquier contenido con
             color — ver comentario de THEME_INIT_SCRIPT arriba. El

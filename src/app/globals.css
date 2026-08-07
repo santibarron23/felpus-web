@@ -2,7 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&family=Montserrat:wght@400;600;700;800&display=swap');
+/* Inter, Baloo 2 y JetBrains Mono se cargan self-hosteadas vía next/font
+   (ver layout.js) — solo Montserrat sigue viniendo de Google Fonts acá,
+   porque flyer.js necesita ese nombre de familia LITERAL para dibujarla en
+   un <canvas> (ver comentario largo en layout.js). */
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap');
 
 :root {
   /* Espejo de C.red (src/lib/theme.js) para usar en clases arbitrarias de
@@ -62,15 +66,15 @@ body {
 }
 
 .felpus-display {
-  font-family: "Baloo 2", system-ui, sans-serif;
-  /* Baloo 2 solo se carga en 600/700/800 (ver @import arriba) — sin esto,
+  font-family: var(--font-baloo), system-ui, sans-serif;
+  /* Baloo 2 solo se carga en 600/700/800 (ver layout.js) — sin esto,
      el navegador renderiza en 400, un peso que no existe en la fuente, y
      termina sintetizando una versión más fina que no matchea el isotipo
      bold del logo. */
   font-weight: 800;
 }
 .felpus-mono {
-  font-family: "JetBrains Mono", monospace;
+  font-family: var(--font-jetbrains-mono), monospace;
 }
 
 /* Foco consistente para inputs/selects/textareas de texto plano — antes

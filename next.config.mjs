@@ -59,6 +59,12 @@ const securityHeaders = [
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // lucide-react ya usa imports nombrados (tree-shakeable de por sí), pero
+  // esta opción le ahorra a Next tener que inferirlo: acelera el build y
+  // asegura que solo los íconos realmente importados entren al bundle.
+  experimental: {
+    optimizePackageImports: ["lucide-react"],
+  },
   images: {
     remotePatterns: [
       {
