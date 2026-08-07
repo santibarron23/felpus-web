@@ -241,11 +241,17 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
   const [flagState, setFlagState] = useState("idle");
   const [flagErrorMsg, setFlagErrorMsg] = useState("");
   const modalRef = useRef(null);
-  // Si la lightbox de foto está abierta, Escape la cierra a ELLA (no todo
-  // el detalle atrás) — misma lógica que ya usan el botón "X" y el click en
-  // el fondo de la lightbox. onEscape se lee de un ref adentro del hook, así
-  // que cambiar esta función en cada render no reinscribe el listener.
-  useFocusTrap(!!report, modalRef, lightboxOpen ? () => setLightboxOpen(false) : onClose);
+  // La lightbox se renderiza con createPortal (ver más abajo) — vive FUERA
+  // del subárbol DOM de modalRef, así que atraparle el foco con ese mismo
+  // ref no funcionaba: Tab seguía ciclando por los botones del modal de
+  // atrás (tapados visualmente por el overlay), nunca llegaba al botón
+  // "Cerrar" de la lightbox. lightboxRef le da un contenedor propio.
+  const lightboxRef = useRef(null);
+  // Si la lightbox de foto está abierta, el trap (y Escape) apunta a ELLA,
+  // no al modal de atrás — misma lógica que ya usan el botón "X" y el click
+  // en el fondo de la lightbox. onEscape se lee de un ref adentro del hook,
+  // así que cambiar esta función en cada render no reinscribe el listener.
+  useFocusTrap(!!report, lightboxOpen ? lightboxRef : modalRef, lightboxOpen ? () => setLightboxOpen(false) : onClose);
   useEffect(() => {
     setActiveIndex(0);
     setDeleteConfirming(false);
@@ -657,6 +663,10 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
     {lightboxOpen &&
       createPortal(
         <div
+          ref={lightboxRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Foto en tamaño completo"
           className="fixed inset-0 bg-black/90 z-[80] flex items-center justify-center p-4"
           onClick={() => setLightboxOpen(false)}
         >
