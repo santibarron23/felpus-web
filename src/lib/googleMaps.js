@@ -41,6 +41,41 @@ export function loadGoogleMaps(apiKey) {
 // dispare manualmente el evento "resize" de Maps. Este observer lo hace
 // automáticamente cada vez que el contenedor cambia de tamaño, y vuelve a
 // centrar el mapa (el resize por sí solo puede correr el centro visual).
+// Convierte una coordenada (lat/lng) en zona/ciudad/provincia usando el
+// Geocoder de Maps JS — parte del script base, no necesita la librería
+// "places" aparte. Se usa para autocompletar el campo obligatorio "Zona"
+// cuando la persona usa el botón "Ubicación" (GPS) en vez de escribir o
+// elegir con el autocompletado: antes ese botón solo guardaba lat/lng y
+// dejaba la Zona vacía pese a que el copy sugería que ya "mejoraba la
+// precisión", generando una publicación que igual no podía enviarse hasta
+// tipear la zona a mano. Devuelve null (no true/false) en cualquier fallo —
+// es 100% best-effort, nunca debe bloquear ni mostrar error: si falla, la
+// persona simplemente completa la Zona a mano como hacía antes.
+export async function reverseGeocodeLatLng(maps, lat, lng) {
+  if (!maps?.Geocoder) return null;
+  const geocoder = new maps.Geocoder();
+  return new Promise((resolve) => {
+    geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+      if (status !== "OK" || !results?.length) {
+        resolve(null);
+        return;
+      }
+      const result = results[0];
+      const components = result.address_components || [];
+      const findComponent = (type) => components.find((c) => c.types?.includes(type))?.long_name || "";
+      // "Zona" a mostrar: barrio/sublocalidad si Google la devuelve (más
+      // específico, mismo nivel de detalle que displayName en
+      // ZonaAutocomplete), si no la ciudad — nunca la dirección completa
+      // con calle y altura, que sería demasiado específico para este campo.
+      const barrio = findComponent("sublocality") || findComponent("neighborhood");
+      const ciudad = findComponent("locality");
+      const provincia = findComponent("administrative_area_level_1");
+      const zona = barrio || ciudad || "";
+      resolve({ zona, ciudad, provincia });
+    });
+  });
+}
+
 export function observeMapResize(map, container) {
   if (typeof ResizeObserver === "undefined" || !window.google?.maps) return () => {};
   let lastCenter = map.getCenter();

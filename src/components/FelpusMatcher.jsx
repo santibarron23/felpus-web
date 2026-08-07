@@ -111,7 +111,7 @@ import {
   unsaveReport,
 } from "../lib/store";
 import { playTap, playSuccess } from "../lib/sound";
-import { loadGoogleMaps } from "../lib/googleMaps";
+import { loadGoogleMaps, reverseGeocodeLatLng } from "../lib/googleMaps";
 import { requestLocation, geolocationErrorMessage } from "../lib/geolocation";
 import { subscribeReportPush, isPushSupported } from "../lib/push";
 import { logError } from "../lib/log";
@@ -1047,16 +1047,16 @@ export default function FelpusMatcher() {
       { id: "fotos", label: "Foto", done: form.fotos.length > 0 },
       { id: "zona", label: "Zona", done: !!form.zona.trim() },
       { id: "color", label: "Color", done: !!colorOk },
-      // Ya no chequea form.descripcion: ahora se arma sola apenas se
-      // completan especie/tamaño (ver el useEffect que la recompone), así
-      // que estaría siempre "lista" sin que la persona hiciera nada — este
-      // paso pasa a medir si sumó algún detalle EXTRA (chip o texto propio)
-      // más allá de esa base automática.
-      { id: "descripcion", label: "Detalles", done: hasMeaningfulDetails },
+      // "Detalles" (chip/texto extra más allá de la descripción automática)
+      // NO va acá: es explícitamente opcional en el copy de esa sección
+      // ("Todo es opcional..."), así que antes el checklist nunca llegaba a
+      // 100% aunque el reporte ya fuera 100% publicable — confuso para
+      // alguien angustiado que cree que algo obligatorio le falta. Este
+      // checklist ahora refleja 1 a 1 lo que handleSubmit exige de verdad.
       { id: "sexo", label: "Sexo", done: !!form.sexo },
       { id: "contacto", label: "Contacto", done: whatsappOk || !!form.contactoEmail.trim() },
     ];
-  }, [nickname, form.fotos.length, form.zona, form.color, form.colorOtro, form.sexo, whatsappUsingSaved, whatsappParsed.isValid, form.contactoEmail, hasMeaningfulDetails]);
+  }, [nickname, form.fotos.length, form.zona, form.color, form.colorOtro, form.sexo, whatsappUsingSaved, whatsappParsed.isValid, form.contactoEmail]);
   const reportProgressDone = reportChecklist.filter((s) => s.done).length;
   const reportProgressPct = Math.round((reportProgressDone / reportChecklist.length) * 100);
 
@@ -1208,8 +1208,14 @@ export default function FelpusMatcher() {
     if (found) {
       openReportDetail(found);
       goToTab("explorar");
+    } else {
+      // Alguien llegó desde un flyer, QR o link compartido con un id que ya
+      // no está disponible (oculta, eliminada, o el link tiene un error) —
+      // antes esto no hacía nada, sin ningún indicio de por qué "no pasó
+      // nada" al abrir el link.
+      pushToast("error", "No pudimos encontrar esa publicación. Puede que ya no esté disponible.");
     }
-  }, [reports, goToTab]);
+  }, [reports, goToTab, pushToast]);
 
   // Confirmar un reencuentro requiere sesión con Google (evita que cualquiera
   // se autoasigne puntos con un apodo de texto libre) Y ser quien publicó ese
@@ -1463,6 +1469,24 @@ export default function FelpusMatcher() {
       ({ lat, lng }) => {
         setForm((f) => ({ ...f, lat, lng }));
         setGeoStatus("done");
+        // Best-effort: completar Zona/ciudad/provincia automáticamente a
+        // partir de las coordenadas, sin bloquear ni condicionar lo de
+        // arriba (lat/lng ya quedaron guardadas pase lo que pase acá).
+        // Nunca pisa lo que la persona ya haya escrito a mano.
+        const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+        if (!apiKey) return;
+        loadGoogleMaps(apiKey)
+          .then((maps) => reverseGeocodeLatLng(maps, lat, lng))
+          .then((place) => {
+            if (!place) return;
+            setForm((f) => ({
+              ...f,
+              zona: f.zona.trim() ? f.zona : place.zona || f.zona,
+              ciudad: f.ciudad?.trim() ? f.ciudad : place.ciudad || f.ciudad || "",
+              provincia: f.provincia?.trim() ? f.provincia : place.provincia || f.provincia || "",
+            }));
+          })
+          .catch((e) => logError("No se pudo geocodificar la ubicación capturada", e));
       },
       (err) => {
         setGeoErrorMessage(geolocationErrorMessage(err));
@@ -1789,7 +1813,7 @@ export default function FelpusMatcher() {
   ];
 
   return (
-    <div className="min-h-screen w-full" style={{ background: C.cream, fontFamily: "'Inter', system-ui, sans-serif" }}>
+    <div className="min-h-screen w-full" style={{ background: C.cream, fontFamily: "var(--font-inter), system-ui, sans-serif" }}>
       {/* Header — fondo claro con el rojo reservado a acentos puntuales, para
           que el beige tenga más protagonismo y el rojo destaque donde importa
           (las llamadas a la acción), no como color de fondo de la barra). En
@@ -2053,9 +2077,13 @@ export default function FelpusMatcher() {
                 <PawPrint className="w-4 h-4" style={{ color: C.red }} fill="currentColor" strokeWidth={1.5} />
               </span>
               <span className="flex-1 min-w-0">
-                <span className="block text-[10px] font-bold uppercase tracking-wide" style={{ color: C.muted }}>
+                <label
+                  htmlFor="apodo-input"
+                  className="block text-[10px] font-bold uppercase tracking-wide"
+                  style={{ color: C.muted }}
+                >
                   Elegí un apodo
-                </span>
+                </label>
                 <input
                   id="apodo-input"
                   value={nickname}
@@ -4542,7 +4570,7 @@ export default function FelpusMatcher() {
                   setReportKind("perdida");
                   goToTab("reportar");
                 }}
-                className="flex flex-col items-center justify-center -mt-5 focus:outline-none"
+                className="flex flex-col items-center justify-center -mt-5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50 rounded-2xl"
                 aria-label="Reportar mascota"
               >
                 <span
@@ -4564,7 +4592,9 @@ export default function FelpusMatcher() {
                 playTap();
                 goToTab(item.id);
               }}
-              className="flex flex-col items-center justify-center gap-1 py-2.5 px-3 focus:outline-none"
+              className="flex flex-col items-center justify-center gap-1 py-2.5 px-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50 rounded-xl"
+              aria-label={item.label}
+              aria-current={isActive ? "page" : undefined}
             >
               <span
                 className="flex items-center justify-center w-11 h-8 rounded-full transition-all duration-300"

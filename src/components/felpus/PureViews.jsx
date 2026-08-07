@@ -151,9 +151,9 @@ export function ReportCard({ report, onOpenDetail, saved, onToggleSaved, childre
           onClick={() => onToggleSaved(report)}
           aria-label={saved ? "Quitar de guardadas" : "Guardar"}
           aria-pressed={!!saved}
-          className="absolute top-2 left-2 z-10 w-6 h-6 rounded-full flex items-center justify-center bg-black/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+          className="absolute top-2 left-2 z-10 w-8 h-8 rounded-full flex items-center justify-center bg-black/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
         >
-          <Bookmark className="w-3.5 h-3.5" fill={saved ? "#fff" : "none"} style={{ color: "#fff" }} />
+          <Bookmark className="w-4 h-4" fill={saved ? "#fff" : "none"} style={{ color: "#fff" }} />
         </button>
       )}
       <button
