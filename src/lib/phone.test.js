@@ -17,8 +17,17 @@ afterEach(() => {
 
 describe("getDefaultCountry", () => {
   it("cae a AR sin navigator (SSR)", () => {
-    // El módulo ya chequea typeof navigator === "undefined" — en el entorno
-    // de test (node) navigator no existe salvo que se stubee.
+    // Node moderno (v21+) expone un `navigator` global real, con
+    // .language/.languages reflejando el idioma del SISTEMA OPERATIVO del
+    // runner — no algo ausente por defecto en un entorno de test "node"
+    // como asumía antes este comentario. Sin este stub, el test pasaba o
+    // fallaba según la configuración regional de la máquina que corriera
+    // los tests (coincidía con "AR" en una máquina en español/Argentina,
+    // fallaba con "US" en el runner de CI en inglés) — exactamente lo que
+    // pasó: rompió en GitHub Actions sin romper nunca en desarrollo local.
+    // Stubear navigator a undefined simula la ausencia real (SSR de
+    // verdad), independiente de en qué máquina corran los tests.
+    vi.stubGlobal("navigator", undefined);
     expect(getDefaultCountry()).toBe(DEFAULT_COUNTRY);
   });
 
