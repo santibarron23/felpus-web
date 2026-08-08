@@ -94,7 +94,7 @@ afectadas. Verificado en vivo con curl contra la base real (anon key):
 las 5 rutas de ataque devuelven `42501 permission denied` y el acceso
 público normal sigue funcionando igual.
 
-## -13. Auditoría de seguridad: 3 huecos reales de autorización en Supabase (2026-08-07) — requiere 1 paso tuyo
+## -13. RESUELTO (2026-08-08): 3 huecos reales de autorización en Supabase — la migración ya se corrió
 
 **Qué encontré (auditoría adversarial):** revisando cada policy RLS y
 función RPC de `schema.sql` como si fuera un atacante llamando a la API de
@@ -144,12 +144,10 @@ editar tu perfil — todo sigue igual. Agregué tests para `bumpStreak()` (RPC
   nueva) hacía un full table scan. Agregué 3 índices que cubren los
   patrones de acceso reales; puramente aditivo, no cambia ningún resultado.
 
-**Paso pendiente:**
-1. Abrí el SQL Editor de tu proyecto Supabase.
-2. Pegá y ejecutá todo `supabase/schema.sql` de nuevo (agrega la función
-   `bump_streak`, los 3 `revoke`/policy de autorización, `heart_sends` +
-   el límite de corazones, y los 3 índices nuevos — no borra nada existente).
-3. Listo — no hace falta ningún otro paso ni cambio de configuración.
+**Paso pendiente (✅ completado 2026-08-08):** corriste `supabase/schema.sql`
+completo (como parte del trabajo de #-14 de arriba), que ya incluye
+`bump_streak`, los 3 `revoke`/policy de autorización, `heart_sends` + el
+límite de corazones, y los 3 índices nuevos.
 
 **No pude probarlo end-to-end contra la base real** (no tengo una sesión de
 Google real en este entorno para autenticarme como un usuario de verdad y
@@ -158,7 +156,7 @@ cada policy/función es directa desde el SQL y no deja ambigüedad sobre el
 comportamiento, y `bump_streak()` sí tiene tests unitarios cubriendo el
 camino RPC y el de respaldo.
 
-## -12. Ciudad/provincia estructuradas en el flyer (2026-08-06) — requiere 1 paso tuyo
+## -12. RESUELTO (2026-08-08): ciudad/provincia estructuradas en el flyer — la migración ya se corrió
 
 **Qué hice:** agregué dos columnas nuevas a `reports` (`ciudad`, `provincia`),
 completadas automáticamente cuando alguien elige una sugerencia del
@@ -175,14 +173,12 @@ exactamente igual que antes — simplemente esos dos campos quedan vacíos
 ("Sin especificar" en los desgloses del admin, y la zona del flyer se ve
 igual que siempre, sin la ciudad/provincia agregada).
 
-**Paso pendiente:**
-1. Abrí el SQL Editor de tu proyecto Supabase.
-2. Pegá y ejecutá todo `supabase/schema.sql` de nuevo (agrega `ciudad` y
-   `provincia` a `reports`, no borra nada existente).
-3. Listo — probá crear un reporte nuevo eligiendo una sugerencia del
-   autocompletado de zona (no tipeándola a mano) y generá su flyer: la
-   línea "ZONA:" debería incluir ciudad/provincia si Google las devolvió
-   para esa dirección.
+**Paso pendiente (✅ completado 2026-08-08):** corriste `supabase/schema.sql`
+completo (como parte del trabajo de #-14 de arriba), que ya agrega `ciudad`
+y `provincia` a `reports`. Falta solo la prueba manual: crear un reporte
+nuevo eligiendo una sugerencia del autocompletado de zona (no tipeándola a
+mano) y generar su flyer — la línea "ZONA:" debería incluir
+ciudad/provincia si Google las devolvió para esa dirección.
 
 **No pude probarlo con datos reales de Google Places** (necesita la API key
 de Google Maps configurada y una selección real del autocompletado, que no
@@ -919,7 +915,7 @@ este camino, sin excepción.
 
 ---
 
-## 4. Mecanismo de eliminación de reporte por pedido del usuario — ✅ IMPLEMENTADO, requiere 1 paso tuyo
+## 4. Mecanismo de eliminación de reporte por pedido del usuario — ✅ IMPLEMENTADO, migración ya corrida
 
 **Implementado:** se usó la "recomendación mínima viable" original — un
 botón "Eliminar publicación" en el detalle del reporte, visible solo para
@@ -927,16 +923,10 @@ el dueño (mismo chequeo de `user_id` que "marcar como reencontrada"), con
 confirmación inline antes de borrar. Borra la fila de `reports` y sus fotos
 de Storage; no toca los puntos ya ganados en `contributors`.
 
-**⚠️ ACCIÓN REQUERIDA DE TU LADO — 1 paso:** agregué la policy de RLS
-`reports_delete_owner` a `supabase/schema.sql`, pero **no la ejecuté** (no
-tengo acceso a tu SQL Editor). Sin esa policy, Supabase deniega el borrado
-por default aunque el botón funcione del lado del cliente. Pasos:
-
-1. Abrí el SQL Editor de tu proyecto Supabase.
-2. Pegá y ejecutá todo `supabase/schema.sql` de nuevo (es seguro re-correrlo
-   completo — todas las sentencias usan `if not exists` / `drop policy if
-   exists`, no borra datos existentes).
-3. Listo — probá el botón "Eliminar publicación" en un reporte propio.
+**✅ Completado (2026-08-08):** la policy `reports_delete_owner` ya está en
+`supabase/schema.sql` y la migración ya se corrió (como parte del trabajo
+de #-14). Falta solo la prueba manual: probar el botón "Eliminar
+publicación" en un reporte propio.
 
 **Mientras tanto** (hasta que corras el paso de arriba), el botón va a
 mostrar el error genérico "No pudimos eliminar la publicación."
