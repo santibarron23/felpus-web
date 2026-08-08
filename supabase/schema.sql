@@ -1011,6 +1011,43 @@ $$;
 revoke all on function public.admin_metrics() from public;
 grant execute on function public.admin_metrics() to authenticated;
 
+-- Informe de cuentas registradas (login de Google) para el admin — cruza
+-- auth.users (que ningún rol del cliente puede leer directo: no hay
+-- policy de RLS posible sobre una tabla del schema `auth`, y el cliente
+-- ni siquiera tiene grants ahí) con contributors (apodo/whatsapp que cada
+-- quien cargó en "Mi Felpus" — ver updateProfile en store.js, donde
+-- contributors.id = auth.uid() para cuentas logueadas). `security definer`
+-- + dueño `postgres` es lo que permite esta única función leer auth.users
+-- sin abrir esa tabla a nadie más. A propósito NO incluye reportes,
+-- puntos, racha ni fechas — si en algún momento hace falta más, se agrega
+-- ahí, no "por si acaso" de entrada.
+create or replace function public.admin_list_users()
+returns table(
+  id uuid,
+  email text,
+  nickname text,
+  whatsapp text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.email() is distinct from 'santiagobarronlf@gmail.com' then
+    raise exception 'No autorizado.';
+  end if;
+  return query
+    select u.id, u.email, c.nickname, c.whatsapp
+    from auth.users u
+    left join contributors c on c.id = u.id::text
+    where u.email is not null
+    order by u.created_at desc;
+end;
+$$;
+
+revoke all on function public.admin_list_users() from public;
+grant execute on function public.admin_list_users() to authenticated;
+
 -- Le permite al admin borrar la foto de CUALQUIER reporte de Storage (la
 -- política de owner-delete de más arriba solo alcanza al dueño real) — mismo
 -- flujo de dos pasos que ya usa deleteReport() en store.js (borrar la foto,

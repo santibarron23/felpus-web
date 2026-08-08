@@ -44,6 +44,7 @@ import {
   Bookmark,
   Pencil,
   MessageCircle,
+  Download,
 } from "lucide-react";
 import {
   normalizeText,
@@ -104,12 +105,14 @@ import {
   adminSetOculto,
   adminListFlaggedReports,
   adminFetchMetrics,
+  adminFetchUsers,
   fetchProfile,
   updateProfile,
   fetchSavedReportIds,
   saveReport,
   unsaveReport,
 } from "../lib/store";
+import { usersReportToCsv } from "../lib/csv";
 import { playTap, playSuccess } from "../lib/sound";
 import { loadGoogleMaps, reverseGeocodeLatLng } from "../lib/googleMaps";
 import { requestLocation, geolocationErrorMessage } from "../lib/geolocation";
@@ -676,6 +679,7 @@ export default function FelpusMatcher() {
   const [adminError, setAdminError] = useState("");
   const [adminBusyId, setAdminBusyId] = useState(null);
   const [adminDeleteConfirmId, setAdminDeleteConfirmId] = useState(null);
+  const [usersReportLoading, setUsersReportLoading] = useState(false);
 
   const loadAdminData = useCallback(async () => {
     if (!isAdmin) return;
@@ -747,6 +751,35 @@ export default function FelpusMatcher() {
       pushToast("error", e?.message || "No se pudo cambiar la visibilidad.");
     } finally {
       setAdminBusyId(null);
+    }
+  }
+
+  // Genera el CSV en el cliente (usersReportToCsv, ver csv.js) a partir de
+  // lo que trae adminFetchUsers() y lo descarga como archivo — no hace
+  // falta una ruta /api aparte: admin_list_users ya está protegida del
+  // lado del servidor (chequea auth.email() adentro, ver schema.sql), así
+  // que el cliente autenticado del propio admin alcanza. El BOM ("﻿")
+  // es para que Excel abra los acentos bien en vez de mostrarlos rotos.
+  async function handleDownloadUsersReport() {
+    setUsersReportLoading(true);
+    try {
+      const users = await adminFetchUsers();
+      const csv = usersReportToCsv(users);
+      const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `felpus-usuarios-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      pushToast("success", `Informe descargado (${users.length} usuario${users.length === 1 ? "" : "s"}).`);
+    } catch (e) {
+      logError("No se pudo descargar el informe de usuarios (admin)", e);
+      pushToast("error", e?.message || "No se pudo descargar el informe de usuarios.");
+    } finally {
+      setUsersReportLoading(false);
     }
   }
 
@@ -3910,9 +3943,30 @@ export default function FelpusMatcher() {
             admin_* vuelve a chequear auth.email() del lado del servidor. */}
         {activeTab === "admin" && isAdmin && (
           <div className="max-w-2xl mx-auto px-4 pt-2 pb-8 space-y-4">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5" style={{ color: C.orangeInk }} />
-              <h2 className="felpus-display text-lg" style={{ color: C.text }}>Panel de administrador</h2>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5" style={{ color: C.orangeInk }} />
+                <h2 className="felpus-display text-lg" style={{ color: C.text }}>Panel de administrador</h2>
+              </div>
+              {/* Descarga apodo/email/whatsapp de cada cuenta con login de
+                  Google (admin_list_users en schema.sql) — no depende de
+                  adminSection ni de loadAdminData, tiene su propio loading
+                  (usersReportLoading) porque es un viaje de red aparte que
+                  se puede pedir en cualquier momento. */}
+              <button
+                type="button"
+                onClick={handleDownloadUsersReport}
+                disabled={usersReportLoading}
+                className="text-xs font-bold py-2 px-3 rounded-lg border flex items-center gap-1.5 disabled:opacity-60"
+                style={{ color: C.text, borderColor: C.border, background: C.surface }}
+              >
+                {usersReportLoading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" />
+                )}
+                Informe de usuarios (CSV)
+              </button>
             </div>
 
             <div className="flex gap-2">

@@ -300,6 +300,21 @@ export async function adminListFlaggedReports() {
   }));
 }
 
+// Informe de cuentas registradas (ver admin_list_users en schema.sql) —
+// apodo/email/whatsapp de cada login de Google. Se usa para el botón
+// "Descargar informe de usuarios" del panel de admin (ver
+// handleDownloadUsersReport en FelpusMatcher.jsx + usersReportToCsv en
+// csv.js), pero se deja como función aparte (no ligada al CSV) para poder
+// testearla y, si algún día hace falta, mostrarla en pantalla también.
+export async function adminFetchUsers() {
+  const { data, error } = await supabase.rpc("admin_list_users");
+  if (error) {
+    if (isMissingFunctionError(error)) throw new Error(ADMIN_RPC_MISSING_MSG);
+    throw error;
+  }
+  return data || [];
+}
+
 // Métricas básicas del panel de admin (ver admin_metrics en schema.sql) —
 // un solo viaje de red en vez de varios counts sueltos desde el cliente.
 export async function adminFetchMetrics() {
