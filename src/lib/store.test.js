@@ -8,6 +8,7 @@ const { supabaseMock } = vi.hoisted(() => {
     from: vi.fn(),
     rpc: vi.fn(),
     storage: { from: vi.fn() },
+    auth: { getSession: vi.fn(() => Promise.resolve({ data: { session: null } })) },
   };
   return { supabaseMock };
 });
@@ -18,6 +19,7 @@ const {
   fetchReports,
   createReport,
   fetchReportContact,
+  flagReport,
   awardPoints,
   bumpStreak,
   fetchProfile,
@@ -58,6 +60,7 @@ beforeEach(() => {
   supabaseMock.from.mockReset();
   supabaseMock.rpc.mockReset();
   supabaseMock.storage.from.mockReset();
+  supabaseMock.auth.getSession.mockReset().mockResolvedValue({ data: { session: null } });
   // Mocks por defecto de Storage — createReport() siempre pasa por acá
   // (uploadPhoto), así que sin esto cada test de createReport tendría que
   // repetirlo.
@@ -66,9 +69,19 @@ beforeEach(() => {
     getPublicUrl: vi.fn((path) => ({ data: { publicUrl: `https://fake.supabase.co/${path}` } })),
     remove: vi.fn(() => Promise.resolve({ error: null })),
   });
+  // createReport() usa fetch() para dos cosas distintas: bajar el Blob de
+  // cada foto (dataUrl) vía uploadPhoto, y ahora también para publicar de
+  // verdad (POST a /api/create-report, ver hallazgo de auditoría de
+  // seguridad más abajo) — este mock por defecto cubre las dos, así que
+  // los tests que no les importa el segundo no tienen que repetirlo.
   vi.stubGlobal(
     "fetch",
-    vi.fn(() => Promise.resolve({ blob: () => Promise.resolve(new Blob(["x"], { type: "image/jpeg" })) }))
+    vi.fn((url) => {
+      if (typeof url === "string" && url.startsWith("data:")) {
+        return Promise.resolve({ blob: () => Promise.resolve(new Blob(["x"], { type: "image/jpeg" })) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) });
+    })
   );
 });
 
@@ -208,90 +221,140 @@ describe("createReport", () => {
     userId: null,
   };
 
-  it("inserta en un solo intento cuando todas las columnas existen", async () => {
-    const builder = makeBuilder({ error: null });
-    supabaseMock.from.mockReturnValueOnce(builder);
+  // Hallazgo de auditoría de seguridad (2026-08-07): el insert directo a
+  // "reports" (antes con la anon key) dejaba el rate limit de 8/hora en
+  // manos de un trigger que leía la IP de un header HTTP falsificable —
+  // ver PENDIENTE_DECISION.md #-14. createReport() ahora publica vía
+  // /api/create-report (server-side); el reintento sin columnas opcionales
+  // se movió a esa ruta (tests propios más abajo, en
+  // src/app/api/create-report/route.test.js) — acá solo importa que
+  // store.js arme bien el pedido.
+
+  it("publica vía /api/create-report con la fila armada, sin Authorization si no hay sesión", async () => {
+    const fetchMock = vi.fn((url) => {
+      if (typeof url === "string" && url.startsWith("data:")) {
+        return Promise.resolve({ blob: () => Promise.resolve(new Blob(["x"], { type: "image/jpeg" })) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
     const saved = await createReport(draft);
-    expect(supabaseMock.from).toHaveBeenCalledTimes(1);
+
+    const apiCall = fetchMock.mock.calls.find((c) => c[0] === "/api/create-report");
+    expect(apiCall).toBeTruthy();
+    expect(apiCall[1].headers.Authorization).toBeUndefined();
+    const body = JSON.parse(apiCall[1].body);
+    expect(body.row).toMatchObject({ ciudad: "Buenos Aires", provincia: "Buenos Aires", id: "new1" });
     expect(saved.foto).toContain("https://fake.supabase.co/");
-    expect(builder.insert.mock.calls[0][0]).toMatchObject({ ciudad: "Buenos Aires", provincia: "Buenos Aires" });
   });
 
-  it("si falta 'ciudad' (migración no corrida), reintenta sin esa clave y no pierde el resto", async () => {
-    const builder1 = makeBuilder({ error: missingColumnError("ciudad") });
-    const builder2 = makeBuilder({ error: null });
-    supabaseMock.from.mockReturnValueOnce(builder1).mockReturnValueOnce(builder2);
+  it("con sesión activa, manda el access_token como Authorization: Bearer", async () => {
+    supabaseMock.auth.getSession.mockResolvedValueOnce({ data: { session: { access_token: "tok-123" } } });
+    const fetchMock = vi.fn((url) => {
+      if (typeof url === "string" && url.startsWith("data:")) {
+        return Promise.resolve({ blob: () => Promise.resolve(new Blob(["x"], { type: "image/jpeg" })) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
 
     await createReport(draft);
 
-    const secondInsertRow = builder2.insert.mock.calls[0][0];
-    expect(secondInsertRow).not.toHaveProperty("ciudad");
-    expect(secondInsertRow.provincia).toBe("Buenos Aires");
+    const apiCall = fetchMock.mock.calls.find((c) => c[0] === "/api/create-report");
+    expect(apiCall[1].headers.Authorization).toBe("Bearer tok-123");
   });
 
-  it("si falta 'detalles', reintenta el insert sin esa clave en la fila", async () => {
-    const builder1 = makeBuilder({ error: missingColumnError("detalles") });
-    const builder2 = makeBuilder({ error: null });
-    supabaseMock.from.mockReturnValueOnce(builder1).mockReturnValueOnce(builder2);
+  it("si la ruta devuelve un error (ej. rate limit), lo propaga con el mensaje real", async () => {
+    const fetchMock = vi.fn((url) => {
+      if (typeof url === "string" && url.startsWith("data:")) {
+        return Promise.resolve({ blob: () => Promise.resolve(new Blob(["x"], { type: "image/jpeg" })) });
+      }
+      return Promise.resolve({
+        ok: false,
+        json: () => Promise.resolve({ error: "Se alcanzó el límite de reportes por hora desde esta conexión." }),
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
 
-    await createReport(draft);
-
-    expect(supabaseMock.from).toHaveBeenCalledTimes(2);
-    const firstInsertRow = builder1.insert.mock.calls[0][0];
-    const secondInsertRow = builder2.insert.mock.calls[0][0];
-    expect(firstInsertRow).toHaveProperty("detalles");
-    expect(secondInsertRow).not.toHaveProperty("detalles");
-    // El resto de los campos no debería perderse en el reintento
-    expect(secondInsertRow.raza).toBe("Siamés");
-  });
-
-  it("si faltan 'raza' y 'detalles', reintenta hasta lograrlo sin ninguna de las dos", async () => {
-    supabaseMock.from
-      .mockReturnValueOnce(makeBuilder({ error: missingColumnError("raza") }))
-      .mockReturnValueOnce(makeBuilder({ error: missingColumnError("detalles") }))
-      .mockReturnValueOnce(makeBuilder({ error: null }));
-    await createReport(draft);
-    expect(supabaseMock.from).toHaveBeenCalledTimes(3);
-  });
-
-  it("un error que no es de columna faltante se propaga sin reintentar de más", async () => {
-    const constraintError = { code: "23514", message: "violates check constraint reports_descripcion_len" };
-    supabaseMock.from.mockReturnValueOnce(makeBuilder({ error: constraintError }));
-    await expect(createReport(draft)).rejects.toBe(constraintError);
-    expect(supabaseMock.from).toHaveBeenCalledTimes(1);
+    await expect(createReport(draft)).rejects.toThrow("Se alcanzó el límite de reportes por hora");
   });
 });
 
+// Hallazgo de auditoría de seguridad (2026-08-07): antes fetchReportContact
+// llamaba a la RPC get_report_contact directo con la anon key, que leía la
+// IP de un header falsificable por quien llama a la API — ver
+// PENDIENTE_DECISION.md #-14. Ahora pasa por /api/report-contact
+// (server-side, IP determinada por Vercel), así que estos tests mockean
+// fetch() en vez de supabaseMock.rpc.
 describe("fetchReportContact", () => {
-  it("con la RPC disponible, devuelve el contacto directo", async () => {
-    supabaseMock.rpc.mockResolvedValueOnce({
-      data: [{ contacto_whatsapp: "5491112345678", contacto_email: "a@a.com" }],
-      error: null,
-    });
+  it("con la ruta disponible, pide /api/report-contact y devuelve el contacto", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url) =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ contactoWhatsapp: "5491112345678", contactoEmail: "a@a.com" }),
+        })
+      )
+    );
     const contact = await fetchReportContact("r1");
-    expect(supabaseMock.rpc).toHaveBeenCalledWith("get_report_contact", { p_report_id: "r1" });
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/report-contact",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ reportId: "r1" }) })
+    );
     expect(contact).toEqual({ contactoWhatsapp: "5491112345678", contactoEmail: "a@a.com" });
   });
 
-  it("si la RPC todavía no existe (migración no corrida), cae al SELECT directo", async () => {
-    supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: missingFunctionError() });
-    supabaseMock.from.mockReturnValueOnce(
-      makeBuilder({ data: { contacto_whatsapp: "5491112345678", contacto_email: "" }, error: null })
+  it("si la ruta devuelve un error (ej. rate limit), lo propaga con el mensaje real", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: false,
+          json: () => Promise.resolve({ error: "Demasiadas consultas de contacto desde esta conexión." }),
+        })
+      )
     );
-    const contact = await fetchReportContact("r1");
-    expect(contact).toEqual({ contactoWhatsapp: "5491112345678", contactoEmail: "" });
-  });
-
-  it("un error real de la RPC (no 'función no existe') se propaga, sin caer al SELECT", async () => {
-    const realError = { code: "P0001", message: "Demasiadas consultas de contacto desde esta conexión." };
-    supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: realError });
-    await expect(fetchReportContact("r1")).rejects.toBe(realError);
-    expect(supabaseMock.from).not.toHaveBeenCalled();
+    await expect(fetchReportContact("r1")).rejects.toThrow("Demasiadas consultas de contacto desde esta conexión.");
   });
 
   it("si no hay fila para ese id, devuelve contacto vacío en vez de romper", async () => {
-    supabaseMock.rpc.mockResolvedValueOnce({ data: [], error: null });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }))
+    );
     expect(await fetchReportContact("no-existe")).toEqual({ contactoWhatsapp: "", contactoEmail: "" });
+  });
+});
+
+// Mismo hallazgo que fetchReportContact — flag_report es, de hecho, el más
+// grave de los dos: auto-oculta un reporte con solo 3 IPs distintas, y esa
+// IP también se leía de un header que quien llama a la API controlaba.
+describe("flagReport", () => {
+  it("pide /api/flag-report con reportId y reason", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) }))
+    );
+    await flagReport("r1", "falsa");
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/flag-report",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ reportId: "r1", reason: "falsa" }) })
+    );
+  });
+
+  it("si la ruta devuelve un error (ej. rate limit), lo propaga con el mensaje real", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: false,
+          json: () => Promise.resolve({ error: "Se alcanzó el límite de denuncias por hora desde esta conexión." }),
+        })
+      )
+    );
+    await expect(flagReport("r1", "falsa")).rejects.toThrow("Se alcanzó el límite de denuncias por hora");
   });
 });
 

@@ -159,34 +159,28 @@ export async function fetchReports({ includeHidden = false } = {}) {
   throw new Error("No se pudo cargar el listado de reportes.");
 }
 
-// Se pide recién cuando alguien abre el detalle de ESE reporte puntual, y
-// vía RPC (get_report_contact en schema.sql) en vez de un SELECT directo —
-// esas dos columnas tienen el SELECT revocado a nivel de Postgres para
-// anon/authenticated, así que un SELECT directo ya no funciona una vez
-// corrida la migración. La función además rate-limitea por IP (30/hora),
-// con su propio cupo separado del de crear reportes.
+// Se pide recién cuando alguien abre el detalle de ESE reporte puntual.
+//
+// Hallazgo de auditoría de seguridad (2026-08-07): antes esto llamaba
+// directo a la RPC get_report_contact con la anon key, y esa función leía
+// la IP para el rate limit de un header HTTP que quien llama a la API
+// controla por completo — se confirmó en vivo que rotar ese header
+// resetea el cupo de 30/hora sin límite real (ver PENDIENTE_DECISION.md
+// #-14). Ahora pasa por /api/report-contact (server-side): la IP la
+// determina Vercel en el request real, no falsificable, y la RPC en sí
+// quedó restringida al rol service_role — ya no es alcanzable con la anon
+// key ni siquiera llamándola directo.
 export async function fetchReportContact(reportId) {
-  const rpcResult = await supabase.rpc("get_report_contact", { p_report_id: reportId });
-  // Antes de correr la migración que crea get_report_contact (ver
-  // PENDIENTE_DECISION.md), la función todavía no existe en la base — sin
-  // este fallback, ver el contacto de cualquier reporte se rompería por
-  // completo hasta que se corra. Cae al SELECT directo de siempre, que
-  // sigue funcionando mientras tanto (recién queda revocado cuando se
-  // corre la migración, junto con la función).
-  if (rpcResult.error && isMissingFunctionError(rpcResult.error)) {
-    const { data, error } = await supabase
-      .from(REPORTS_TABLE)
-      .select("contacto_whatsapp,contacto_email")
-      .eq("id", reportId)
-      .maybeSingle();
-    if (error) throw error;
-    return { contactoWhatsapp: data?.contacto_whatsapp || "", contactoEmail: data?.contacto_email || "" };
-  }
-  if (rpcResult.error) throw rpcResult.error;
-  const row = Array.isArray(rpcResult.data) ? rpcResult.data[0] : rpcResult.data;
+  const res = await fetch("/api/report-contact", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reportId }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || "No pudimos obtener el contacto. Probá de nuevo.");
   return {
-    contactoWhatsapp: row?.contacto_whatsapp || "",
-    contactoEmail: row?.contacto_email || "",
+    contactoWhatsapp: data?.contactoWhatsapp || "",
+    contactoEmail: data?.contactoEmail || "",
   };
 }
 
@@ -212,22 +206,25 @@ function isMissingColumnError(error, columnName) {
   return new RegExp(`\\b${columnName}\\b`, "i").test(text);
 }
 
-// Denunciar una publicación como falsa/errónea/inapropiada. Va por RPC
-// (flag_report en schema.sql), no por un insert directo a report_flags —
-// esa tabla no tiene política de INSERT para anon/authenticated a propósito
-// (mismo motivo que get_report_contact: el rate limiting por IP y el conteo
-// de IPs distintas para autoocultar tienen que vivir en el servidor, no
-// depender de que el cliente los respete).
+// Denunciar una publicación como falsa/errónea/inapropiada.
+//
+// Hallazgo de auditoría de seguridad (2026-08-07) — el más grave de los
+// encontrados: flag_report auto-oculta un reporte apenas ve 3 IPs
+// DISTINTAS denunciando, y esa IP se leía del mismo header falsificable
+// que get_report_contact (ver comentario ahí y PENDIENTE_DECISION.md
+// #-14) — con IPs falsas rotando libremente, cualquiera podía ocultar
+// CUALQUIER reporte ajeno en 3 pedidos. Mismo fix: pasa por
+// /api/flag-report (server-side, IP determinada por Vercel), la RPC quedó
+// restringida a service_role.
 export async function flagReport(reportId, reason) {
-  const { error } = await supabase.rpc("flag_report", { p_report_id: reportId, p_reason: reason });
-  if (error) {
-    // Antes de correr la migración que agrega flag_report, la función
-    // todavía no existe — un mensaje claro en vez del error crudo de
-    // PostgREST ("could not find the function...").
-    if (isMissingFunctionError(error)) {
-      throw new Error("Denunciar todavía no está disponible en este momento. Probá de nuevo más tarde.");
-    }
-    throw error;
+  const res = await fetch("/api/flag-report", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reportId, reason }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error || "No pudimos enviar la denuncia. Probá de nuevo.");
   }
 }
 
@@ -375,26 +372,32 @@ export async function createReport(report) {
     resuelto: false,
   };
 
-  // Mismo motivo que en fetchReports: antes de correr la migración que
-  // agrega "raza"/"detalles" (ver PENDIENTE_DECISION.md), publicar un
-  // reporte nuevo fallaría por completo si alguna de esas columnas no existe
-  // todavía. Reintenta sin el campo puntual que falte — la persona pierde
-  // sólo ese dato hasta que se corra la migración, no la posibilidad de
-  // publicar.
-  let attemptRow = row;
-  let finalError = null;
-  for (let attempt = 0; attempt <= REPORT_LIST_OPTIONAL_COLUMNS.length; attempt++) {
-    const result = await supabase.from(REPORTS_TABLE).insert(attemptRow);
-    const missing = missingOptionalColumn(result.error, REPORT_LIST_OPTIONAL_COLUMNS);
-    if (!missing || !(missing in attemptRow)) {
-      finalError = result.error;
-      break;
-    }
-    const { [missing]: _omit, ...rest } = attemptRow;
-    attemptRow = rest;
-    finalError = result.error;
+  // Hallazgo de auditoría de seguridad (2026-08-07): el insert de la fila
+  // (antes directo, con la anon key) dejó el rate limit de 8/hora en manos
+  // de un trigger de base que leía la IP de un header HTTP falsificable por
+  // quien llama a la API — mismo hueco que se cerró en fetchReportContact/
+  // flagReport (ver PENDIENTE_DECISION.md #-14). Ahora pasa por
+  // /api/create-report (server-side, IP determinada por Vercel), que
+  // además NUNCA confía en report.userId — deriva el user_id real del
+  // token de sesión, verificado server-side, así que ni siquiera alguien
+  // manipulando el JS del cliente puede publicar a nombre de otra cuenta.
+  // El reintento sin columnas opcionales (raza/detalles/etc., antes de
+  // correr la migración más reciente) se replicó igual dentro de esa ruta.
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData?.session?.access_token;
+
+  const res = await fetch("/api/create-report", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: JSON.stringify({ row }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error || "No se pudo publicar el reporte. Probá de nuevo.");
   }
-  if (finalError) throw finalError;
   return { ...report, foto: uploaded[0].url, fotos: uploaded };
 }
 

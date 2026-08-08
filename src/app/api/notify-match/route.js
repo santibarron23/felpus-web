@@ -89,16 +89,21 @@ async function fetchCandidates(supabaseUrl, apiKey, newReport) {
 }
 
 // Mismo camino que usa el navegador (get_report_contact en schema.sql), pero
-// llamado servidor-a-servidor: sin x-forwarded-for en este fetch interno, la
-// función no lo cuenta contra el cupo de 30/hora por IP (ver el comentario
-// junto a esa función) — no compite con gente real abriendo detalles de
-// reportes. Se pide solo para las coincidencias que ya superaron el umbral,
-// nunca en bloque para los 200 candidatos.
-async function fetchReportContactServer(supabaseUrl, apiKey, reportId) {
+// llamado servidor-a-servidor sin IP real que identificar, así que no
+// compite contra el cupo de 30/hora por IP de gente real abriendo detalles
+// de reportes (ver el comentario junto a esa función). Se pide solo para
+// las coincidencias que ya superaron el umbral, nunca en bloque para los
+// 200 candidatos.
+//
+// Hallazgo de auditoría de seguridad (2026-08-07): get_report_contact ahora
+// exige el rol service_role (ver PENDIENTE_DECISION.md #-14) — la anon key
+// que usaba esta llamada ya no alcanza, así que pasa a requerir
+// SUPABASE_SERVICE_ROLE_KEY explícitamente.
+async function fetchReportContactServer(supabaseUrl, serviceKey, reportId) {
   const res = await fetch(`${supabaseUrl}/rest/v1/rpc/get_report_contact`, {
     method: "POST",
-    headers: { apikey: apiKey, Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ p_report_id: reportId }),
+    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ p_report_id: reportId, p_client_ip: null }),
   });
   if (!res.ok) return "";
   const rows = await res.json();
@@ -185,6 +190,11 @@ export async function POST(request) {
   if (!supabaseUrl || !supabaseKey || !resendKey) {
     return Response.json({ error: "Faltan variables de entorno en el servidor." }, { status: 501 });
   }
+  // Sin SUPABASE_SERVICE_ROLE_KEY el webhook sigue funcionando (push sigue
+  // andando igual, ver pushConfigured más abajo) — solo el canal de email
+  // se queda sin poder pedir el contacto, así que no bloquea todo el
+  // endpoint. Ver comentario en fetchReportContactServer.
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   let payload;
   try {
@@ -217,7 +227,7 @@ export async function POST(request) {
 
     let contactoEmail = "";
     try {
-      contactoEmail = await fetchReportContactServer(supabaseUrl, supabaseKey, m.report.id);
+      if (serviceKey) contactoEmail = await fetchReportContactServer(supabaseUrl, serviceKey, m.report.id);
     } catch (e) {
       logError("No se pudo obtener el email de contacto para la coincidencia", e);
     }

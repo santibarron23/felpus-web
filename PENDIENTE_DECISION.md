@@ -1,6 +1,6 @@
 # Decisiones pendientes — requieren acción o información tuya
 
-## -14. CRÍTICO: el rate limiting por IP de toda la app se evade falsificando X-Forwarded-For (2026-08-07) — necesito tu decisión antes de tocar nada
+## -14. RESUELTO (2026-08-08): el rate limiting por IP de toda la app se evadía falsificando X-Forwarded-For
 
 **No lo arreglé todavía a propósito** — la corrección real necesita un
 secreto nuevo que no tenés configurado (`SUPABASE_SERVICE_ROLE_KEY`) y
@@ -62,6 +62,37 @@ datos que no fueran ya públicos (los reportes ya son públicos por diseño),
 y explotar esto requiere saber que existe y escribir un script — no es algo
 que un usuario común vaya a tropezarse. Pero si Felpus crece, es el tipo de
 hueco que un bot de scraping de teléfonos encuentra tarde o temprano.
+
+**Resolución (2026-08-08):** con tu OK, `get_report_contact`, `flag_report`
+y la creación de reportes se movieron detrás de 3 rutas nuevas de Next.js
+(`/api/report-contact`, `/api/flag-report`, `/api/create-report`) que corren
+en el servidor con `SUPABASE_SERVICE_ROLE_KEY` (nunca expuesta al
+navegador) y determinan la IP real desde el `request` de Vercel — el mismo
+patrón que ya usaba `api/embed/route.js`. El cliente (`store.js`) ya no
+llama a Supabase directo para estas 3 operaciones.
+
+Al implementar esto encontré un segundo hueco, más serio, en el camino: el
+`revoke ... from public` que ya tenía `schema.sql` para
+`get_report_contact`/`flag_report` **nunca había funcionado**, porque
+Supabase le da permiso de ejecución a `anon`/`authenticated` por separado
+de `public` en cada función nueva — hay que revocárselo explícitamente a
+los tres (`revoke all on function ... from public, anon, authenticated;`).
+Tirando de ese hilo encontré el mismo patrón, más grave, en columnas: el
+fix anterior de "ocultar `contacto_whatsapp`/`contacto_email`" (ver
+entrada de privacidad más abajo) usaba
+`revoke select (columna) on reports from anon, authenticated;` — que en
+Postgres **es un no-op** si el rol ya tenía `SELECT` sobre toda la tabla
+(no se puede revocar una columna de un permiso de tabla completa). Lo
+comprobé en vivo con la anon key real: se podía leer `contacto_whatsapp`/
+`contacto_email` directo, actualizar `reports.oculto` (bypass de
+moderación) y `contributors.points`/`reportes` (inflar racha/ranking) sin
+pasar por ninguna función — un hueco que llevaba abierto desde que se
+"cerró" la primera vez. El fix real es revocar la tabla completa y volver
+a otorgar solo las columnas permitidas (`grant select (col1, col2, ...) on
+reports to anon, authenticated;`), aplicado en las 4 combinaciones
+afectadas. Verificado en vivo con curl contra la base real (anon key):
+las 5 rutas de ataque devuelven `42501 permission denied` y el acceso
+público normal sigue funcionando igual.
 
 ## -13. Auditoría de seguridad: 3 huecos reales de autorización en Supabase (2026-08-07) — requiere 1 paso tuyo
 

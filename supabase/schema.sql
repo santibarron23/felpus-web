@@ -154,20 +154,32 @@ create policy "reports_delete_owner" on reports for delete using (auth.uid() = u
 
 -- ---------------------------------------------------------------------------
 -- Contacto (WhatsApp/email): reports_select_all de arriba es "using (true)"
--- — controla FILAS, no columnas. Antes de esto, cualquiera con la anon key
+-- — controla FILAS, no columnas. Sin esto, cualquiera con la anon key
 -- (pública, está en el bundle del navegador de toda la app) podía pedir
 -- "select=contacto_whatsapp,contacto_email" directo a la API REST y
 -- llevarse el contacto de TODOS los reportes en un solo pedido, sin pasar
--- por fetchReportContact ni por ningún código del cliente — el hecho de que
--- el listado general no pidiera esas columnas era una convención del
--- frontend, no una restricción real. Esto revoca el SELECT de esas dos
--- columnas puntuales a nivel de Postgres (no de RLS) para anon/authenticated,
--- y deja como único camino esta función: rate-limitada por IP, con su propio
--- cupo (no comparte el de report_submissions — navegar varios detalles de
--- reportes en una sesión es normal y no debería competir con publicar
--- reportes o activar notificaciones push).
+-- por fetchReportContact ni por ningún código del cliente.
+--
+-- CORRECCIÓN (2026-08-08): un "revoke select (columna) ... from anon" NO
+-- ALCANZA cuando ese rol ya tiene SELECT a nivel de TODA LA TABLA — que es
+-- justo el caso acá (Supabase le da acceso amplio a anon/authenticated por
+-- default a cada tabla nueva del schema public). Postgres no deja que un
+-- revoke de columna "recorte" un permiso más amplio que ya existe a nivel
+-- de tabla — confirmado en vivo contra la base real: el revoke de columna
+-- de más arriba (versión anterior de esta migración) nunca bloqueó nada,
+-- contacto_whatsapp/contacto_email seguían siendo legibles directo con la
+-- anon key. La única forma real de restringir columnas puntuales es
+-- revocar TODA la tabla y volver a otorgar, explícitas, las columnas
+-- permitidas — por eso la lista de abajo repite cada columna de "reports"
+-- salvo las dos de contacto.
 -- ---------------------------------------------------------------------------
-revoke select (contacto_whatsapp, contacto_email) on reports from anon, authenticated;
+revoke select on reports from anon, authenticated;
+grant select (
+  id, tipo, especie, nombre, color, color_otro, tamano, sexo, edad, peso, zona,
+  lat, lng, fecha, descripcion, foto_url, hist, embedding, foto_urls, hists,
+  embeddings, nickname, resuelto, resuelto_por, resuelto_por_user_id, resuelto_en,
+  creado_en, user_id, push_subscription, raza, detalles, oculto, ciudad, provincia
+) on reports to anon, authenticated;
 
 create table if not exists contact_requests (
   ip text not null,
@@ -178,59 +190,89 @@ alter table contact_requests enable row level security;
 -- Sin políticas: nadie (anon ni authenticated) puede leer ni escribir esta
 -- tabla directamente vía la API — solo la toca la función de abajo.
 
-create or replace function public.get_report_contact(p_report_id text)
+-- ---------------------------------------------------------------------------
+-- Hallazgo de auditoría de seguridad (2026-08-07) — CRÍTICO: la versión
+-- anterior de get_report_contact leía la IP desde
+-- current_setting('request.headers',...)::json->>'x-forwarded-for', un
+-- header HTTP que QUIEN LLAMA A LA API CONTROLA POR COMPLETO cuando llama a
+-- Supabase directo (no a través de esta app). Probado en vivo contra la
+-- base real: agotar el límite de 30/hora con una IP falsa fija y después
+-- mandar un pedido más con OTRA IP falsa (nunca usada) pasaba sin
+-- problema — bastaba con rotar un header de texto plano para resetear el
+-- cupo cada vez, sin límite real. Ver PENDIENTE_DECISION.md #-14.
+--
+-- Fix real: la función ya NO lee la IP de request.headers — la recibe como
+-- parámetro (p_client_ip), que solo puede llegar de una fuente confiable
+-- porque la función pasa a ser callable ÚNICAMENTE por el rol service_role
+-- (revoke de abajo saca anon/authenticated por completo). El único que
+-- puede usar esa key es el propio servidor de Next.js (nunca el navegador,
+-- ver .env.local.example), así que get_report_contact ahora solo se llama
+-- desde src/app/api/report-contact/route.js, que determina la IP real a
+-- partir del request que le llega a Vercel (confiable, no falsificable por
+-- quien visita el sitio) y se la pasa acá explícita.
+-- ---------------------------------------------------------------------------
+drop function if exists public.get_report_contact(text);
+
+create or replace function public.get_report_contact(p_report_id text, p_client_ip text default null)
 returns table(contacto_whatsapp text, contacto_email text)
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
-  client_ip text;
   recent_count integer;
 begin
-  begin
-    client_ip := nullif(trim(split_part(current_setting('request.headers', true)::json->>'x-forwarded-for', ',', 1)), '');
-  exception when others then
-    client_ip := null;
-  end;
-
-  -- Sin x-forwarded-for (llamado servidor-a-servidor, ej. el webhook de
-  -- notify-match, o desde el SQL Editor) se deja pasar sin contar, mismo
-  -- criterio que enforce_report_rate_limit más abajo.
-  if client_ip is not null then
+  -- Sin IP (llamado servidor-a-servidor sin una IP real que identificar,
+  -- ej. desde el SQL Editor) se deja pasar sin contar, mismo criterio que
+  -- siempre tuvo esta función.
+  if p_client_ip is not null then
     delete from contact_requests where created_at < now() - interval '1 day';
 
     select count(*) into recent_count
       from contact_requests
-      where ip = client_ip and created_at > now() - interval '1 hour';
+      where ip = p_client_ip and created_at > now() - interval '1 hour';
 
     if recent_count >= 30 then
       raise exception 'Demasiadas consultas de contacto desde esta conexión. Probá de nuevo más tarde.';
     end if;
 
-    insert into contact_requests (ip) values (client_ip);
+    insert into contact_requests (ip) values (p_client_ip);
   end if;
 
   return query select r.contacto_whatsapp, r.contacto_email from reports r where r.id = p_report_id;
 end;
 $$;
 
-revoke all on function public.get_report_contact(text) from public;
-grant execute on function public.get_report_contact(text) to anon, authenticated;
+-- "revoke ... from public" NO alcanza acá: Supabase le otorga EXECUTE a
+-- anon/authenticated en cada función nueva del schema public por defecto,
+-- por FUERA de lo que hereda de "public" (confirmado en vivo contra la
+-- base real — information_schema.routine_privileges seguía listando a
+-- anon/authenticated con EXECUTE después del revoke "from public" solo).
+-- Hay que revocárselo a esos dos roles de forma explícita.
+revoke all on function public.get_report_contact(text, text) from public, anon, authenticated;
+grant execute on function public.get_report_contact(text, text) to service_role;
 
 -- ---------------------------------------------------------------------------
--- Rate limiting de creación de reportes: la política de arriba (with check
--- (true)) permite insertar sin límite a cualquiera, logueado o no — sin esto,
--- un script puede crear reportes (y fotos en Storage, con su costo) sin
--- ningún techo. RLS controla QUIÉN puede insertar, no CUÁNTO, así que el
--- límite va en un trigger.
+-- Rate limiting de creación de reportes.
 --
--- PostgREST (la API REST que usa Supabase) expone los headers del pedido
--- HTTP original como el GUC "request.headers" — de ahí se saca el
--- x-forwarded-for para identificar la IP real del cliente sin necesitar
--- autenticación. Si no está disponible (ej. llamado desde el SQL Editor, o
--- el sembrado de datos de ejemplo que corre con la service key) se deja
--- pasar, para no romper flujos internos.
+-- report_submissions se queda (subscribe_report_push más abajo también la
+-- usa para SU propio límite), pero el trigger enforce_report_rate_limit que
+-- vivía acá se ELIMINÓ — hallazgo de auditoría de seguridad (2026-08-07):
+-- leía la IP de current_setting('request.headers',...)::json->>
+-- 'x-forwarded-for', un header HTTP que quien llama a la API de Supabase
+-- directo controla por completo. Probado en vivo contra la base real:
+-- agotar el límite con una IP falsa fija y mandar un pedido más con OTRA IP
+-- falsa (nunca usada) pasaba sin problema — sin límite real. Ver
+-- PENDIENTE_DECISION.md #-14 para el detalle completo.
+--
+-- El fix real necesitaba más que cambiar de dónde se lee la IP: un trigger
+-- no puede recibir un parámetro explícito del que llama (a diferencia de
+-- una función RPC), así que no había forma de pasarle una IP confiable
+-- calculada del lado correcto. En cambio, el INSERT directo a "reports"
+-- para anon/authenticated queda revocado más abajo — TODA publicación
+-- nueva pasa ahora por src/app/api/create-report/route.js, que hace este
+-- mismo chequeo (mismo cupo, misma tabla) en JS, con la IP que determina
+-- Vercel en el request real.
 -- ---------------------------------------------------------------------------
 create table if not exists report_submissions (
   ip text not null,
@@ -239,51 +281,20 @@ create table if not exists report_submissions (
 create index if not exists report_submissions_ip_created_idx on report_submissions (ip, created_at);
 alter table report_submissions enable row level security;
 -- Sin políticas: nadie (anon ni authenticated) puede leer ni escribir esta
--- tabla directamente vía la API — solo la toca la función security definer
--- de abajo, que corre con privilegios elevados.
-
-create or replace function public.enforce_report_rate_limit()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  client_ip text;
-  recent_count integer;
-begin
-  begin
-    client_ip := nullif(trim(split_part(current_setting('request.headers', true)::json->>'x-forwarded-for', ',', 1)), '');
-  exception when others then
-    client_ip := null;
-  end;
-
-  if client_ip is null then
-    return NEW;
-  end if;
-
-  -- Poda oportunista: evita que la tabla crezca indefinidamente sin
-  -- necesitar un cron job aparte.
-  delete from report_submissions where created_at < now() - interval '1 day';
-
-  select count(*) into recent_count
-    from report_submissions
-    where ip = client_ip and created_at > now() - interval '1 hour';
-
-  if recent_count >= 8 then
-    raise exception 'Se alcanzó el límite de reportes por hora desde esta conexión. Probá de nuevo más tarde.';
-  end if;
-
-  insert into report_submissions (ip) values (client_ip);
-  return NEW;
-end;
-$$;
+-- tabla directamente vía la API — solo la tocan la ruta de servidor de
+-- arriba y subscribe_report_push (security definer), que corren con
+-- privilegios elevados.
 
 drop trigger if exists trg_enforce_report_rate_limit on public.reports;
-create trigger trg_enforce_report_rate_limit
-  before insert on public.reports
-  for each row
-  execute function public.enforce_report_rate_limit();
+drop function if exists public.enforce_report_rate_limit();
+
+-- Cierra el único camino que quedaba para insertar en "reports" sin pasar
+-- por /api/create-report: la policy reports_insert_own_or_guest (RLS)
+-- solo controla QUÉ FILA se puede insertar una vez que el permiso de base
+-- ya lo permite — este revoke saca ese permiso de base por completo para
+-- anon/authenticated, así que ni siquiera alguien con la anon key puede
+-- insertar directo, tenga o no una fila válida.
+revoke insert on reports from anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Activar notificaciones push para un reporte puntual (no una suscripción
@@ -409,8 +420,13 @@ create table if not exists heart_sends (
   target_id text not null,
   created_at timestamptz not null default now()
 );
+-- (created_at::date) directo no compila ("functions in index expression
+-- must be marked IMMUTABLE") — el cast timestamptz -> date depende del
+-- TimeZone de la sesión, así que Postgres no lo acepta en un índice. Pasar
+-- primero por "at time zone 'UTC'" (a un timestamp fijo, sin zona) sí es
+-- determinístico, y de ahí el ::date ya es válido.
 create unique index if not exists heart_sends_sender_target_day_uidx
-  on heart_sends (sender_id, target_id, (created_at::date));
+  on heart_sends (sender_id, target_id, ((created_at at time zone 'UTC')::date));
 alter table heart_sends enable row level security;
 -- Sin políticas: nadie lee ni escribe esta tabla directamente vía la API —
 -- solo la toca send_heart() (security definer), reemplazada abajo.
@@ -791,14 +807,27 @@ create table if not exists flag_submissions (
 create index if not exists flag_submissions_ip_created_idx on flag_submissions (ip, created_at);
 alter table flag_submissions enable row level security;
 
-create or replace function public.flag_report(p_report_id text, p_reason text)
+-- ---------------------------------------------------------------------------
+-- Hallazgo de auditoría de seguridad (2026-08-07) — CRÍTICO, más grave que
+-- get_report_contact: esta función auto-oculta un reporte apenas ve 3 IPs
+-- DISTINTAS denunciando — y leía esa IP del mismo request.headers
+-- falsificable (ver el comentario largo junto a get_report_contact más
+-- arriba). Con IPs falsas rotando libremente, cualquiera podía ocultar
+-- CUALQUIER reporte ajeno (por ejemplo el de un competidor, o el de alguien
+-- con quien tuviera un conflicto personal) en 3 pedidos, sin límite real.
+-- Mismo fix: p_client_ip como parámetro, función restringida a
+-- service_role — ahora solo se llama desde
+-- src/app/api/flag-report/route.js.
+-- ---------------------------------------------------------------------------
+drop function if exists public.flag_report(text, text);
+
+create or replace function public.flag_report(p_report_id text, p_reason text, p_client_ip text default null)
 returns void
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
-  client_ip text;
   recent_count integer;
   distinct_ips integer;
 begin
@@ -810,38 +839,32 @@ begin
     raise exception 'No se encontró ese reporte.';
   end if;
 
-  begin
-    client_ip := nullif(trim(split_part(current_setting('request.headers', true)::json->>'x-forwarded-for', ',', 1)), '');
-  exception when others then
-    client_ip := null;
-  end;
-
   -- Mismo criterio que report_submissions/contact_requests: sin IP
   -- identificable se deja pasar sin contar hacia el límite (llamado
   -- servidor-a-servidor, o desde el SQL Editor).
-  if client_ip is not null then
+  if p_client_ip is not null then
     delete from flag_submissions where created_at < now() - interval '1 day';
 
     select count(*) into recent_count
       from flag_submissions
-      where ip = client_ip and created_at > now() - interval '1 hour';
+      where ip = p_client_ip and created_at > now() - interval '1 hour';
 
     if recent_count >= 10 then
       raise exception 'Se alcanzó el límite de denuncias por hora desde esta conexión. Probá de nuevo más tarde.';
     end if;
 
-    insert into flag_submissions (ip) values (client_ip);
+    insert into flag_submissions (ip) values (p_client_ip);
   end if;
 
   insert into report_flags (report_id, reason, ip)
-    values (p_report_id, p_reason, client_ip)
+    values (p_report_id, p_reason, p_client_ip)
     on conflict (report_id, ip) where ip is not null do nothing;
 
   -- El auto-ocultamiento exige IP real de los denunciantes (si no, alguien
-  -- sin x-forwarded-for identificable podría, en teoría, mandar muchas
-  -- denuncias con ip null que nunca chocan entre sí por el índice parcial
-  -- de arriba, e inflar el conteo si contáramos filas en vez de IPs).
-  if client_ip is not null then
+  -- sin IP identificable podría, en teoría, mandar muchas denuncias con ip
+  -- null que nunca chocan entre sí por el índice parcial de arriba, e
+  -- inflar el conteo si contáramos filas en vez de IPs).
+  if p_client_ip is not null then
     select count(distinct ip) into distinct_ips
       from report_flags
       where report_id = p_report_id and ip is not null;
@@ -853,8 +876,13 @@ begin
 end;
 $$;
 
-revoke all on function public.flag_report(text, text) from public;
-grant execute on function public.flag_report(text, text) to anon, authenticated;
+-- Mismo motivo que get_report_contact más arriba: "from public" no alcanza,
+-- Supabase le da EXECUTE a anon/authenticated por defecto en cada función
+-- nueva, aparte de lo que hereda de "public" — hay que revocárselo
+-- explícito a esos dos roles (confirmado en vivo: sin esto, la anon key
+-- podía seguir llamando a flag_report igual después del revoke original).
+revoke all on function public.flag_report(text, text, text) from public, anon, authenticated;
+grant execute on function public.flag_report(text, text, text) to service_role;
 
 -- ---------------------------------------------------------------------------
 -- Panel de administrador — un solo dueño (santiagobarronlf@gmail.com), sin
@@ -1078,11 +1106,19 @@ alter table reports add constraint reports_provincia_len check (provincia is nul
 -- updateProfile() nunca las toca, así que sigue funcionando igual; points/
 -- reportes/reencuentros/hearts/streak_days/last_active_date quedan
 -- alcanzables SOLO por las funciones security definer de abajo.
+--
+-- CORRECCIÓN (2026-08-08): igual que con contacto_whatsapp/contacto_email
+-- más arriba, un revoke de columna puntual NO alcanza si el rol ya tiene el
+-- privilegio a nivel de TODA LA TABLA (confirmado en vivo: la versión
+-- anterior de este revoke nunca bloqueó nada — points/reportes seguían
+-- siendo editables directo con la anon key). Se revoca la tabla entera y se
+-- vuelve a otorgar explícita cada columna permitida.
 -- ---------------------------------------------------------------------------
-revoke update (points, reportes, reencuentros, hearts, streak_days, last_active_date)
-  on contributors from anon, authenticated;
-revoke insert (points, reportes, reencuentros, hearts, streak_days, last_active_date)
-  on contributors from anon, authenticated;
+revoke update on contributors from anon, authenticated;
+grant update (id, nickname, whatsapp, updated_at) on contributors to anon, authenticated;
+
+revoke insert on contributors from anon, authenticated;
+grant insert (id, nickname, whatsapp, updated_at) on contributors to anon, authenticated;
 
 -- bump_streak: la racha (bumpStreak en store.js) era el único lee-y-escribe
 -- directo que quedaba tocando esas columnas para la FILA PROPIA — a
@@ -1154,6 +1190,7 @@ grant execute on function public.bump_streak(text, text, date, date) to authenti
 -- null — no puede spoofear ningún UUID ajeno ni logueado.
 -- ---------------------------------------------------------------------------
 drop policy if exists "reports_insert_all" on reports;
+drop policy if exists "reports_insert_own_or_guest" on reports;
 create policy "reports_insert_own_or_guest" on reports
   for insert with check (user_id is null or user_id = auth.uid());
 
@@ -1172,8 +1209,23 @@ create policy "reports_insert_own_or_guest" on reports
 -- (color, zona, resuelto, etc.) se siguen pudiendo editar directo — esto no
 -- les saca ningún permiso legítimo, "oculto" es lo único que nunca debería
 -- decidir el propio autor del reporte.
+--
+-- CORRECCIÓN (2026-08-08): mismo motivo que los dos revoke de columna de
+-- más arriba — "revoke update (oculto) ... from anon" no alcanza cuando
+-- esos roles ya tienen UPDATE a nivel de toda la tabla. Se revoca la tabla
+-- entera y se vuelve a otorgar cada columna permitida (todas menos
+-- "oculto", "id", "creado_en" y "user_id" — estas tres últimas tampoco
+-- deberían cambiar después de creado el reporte: cambiar el dueño de una
+-- fila ya existente no es un caso de uso real de esta app).
 -- ---------------------------------------------------------------------------
-revoke update (oculto) on reports from anon, authenticated;
+revoke update on reports from anon, authenticated;
+grant update (
+  tipo, especie, nombre, color, color_otro, tamano, sexo, edad, peso, zona,
+  lat, lng, fecha, descripcion, contacto_whatsapp, contacto_email, foto_url,
+  hist, embedding, foto_urls, hists, embeddings, nickname, resuelto,
+  resuelto_por, resuelto_por_user_id, resuelto_en, push_subscription, raza,
+  detalles, ciudad, provincia
+) on reports to anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Hallazgo de auditoría de performance (2026-08-07): "reports" nunca tuvo
