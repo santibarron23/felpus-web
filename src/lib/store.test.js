@@ -18,6 +18,7 @@ vi.mock("./supabaseClient", () => ({ supabase: supabaseMock }));
 const {
   fetchReports,
   createReport,
+  resolveReports,
   fetchReportContact,
   flagReport,
   awardPoints,
@@ -278,6 +279,40 @@ describe("createReport", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(createReport(draft)).rejects.toThrow("Se alcanzó el límite de reportes por hora");
+  });
+});
+
+// Auditoría integral (2026-08-09): resolveReports() era la única función
+// crítica de store.js sin ningún test — y no por casualidad: PENDIENTE_
+// DECISION.md #-10 documenta que este flujo (marcar reencuentro + otorgar
+// puntos) rompió una vez en producción en silencio porque una escritura
+// denegada por RLS tumbaba todo el try sin que el error fuera visible. Ese
+// bug ya se arregló (ver markResolvedAndReward en FelpusMatcher.jsx), pero
+// hasta ahora nada hubiera atrapado una regresión similar.
+describe("resolveReports", () => {
+  it("marca resuelto=true, guarda quién lo resolvió, y borra el contacto de los ids indicados", async () => {
+    const updateBuilder = makeBuilder({ error: null });
+    supabaseMock.from.mockReturnValueOnce(updateBuilder);
+
+    await resolveReports(["r1", "r2"], "user-1", "Ana");
+
+    expect(supabaseMock.from).toHaveBeenCalledWith("reports");
+    const payload = updateBuilder.update.mock.calls[0][0];
+    expect(payload.resuelto).toBe(true);
+    expect(payload.resuelto_por).toBe("Ana");
+    expect(payload.resuelto_por_user_id).toBe("user-1");
+    // Los datos de contacto se borran al resolver (ya cumplieron su
+    // propósito) — no debería quedar teléfono/email expuesto indefinidamente
+    // en un reporte ya cerrado.
+    expect(payload.contacto_whatsapp).toBeNull();
+    expect(payload.contacto_email).toBeNull();
+    expect(updateBuilder.in).toHaveBeenCalledWith("id", ["r1", "r2"]);
+  });
+
+  it("un error real (ej. RLS deniega la escritura) se propaga, nunca se traga en silencio", async () => {
+    const realError = { code: "42501", message: "new row violates row-level security policy for table \"reports\"" };
+    supabaseMock.from.mockReturnValueOnce(makeBuilder({ error: realError }));
+    await expect(resolveReports(["r1"], "user-1", "Ana")).rejects.toBe(realError);
   });
 });
 
