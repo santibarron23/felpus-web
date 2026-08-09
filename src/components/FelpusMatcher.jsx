@@ -691,26 +691,39 @@ export default function FelpusMatcher() {
   const [adminDeleteConfirmId, setAdminDeleteConfirmId] = useState(null);
   const [usersReportLoading, setUsersReportLoading] = useState(false);
 
-  const loadAdminData = useCallback(async () => {
-    if (!isAdmin) return;
-    setAdminLoading(true);
-    setAdminError("");
-    try {
-      const [metrics, flags, allReports] = await Promise.all([
-        adminFetchMetrics(),
-        adminListFlaggedReports(),
-        adminListAllReports(),
-      ]);
-      setAdminMetrics(metrics);
-      setAdminFlags(flags);
-      setAdminAllReports(allReports);
-    } catch (e) {
-      logError("No se pudo cargar el panel de administrador", e);
-      setAdminError(e?.message || "No se pudo cargar el panel de administrador.");
-    } finally {
-      setAdminLoading(false);
-    }
-  }, [isAdmin]);
+  // Auditoría integral (2026-08-09): antes recargaba TODO (métricas +
+  // denuncias + el listado completo de reportes, con embeddings incluidos
+  // — ver el hallazgo de performance sobre fetchReports) cada vez que
+  // activeTab volvía a "admin", aunque hubiera sido hacía 10 segundos. Este
+  // ref evita repetir la carga si ya se hizo hace poco — force=true (el
+  // botón "Actualizar" de la UI) la salta a propósito.
+  const adminLastLoadedAtRef = useRef(0);
+  const ADMIN_DATA_STALE_MS = 30_000;
+  const loadAdminData = useCallback(
+    async (force = false) => {
+      if (!isAdmin) return;
+      if (!force && Date.now() - adminLastLoadedAtRef.current < ADMIN_DATA_STALE_MS) return;
+      setAdminLoading(true);
+      setAdminError("");
+      try {
+        const [metrics, flags, allReports] = await Promise.all([
+          adminFetchMetrics(),
+          adminListFlaggedReports(),
+          adminListAllReports(),
+        ]);
+        setAdminMetrics(metrics);
+        setAdminFlags(flags);
+        setAdminAllReports(allReports);
+        adminLastLoadedAtRef.current = Date.now();
+      } catch (e) {
+        logError("No se pudo cargar el panel de administrador", e);
+        setAdminError(e?.message || "No se pudo cargar el panel de administrador.");
+      } finally {
+        setAdminLoading(false);
+      }
+    },
+    [isAdmin]
+  );
 
   useEffect(() => {
     if (activeTab === "admin" && isAdmin) loadAdminData();
@@ -4032,7 +4045,7 @@ export default function FelpusMatcher() {
                 style={{ borderColor: C.border, background: C.dangerBg, color: C.redDark }}
               >
                 <span className="flex items-center gap-1.5"><AlertCircle className="w-4 h-4 shrink-0" /> {adminError}</span>
-                <button type="button" onClick={loadAdminData} className="shrink-0 font-bold underline">
+                <button type="button" onClick={() => loadAdminData(true)} className="shrink-0 font-bold underline">
                   Reintentar
                 </button>
               </div>

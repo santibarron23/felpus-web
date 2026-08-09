@@ -24,8 +24,18 @@ export function useAuth(pushToast) {
       setUser(data.session?.user ?? null);
       setAuthLoading(false);
     });
+    // Auditoría integral (2026-08-09): onAuthStateChange dispara también en
+    // TOKEN_REFRESHED (Supabase renueva el JWT solo, típicamente cada ~1h
+    // con la pestaña abierta) — session.user es un objeto RECONSTRUIDO en
+    // cada evento, mismo contenido pero referencia nueva. Como varios
+    // efectos de FelpusMatcher.jsx dependen de [user] (recarga de reportes,
+    // leaderboard, guardados, racha), cualquier sesión abierta más de una
+    // hora terminaba disparando una recarga completa sin que hubiera pasado
+    // nada real — multiplicaba queries a Supabase sin motivo. setUser acá
+    // solo cambia de referencia cuando la IDENTIDAD real cambia (login/
+    // logout/otra cuenta), no en cada refresh de token silencioso.
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      setUser((prev) => (prev?.id === (session?.user?.id ?? null) ? prev : session?.user ?? null));
     });
     return () => listener.subscription.unsubscribe();
   }, []);

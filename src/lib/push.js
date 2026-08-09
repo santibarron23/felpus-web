@@ -1,5 +1,4 @@
 import { supabase } from "./supabaseClient";
-import { logError } from "./log";
 
 // Notificaciones push del navegador: además del email (ver
 // api/notify-match), le avisa a la persona en el momento, con el celular
@@ -71,19 +70,4 @@ export async function subscribeReportPush(reportId, pushToken) {
     throw new Error(data?.error || "No pudimos activar las notificaciones. Probá de nuevo.");
   }
   return true;
-}
-
-// Se llama al montar la app — no rompe nada si falla, solo hace que el
-// botón de "Activar notificaciones" no sepa que ya estaban activadas.
-export async function hasActivePushSubscription() {
-  try {
-    if (!isPushSupported()) return false;
-    const registration = await navigator.serviceWorker.getRegistration();
-    if (!registration) return false;
-    const subscription = await registration.pushManager.getSubscription();
-    return !!subscription;
-  } catch (e) {
-    logError("No se pudo chequear la suscripción de notificaciones", e);
-    return false;
-  }
 }

@@ -37,7 +37,6 @@ import {
 } from "lucide-react";
 import { scoreLabel, isRecent, formatFechaAR, buildShareText, reportPhotoAlt, COLOR_OPTIONS, REPORT_FLAG_REASONS } from "../../lib/matching";
 import { SITE_URL } from "../../lib/site";
-import { downloadFlyer } from "../../lib/flyer";
 import { logError } from "../../lib/log";
 import { useFocusTrap } from "./useFocusTrap";
 import { displayColor } from "../../lib/theme";
@@ -274,6 +273,13 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
     setGeneratingFlyer(true);
     setFlyerErrorMsg("");
     try {
+      // Import dinámico (auditoría integral, 2026-08-09): flyer.js arrastra
+      // la librería qrcode y ~800 líneas de dibujo en canvas — generar el
+      // flyer es una acción puntual que la mayoría de las visitas nunca
+      // dispara (solo entra en el bundle inicial si se importa estático acá,
+      // que es el único lugar que lo usa en toda la app). Mismo patrón que
+      // ya usa src/lib/phone.js con libphonenumber-js/min.
+      const { downloadFlyer } = await import("../../lib/flyer");
       await downloadFlyer(report, displayColor(report));
     } catch (e) {
       // Auditoría integral (2026-08-09): antes esto solo loggeaba — el
