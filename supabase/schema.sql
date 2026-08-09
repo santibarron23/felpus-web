@@ -134,6 +134,8 @@ alter table contributors enable row level security;
 -- más abajo (después de las políticas de reports).
 -- ---------------------------------------------------------------------------
 
+-- (endurecida más abajo, después de que exista la columna "oculto" — ver
+-- el comentario junto a "alter table reports add column ... oculto")
 drop policy if exists "reports_select_all" on reports;
 create policy "reports_select_all" on reports for select using (true);
 
@@ -173,12 +175,21 @@ create policy "reports_delete_owner" on reports for delete using (auth.uid() = u
 -- permitidas — por eso la lista de abajo repite cada columna de "reports"
 -- salvo las dos de contacto.
 -- ---------------------------------------------------------------------------
+-- push_subscription y push_token quedan AFUERA de esta lista a propósito
+-- (auditoría integral, 2026-08-09): una PushSubscription incluye el
+-- endpoint real del navegador de quien reportó — no es información que
+-- deba poder leerse en bloque por SELECT público, y nadie del lado del
+-- cliente necesita leerla nunca (solo escribirla, vía subscribe_report_push
+-- más abajo, y solo notify-match/route.js la lee, con la service role key).
+-- push_token es el capability token de esa misma función — si estuviera acá,
+-- cualquiera podría leerlo con un SELECT y usarlo para pisar la suscripción
+-- de otro reporte, exactamente el problema que existe para resolver.
 revoke select on reports from anon, authenticated;
 grant select (
   id, tipo, especie, nombre, color, color_otro, tamano, sexo, edad, peso, zona,
   lat, lng, fecha, descripcion, foto_url, hist, embedding, foto_urls, hists,
   embeddings, nickname, resuelto, resuelto_por, resuelto_por_user_id, resuelto_en,
-  creado_en, user_id, push_subscription, raza, detalles, oculto, ciudad, provincia
+  creado_en, user_id, raza, detalles, oculto, ciudad, provincia
 ) on reports to anon, authenticated;
 
 create table if not exists contact_requests (
@@ -303,55 +314,76 @@ revoke insert on reports from anon, authenticated;
 -- UPDATE de arriba, que exige auth.uid() = user_id). Solo puede actualizar
 -- push_subscription, ninguna otra columna.
 --
--- Riesgo aceptado: como el id del reporte no es un secreto (aparece en la
--- URL pública /r/<id> y en los links de compartir), alguien que lo conozca
--- podría llamar a esto y "robar" la suscripción de otra persona — no
--- expone ningún dato (no devuelve nada), pero sí podría hacer que dejen de
--- llegarte avisos de tu propio reporte. Mismo nivel de riesgo ya aceptado
--- en otros lugares de esta app (ej. los reportes de invitado no se pueden
--- borrar ni por su propio autor — ver PENDIENTE_DECISION.md #0). Se mitiga
--- parcialmente reusando el mismo límite de 8/hora por IP que ya protege la
--- creación de reportes.
+-- REDISEÑO (auditoría integral, 2026-08-09): dos huecos reales en la
+-- versión anterior:
+-- 1. Leía la IP de current_setting('request.headers') — el mismo header
+--    falsificable por quien llama a la API de Supabase directo que ya se
+--    cerró para get_report_contact/flag_report (ver PENDIENTE_DECISION.md
+--    #-14). Ahora la función ya NO lee ningún header — la IP se determina
+--    exclusivamente en /api/subscribe-push (Vercel, no falsificable) y se
+--    revoca el EXECUTE de anon/authenticated: la única forma de llamar esto
+--    es a través de esa ruta, con la service_role key.
+-- 2. "Riesgo aceptado" (documentado, nunca arreglado): como el id del
+--    reporte no es secreto (aparece en la URL pública /r/<id>), CUALQUIERA
+--    que lo conociera podía pisar la suscripción push de otra persona —
+--    sin exponer datos, pero silenciando sus avisos. Como los reportes de
+--    invitado (sin login) tienen que poder seguir activando avisos sin
+--    obligar a crear una cuenta (principio de Felpus: reportar no requiere
+--    registro), la solución es un capability token — push_token (columna
+--    nueva, uuid aleatorio, uno por reporte, generado al crear la fila,
+--    NUNCA expuesto en el SELECT público, ver el revoke de columnas más
+--    abajo). Solo dos caminos válidos para tocar la suscripción de un
+--    reporte: sos su dueño logueado (auth.uid() = user_id), o conocés su
+--    push_token — que solo se entrega UNA vez, en la respuesta directa de
+--    /api/create-report a quien lo acaba de publicar (ver ese route.js).
 -- ---------------------------------------------------------------------------
-create or replace function public.subscribe_report_push(p_report_id text, p_subscription jsonb)
+alter table reports add column if not exists push_token uuid not null default gen_random_uuid();
+
+drop function if exists public.subscribe_report_push(text, jsonb);
+drop function if exists public.subscribe_report_push(text, jsonb, uuid);
+
+-- p_caller_user_id (no auth.uid()): esta función queda restringida a
+-- service_role — el mismo patrón que get_report_contact/flag_report/
+-- create-report (ver /api/subscribe-push/route.js), donde el ÚNICO
+-- llamador posible es esa ruta propia, siempre con la service_role key.
+-- Como PostgREST determina el rol de Postgres (y por lo tanto qué GRANT
+-- aplica) a partir del JWT del header Authorization, pasar el JWT real del
+-- usuario ahí haría que la llamada corriera como "authenticated" (sin
+-- permiso), no como "service_role" — por eso la identidad de quien llama NO
+-- se lee de auth.uid() acá, sino que la ruta la verifica con
+-- supabase.auth.getUser(accessToken) y se la pasa explícita, igual que ya
+-- hace create-report/route.js con user_id.
+create or replace function public.subscribe_report_push(p_report_id text, p_subscription jsonb, p_push_token uuid default null, p_caller_user_id uuid default null)
 returns void
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
-  client_ip text;
-  recent_count integer;
+  rpt record;
 begin
   if p_subscription is null then
     raise exception 'Falta la suscripción.';
   end if;
 
-  begin
-    client_ip := nullif(trim(split_part(current_setting('request.headers', true)::json->>'x-forwarded-for', ',', 1)), '');
-  exception when others then
-    client_ip := null;
-  end;
+  select id, user_id, push_token into rpt from reports where id = p_report_id;
+  if rpt.id is null then
+    raise exception 'No se encontró ese reporte.';
+  end if;
 
-  if client_ip is not null then
-    select count(*) into recent_count
-      from report_submissions
-      where ip = client_ip and created_at > now() - interval '1 hour';
-    if recent_count >= 8 then
-      raise exception 'Demasiados intentos desde esta conexión. Probá de nuevo más tarde.';
-    end if;
-    insert into report_submissions (ip) values (client_ip);
+  if not (
+    (p_caller_user_id is not null and p_caller_user_id = rpt.user_id)
+    or (p_push_token is not null and p_push_token = rpt.push_token)
+  ) then
+    raise exception 'No autorizado.';
   end if;
 
   update reports set push_subscription = p_subscription where id = p_report_id;
-  if not found then
-    raise exception 'No se encontró ese reporte.';
-  end if;
 end;
 $$;
 
-revoke all on function public.subscribe_report_push(text, jsonb) from public;
-grant execute on function public.subscribe_report_push(text, jsonb) to anon, authenticated;
+revoke all on function public.subscribe_report_push(text, jsonb, uuid, uuid) from public, anon, authenticated;
+grant execute on function public.subscribe_report_push(text, jsonb, uuid, uuid) to service_role;
 
 drop policy if exists "contributors_select_all" on contributors;
 create policy "contributors_select_all" on contributors for select using (true);
@@ -394,7 +426,7 @@ begin
 end;
 $$;
 
-revoke all on function public.send_heart(text) from public;
+revoke all on function public.send_heart(text) from public, anon;
 grant execute on function public.send_heart(text) to authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -463,7 +495,7 @@ begin
 end;
 $$;
 
-revoke all on function public.send_heart(text) from public;
+revoke all on function public.send_heart(text) from public, anon;
 grant execute on function public.send_heart(text) to authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -492,12 +524,75 @@ grant execute on function public.send_heart(text) to authenticated;
 -- de otra persona, que es exactamente el caso que esta función existe para
 -- destrabar.
 -- ---------------------------------------------------------------------------
-create or replace function public.award_points(p_user_id text, p_display_name text, p_delta integer, p_reason text)
+-- REDISEÑO (auditoría integral, 2026-08-09): el rediseño anterior de esta
+-- sección solo agregaba un límite de frecuencia (40 llamadas/día) — mitigaba
+-- el daño pero no cerraba el hueco real: el cliente le podía decir al
+-- servidor "dame X puntos por el motivo Y" sin que el servidor verificara
+-- que existió un evento real detrás. Ahora es event-sourced e idempotente:
+--
+-- 1. points_events registra cada otorgamiento con una clave única
+--    (reason, source_id) — el "evento" que originó los puntos (el id del
+--    reporte publicado, resuelto, o del reporte "original" que recibe el
+--    bono). Publicar/resolver/dar el bono de UN reporte puntual solo puede
+--    otorgar puntos UNA vez, para siempre — un reintento, un doble-click,
+--    o alguien llamando la RPC a mano con el mismo source_id no suma una
+--    segunda vez (insert con conflicto -> no-op silencioso, no error).
+-- 2. Antes de insertar, la función verifica contra "reports" que el evento
+--    sea real:
+--    - 'reporte': el reporte source_id existe y pertenece a auth.uid().
+--    - 'reencuentro': el reporte source_id existe, pertenece a auth.uid(),
+--      y está realmente marcado resuelto=true.
+--    - 'bono-reporte-original': el reporte source_id pertenece a p_user_id
+--      (no a auth.uid() — el bono es justamente para OTRA persona), Y
+--      quien llama (auth.uid()) tiene que tener un reporte PROPIO resuelto
+--      hace poco (últimos 10 minutos) de tipo opuesto — es decir, tiene que
+--      haber confirmado un reencuentro real de verdad para poder acreditar
+--      el bono a quien matcheó con él. Sin esto, cualquier cuenta logueada
+--      podía llamar este motivo en loop y sumarle puntos a CUALQUIER OTRA
+--      cuenta (o a la propia, mintiendo el motivo) sin haber resuelto nada.
+--
+-- No verifica que source_id sea EXACTAMENTE el reporte que el algoritmo de
+-- matching mostró como coincidencia (eso requeriría portar todo matching.js
+-- a PL/pgSQL, sobreingeniería para el riesgo real: en el peor caso alguien
+-- ya logueado, que ya resolvió un reporte propio de verdad, le suma un bono
+-- de 20 puntos a la cuenta de OTRA persona real — no a la propia, y no más
+-- de una vez por reporte ajeno real que exista). Se mantiene además el
+-- límite de frecuencia (40/día) como defensa adicional contra probar ids al
+-- voleo.
+-- ---------------------------------------------------------------------------
+create table if not exists points_award_log (
+  id bigint generated always as identity primary key,
+  caller_id uuid not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists points_award_log_caller_created_idx on points_award_log (caller_id, created_at);
+alter table points_award_log enable row level security;
+-- Sin políticas: nadie lee/escribe esto directo, solo award_points (security definer).
+
+create table if not exists points_events (
+  id bigint generated always as identity primary key,
+  user_id uuid not null,
+  reason text not null,
+  source_id text not null,
+  points integer not null,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists points_events_reason_source_uidx on points_events (reason, source_id);
+alter table points_events enable row level security;
+-- Sin políticas: nadie lee/escribe esto directo, solo award_points (security definer).
+
+drop function if exists public.award_points(text, text, integer, text);
+
+create or replace function public.award_points(p_user_id text, p_display_name text, p_delta integer, p_reason text, p_source_id text)
 returns void
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  calls_today integer;
+  rpt record;
+  own_resolved_id text;
 begin
   if auth.uid() is null then
     raise exception 'Necesitás iniciar sesión para sumar puntos.';
@@ -505,9 +600,62 @@ begin
   if (p_reason, p_delta) not in (('reencuentro', 50), ('bono-reporte-original', 20), ('reporte', 10), ('reporte', 15)) then
     raise exception 'Combinación de motivo/puntos no reconocida.';
   end if;
-  if p_reason in ('reencuentro', 'reporte') and p_user_id <> auth.uid()::text then
-    raise exception 'Solo podés sumarte puntos a vos mismo con este motivo.';
+  if p_source_id is null or length(trim(p_source_id)) = 0 then
+    raise exception 'Falta el reporte de origen.';
   end if;
+
+  delete from points_award_log where created_at < now() - interval '2 days';
+  select count(*) into calls_today from points_award_log
+    where caller_id = auth.uid() and created_at > now() - interval '24 hours';
+  if calls_today >= 40 then
+    raise exception 'Demasiadas operaciones de puntos en poco tiempo. Probá de nuevo más tarde.';
+  end if;
+  insert into points_award_log (caller_id) values (auth.uid());
+
+  select id, user_id, tipo, resuelto into rpt from reports where id = p_source_id;
+  if rpt.id is null then
+    raise exception 'No se encontró el reporte de origen.';
+  end if;
+
+  if p_reason = 'reporte' then
+    if p_user_id <> auth.uid()::text or rpt.user_id is distinct from auth.uid() then
+      raise exception 'Solo podés sumarte puntos por tus propios reportes.';
+    end if;
+  elsif p_reason = 'reencuentro' then
+    if p_user_id <> auth.uid()::text or rpt.user_id is distinct from auth.uid() then
+      raise exception 'Solo podés sumarte puntos por tus propios reencuentros.';
+    end if;
+    if rpt.resuelto is distinct from true then
+      raise exception 'Ese reporte todavía no está marcado como reencontrado.';
+    end if;
+  elsif p_reason = 'bono-reporte-original' then
+    if p_user_id = auth.uid()::text then
+      raise exception 'Este motivo es para acreditarle puntos a otra persona.';
+    end if;
+    if rpt.user_id is null or rpt.user_id::text <> p_user_id then
+      raise exception 'El reporte de origen no pertenece al usuario indicado.';
+    end if;
+    select id into own_resolved_id
+      from reports
+      where resuelto_por_user_id = auth.uid()
+        and resuelto = true
+        and resuelto_en > now() - interval '10 minutes'
+        and tipo is distinct from rpt.tipo
+        and id <> rpt.id
+      limit 1;
+    if own_resolved_id is null then
+      raise exception 'No encontramos un reencuentro reciente propio para acreditar este bono.';
+    end if;
+  end if;
+
+  begin
+    insert into points_events (user_id, reason, source_id, points) values (p_user_id::uuid, p_reason, p_source_id, p_delta);
+  exception when unique_violation then
+    -- Ya se otorgaron puntos por este evento exacto — no es un error, solo
+    -- evita el doble conteo (reintento del cliente, doble-click, o alguien
+    -- probando a mano). No suma de nuevo, pero tampoco rompe el flujo.
+    return;
+  end;
 
   insert into contributors (id, nickname, points, reportes, reencuentros, updated_at)
   values (
@@ -527,8 +675,8 @@ begin
 end;
 $$;
 
-revoke all on function public.award_points(text, text, integer, text) from public;
-grant execute on function public.award_points(text, text, integer, text) to authenticated;
+revoke all on function public.award_points(text, text, integer, text, text) from public, anon, authenticated;
+grant execute on function public.award_points(text, text, integer, text, text) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Storage: bucket público para las fotos de mascotas
@@ -537,11 +685,49 @@ insert into storage.buckets (id, name, public)
 values ('felpus-photos', 'felpus-photos', true)
 on conflict (id) do nothing;
 
+-- Auditoría integral (2026-08-09): el bucket no tenía file_size_limit ni
+-- allowed_mime_types — la validación de "es una imagen razonable" (recorte
+-- a 1000px, recodificado a JPEG calidad 0.85, ver resizeImageFile en
+-- matching.js) es SOLO del navegador. Cualquiera con la anon key (pública)
+-- puede llamar directo a la API de Storage de Supabase, sin pasar por esa
+-- función ni por ningún rate limit de esta app, y subir un archivo de
+-- cualquier tipo/tamaño — el único límite real hoy es el del plan de
+-- Supabase. "on conflict do nothing" de arriba no vuelve a aplicar esto si
+-- el bucket ya existía, por eso va aparte como update explícito, así corre
+-- siempre que se re-ejecute esta migración. 8MB es generoso frente a lo que
+-- sube la app de verdad (fotos ya redimensionadas, típicamente <500KB) —
+-- deja margen sin ser un límite simbólico. image/svg+xml se permite porque
+-- los datos semilla (seedIfEmpty en store.js) usan placeholders SVG.
+update storage.buckets
+set file_size_limit = 8388608,
+    allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml']
+where id = 'felpus-photos';
+
 drop policy if exists "felpus_photos_public_read" on storage.objects;
 create policy "felpus_photos_public_read"
   on storage.objects for select
   using (bucket_id = 'felpus-photos');
 
+-- Auditoría integral (2026-08-09): se evaluó mover el insert detrás de una
+-- ruta server-side (service_role) para poder además atarlo al mismo rate
+-- limit de 8/hora que ya protege /api/create-report — pero eso hubiera
+-- roto felpus_photos_owner_delete más abajo (depende de que "owner" quede
+-- seteado al auth.uid() real de quien sube, algo que se pierde si el
+-- upload pasa por la service_role key en vez del cliente autenticado) sin
+-- un rediseño más grande del flujo de borrado. Se optó por el fix
+-- proporcional al riesgo real: uploadPhoto() (store.js) ahora arma cada
+-- path con un sufijo aleatorio (crypto.randomUUID(), no adivinable) en vez
+-- de basarse en el id del reporte (que SÍ es público, aparece en la URL
+-- /r/<id>) — eso cierra el hueco grave (cualquiera podía pisar la foto de
+-- un reporte ajeno adivinando/conociendo su id) sin tocar esta policy.
+-- Sigue quedando un riesgo menor, aceptado y documentado: alguien podría
+-- llamar a la API de Storage directo (sin pasar por la app) para subir
+-- archivos sin nunca crear un reporte — acotado por file_size_limit/
+-- allowed_mime_types de arriba y, en última instancia, por la cuota de
+-- almacenamiento del plan de Supabase. Recomendación para una próxima
+-- iteración: mover también el delete a una ruta server-side (verificando
+-- dueño contra reports.user_id en vez de storage.owner) para poder cerrar
+-- el insert público sin perder el borrado de fotos propias.
 drop policy if exists "felpus_photos_public_insert" on storage.objects;
 create policy "felpus_photos_public_insert"
   on storage.objects for insert
@@ -627,9 +813,18 @@ create trigger trg_notify_new_report
 -- función serverless — no servía de nada real: cada cold start (frecuente en
 -- Vercel) arranca el contador en cero, y las instancias concurrentes no
 -- comparten memoria entre sí. Esto hace el mismo conteo+poda+insert de forma
--- atómica en la base, como el rate limit de reportes de más arriba, pero acá
--- la IP se pasa como parámetro (la ruta corre en nuestro propio servidor, no
--- hace falta leer request.headers de PostgREST).
+-- atómica en la base, como el rate limit de reportes de más arriba.
+--
+-- Auditoría integral (2026-08-09): esta función estaba otorgada a
+-- anon/authenticated — cualquiera con la anon key (pública) podía llamarla
+-- DIRECTO, mandando cualquier client_ip inventada (resetea el cupo a
+-- voluntad, mismo truco que ya se cerró para get_report_contact/flag_report)
+-- y además un max_per_minute absurdamente alto (el límite real dejaba de
+-- limitar nada). Ahora client_ip la determina EXCLUSIVAMENTE /api/embed (el
+-- único lugar donde corre con la IP real que ve Vercel, nunca falsificable
+-- por quien visita el sitio) llamando con la service_role key, y
+-- max_per_minute ya no es un parámetro — queda fijo adentro de la función,
+-- así que nadie que la llame puede subirlo.
 -- ---------------------------------------------------------------------------
 create table if not exists embed_requests (
   ip text not null,
@@ -640,7 +835,9 @@ alter table embed_requests enable row level security;
 -- Sin políticas: nadie accede a esta tabla directamente vía la API — solo la
 -- toca la función security definer de abajo.
 
-create or replace function public.check_embed_rate_limit(client_ip text, max_per_minute integer default 12)
+drop function if exists public.check_embed_rate_limit(text, integer);
+
+create or replace function public.check_embed_rate_limit(client_ip text)
 returns boolean
 language plpgsql
 security definer
@@ -648,6 +845,7 @@ set search_path = public
 as $$
 declare
   recent_count integer;
+  max_per_minute constant integer := 12;
 begin
   if client_ip is null or client_ip = '' then
     return true; -- sin IP no se puede evaluar el límite, se deja pasar
@@ -670,8 +868,8 @@ begin
 end;
 $$;
 
-revoke all on function public.check_embed_rate_limit(text, integer) from public;
-grant execute on function public.check_embed_rate_limit(text, integer) to anon, authenticated;
+revoke all on function public.check_embed_rate_limit(text) from public, anon, authenticated;
+grant execute on function public.check_embed_rate_limit(text) to service_role;
 
 -- ---------------------------------------------------------------------------
 -- Log de errores del cliente: antes logError() solo hacía console.error, así
@@ -682,6 +880,20 @@ grant execute on function public.check_embed_rate_limit(text, integer) to anon, 
 -- Editor de Supabase (que usa la service key y ignora RLS).
 -- No requiere ninguna cuenta ni servicio nuevo — reutiliza el Supabase que
 -- ya existe.
+--
+-- REDISEÑO (auditoría integral, 2026-08-09): el trigger de rate limiting
+-- leía la IP de current_setting('request.headers') — el mismo header
+-- falsificable por quien llama a la API de Supabase directo que ya se
+-- cerró en todos los demás lugares de este archivo (ver PENDIENTE_DECISION.md
+-- #-14). Como acá el INSERT era directo desde el cliente (no había ninguna
+-- ruta propia de por medio), el hueco quedaba abierto: alguien podía
+-- llenar esta tabla sin límite real rotando el header, un vector de DoS de
+-- almacenamiento/costo sobre el propio sistema de observabilidad. Ahora el
+-- INSERT queda completamente cerrado a anon/authenticated — el único
+-- camino es /api/log-error (server-side, IP real de Vercel), que además
+-- poda filas de más de 30 días en cada escritura (retención acotada, sin
+-- necesitar un cron job aparte) — antes esta tabla podía crecer para
+-- siempre sin límite.
 -- ---------------------------------------------------------------------------
 create table if not exists error_logs (
   id bigint generated always as identity primary key,
@@ -694,8 +906,8 @@ create table if not exists error_logs (
 );
 create index if not exists error_logs_created_at_idx on error_logs (created_at);
 alter table error_logs enable row level security;
--- Sin políticas de SELECT/UPDATE/DELETE: nadie lee ni modifica esto vía la
--- API. El INSERT sí queda abierto más abajo, mediado por rate limiting.
+-- Sin ninguna política (ni SELECT ni INSERT): nadie toca esto vía la API
+-- con anon/authenticated — solo /api/log-error, con la service_role key.
 
 alter table error_logs drop constraint if exists error_logs_message_len;
 alter table error_logs add constraint error_logs_message_len check (char_length(message) <= 2000);
@@ -706,62 +918,22 @@ alter table error_logs add constraint error_logs_url_len check (url is null or c
 alter table error_logs drop constraint if exists error_logs_user_agent_len;
 alter table error_logs add constraint error_logs_user_agent_len check (user_agent is null or char_length(user_agent) <= 500);
 
--- El insert queda abierto a cualquiera (el error puede venir de un usuario
--- sin sesión) pero con el mismo rate limiting por IP que ya usan
--- reports/embed — sin esto, este endpoint sería una forma fácil de llenar
--- la tabla de basura sin límite.
+revoke insert on error_logs from anon, authenticated;
+drop policy if exists "error_logs_insert_all" on error_logs;
+drop trigger if exists trg_enforce_error_log_rate_limit on public.error_logs;
+drop function if exists public.enforce_error_log_rate_limit();
+
+-- El límite por IP en sí ahora vive enteramente en /api/log-error (mismo
+-- patrón que report_submissions en create-report/route.js) — esta tabla
+-- queda igual (RLS habilitado, sin políticas, solo tocada por esa ruta con
+-- la service_role key) para no perder el historial de intentos ya
+-- registrado.
 create table if not exists error_log_submissions (
   ip text not null,
   created_at timestamptz not null default now()
 );
 create index if not exists error_log_submissions_ip_created_idx on error_log_submissions (ip, created_at);
 alter table error_log_submissions enable row level security;
-
-create or replace function public.enforce_error_log_rate_limit()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  client_ip text;
-  recent_count integer;
-begin
-  begin
-    client_ip := nullif(trim(split_part(current_setting('request.headers', true)::json->>'x-forwarded-for', ',', 1)), '');
-  exception when others then
-    client_ip := null;
-  end;
-
-  if client_ip is null then
-    return NEW;
-  end if;
-
-  delete from error_log_submissions where created_at < now() - interval '1 day';
-
-  select count(*) into recent_count
-    from error_log_submissions
-    where ip = client_ip and created_at > now() - interval '1 hour';
-
-  -- Más permisivo que el de reports (8/hora): un mismo bug real puede
-  -- disparar varios errores encadenados en poco tiempo para una persona.
-  if recent_count >= 40 then
-    raise exception 'rate limited';
-  end if;
-
-  insert into error_log_submissions (ip) values (client_ip);
-  return NEW;
-end;
-$$;
-
-drop trigger if exists trg_enforce_error_log_rate_limit on public.error_logs;
-create trigger trg_enforce_error_log_rate_limit
-  before insert on public.error_logs
-  for each row
-  execute function public.enforce_error_log_rate_limit();
-
-drop policy if exists "error_logs_insert_all" on error_logs;
-create policy "error_logs_insert_all" on error_logs for insert with check (true);
 
 -- ---------------------------------------------------------------------------
 -- Denunciar publicaciones falsas/erróneas. No hay panel de admin en esta
@@ -781,6 +953,27 @@ create policy "error_logs_insert_all" on error_logs for insert with check (true)
 -- adrede — el objetivo es frenar el daño rápido, no juzgar con certeza.
 -- ---------------------------------------------------------------------------
 alter table reports add column if not exists oculto boolean not null default false;
+
+-- ---------------------------------------------------------------------------
+-- Auditoría integral (2026-08-09): reports_select_all (definida más arriba,
+-- antes de que existiera esta columna) es "using (true)" — controla FILAS,
+-- no ocultamiento. Un reporte auto-ocultado por 3+ denuncias o escondido a
+-- mano por el admin seguía siendo 100% legible pidiendo "oculto=eq.true"
+-- directo a la API REST con la anon key — fetchReports() (store.js) solo lo
+-- filtraba EN EL CLIENTE, que no es una barrera real, exactamente el mismo
+-- tipo de error que ya se corrigió para contacto_whatsapp/contacto_email
+-- (confiar en un filtro de la app en vez de en la base). Acá la barrera
+-- correcta es la propia policy de RLS, no un revoke de columna.
+--
+-- El panel de admin SÍ necesita ver los ocultos — antes leía la tabla
+-- directo con la sesión del navegador (adminListAllReports() en store.js),
+-- así que un RLS que excluya "oculto" le habría roto esa vista. Por eso
+-- store.js pasa a usar admin_list_all_reports() (definida más abajo, junto
+-- al resto de funciones de admin) — security definer, bypassea RLS, con el
+-- mismo chequeo de auth.email() que ya protege admin_metrics/admin_delete_report.
+-- ---------------------------------------------------------------------------
+drop policy if exists "reports_select_all" on reports;
+create policy "reports_select_all" on reports for select using (oculto is distinct from true);
 
 create table if not exists report_flags (
   id bigint generated always as identity primary key,
@@ -911,7 +1104,7 @@ begin
 end;
 $$;
 
-revoke all on function public.admin_delete_report(text) from public;
+revoke all on function public.admin_delete_report(text) from public, anon;
 grant execute on function public.admin_delete_report(text) to authenticated;
 
 -- Ocultar/mostrar a mano — mismo campo "oculto" que usa el auto-ocultamiento
@@ -934,7 +1127,7 @@ begin
 end;
 $$;
 
-revoke all on function public.admin_set_oculto(text, boolean) from public;
+revoke all on function public.admin_set_oculto(text, boolean) from public, anon;
 grant execute on function public.admin_set_oculto(text, boolean) to authenticated;
 
 -- Denuncias agrupadas por reporte — report_flags no tiene política de SELECT
@@ -972,7 +1165,7 @@ begin
 end;
 $$;
 
-revoke all on function public.admin_list_flagged_reports() from public;
+revoke all on function public.admin_list_flagged_reports() from public, anon;
 grant execute on function public.admin_list_flagged_reports() to authenticated;
 
 -- Métricas básicas — un solo viaje en vez de que el cliente arme varios
@@ -1008,7 +1201,7 @@ begin
 end;
 $$;
 
-revoke all on function public.admin_metrics() from public;
+revoke all on function public.admin_metrics() from public, anon;
 grant execute on function public.admin_metrics() to authenticated;
 
 -- Informe de cuentas registradas (login de Google) para el admin — cruza
@@ -1045,8 +1238,53 @@ begin
 end;
 $$;
 
-revoke all on function public.admin_list_users() from public;
+revoke all on function public.admin_list_users() from public, anon;
 grant execute on function public.admin_list_users() to authenticated;
+
+-- Auditoría integral (2026-08-09): el panel de admin usaba adminListAllReports()
+-- (store.js) = fetchReports({includeHidden:true}), que leía la tabla "reports"
+-- DIRECTO con la sesión del navegador — dependía de que reports_select_all
+-- fuera "using (true)" para poder ver los ocultos. Ahora que esa policy
+-- filtra "oculto" (ver el comentario junto a la columna, más arriba), el
+-- admin necesita su propio camino que bypasee RLS — mismo patrón que
+-- admin_list_users de arriba: security definer + chequeo de auth.email().
+-- A propósito NO incluye contacto_whatsapp/contacto_email (mismas columnas
+-- que ya excluye fetchReports() para el listado general — el admin sigue
+-- viendo el contacto solo a través de get_report_contact, no en bloque acá).
+create or replace function public.admin_list_all_reports()
+returns table(
+  id text, tipo text, especie text, raza text, detalles jsonb, nombre text,
+  color text, color_otro text, tamano text, sexo text, edad text, peso text,
+  zona text, ciudad text, provincia text, lat double precision, lng double precision,
+  fecha date, descripcion text, foto_url text, hist jsonb, embedding jsonb,
+  foto_urls jsonb, hists jsonb, embeddings jsonb, nickname text, resuelto boolean,
+  resuelto_por text, resuelto_por_user_id uuid, resuelto_en timestamptz,
+  creado_en timestamptz, user_id uuid, oculto boolean
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.email() is distinct from 'santiagobarronlf@gmail.com' then
+    raise exception 'No autorizado.';
+  end if;
+  return query
+    select
+      r.id, r.tipo, r.especie, r.raza, r.detalles, r.nombre,
+      r.color, r.color_otro, r.tamano, r.sexo, r.edad, r.peso,
+      r.zona, r.ciudad, r.provincia, r.lat, r.lng,
+      r.fecha, r.descripcion, r.foto_url, r.hist, r.embedding,
+      r.foto_urls, r.hists, r.embeddings, r.nickname, r.resuelto,
+      r.resuelto_por, r.resuelto_por_user_id, r.resuelto_en,
+      r.creado_en, r.user_id, r.oculto
+    from reports r
+    order by r.creado_en desc;
+end;
+$$;
+
+revoke all on function public.admin_list_all_reports() from public, anon, authenticated;
+grant execute on function public.admin_list_all_reports() to authenticated;
 
 -- Le permite al admin borrar la foto de CUALQUIER reporte de Storage (la
 -- política de owner-delete de más arriba solo alcanza al dueño real) — mismo
@@ -1162,11 +1400,33 @@ grant insert (id, nickname, whatsapp, updated_at) on contributors to anon, authe
 -- diferencia de award_points/send_heart, nunca se había migrado a una
 -- función, porque nunca tocaba la fila de otra persona (por eso no rompía
 -- con la policy de update). El revoke de arriba lo habría dejado sin forma
--- de funcionar sin esto. p_today/p_yesterday se calculan en el cliente (no
--- acá) a propósito: son fechas en el huso horario LOCAL de quien usa la
--- app, y calcularlas en el servidor (UTC) correría el corte de "día" varias
--- horas para Argentina, cambiando cuándo se corta la racha.
-create or replace function public.bump_streak(p_user_id text, p_display_name text, p_today date, p_yesterday date)
+-- de funcionar sin esto.
+--
+-- REDISEÑO (auditoría integral, 2026-08-09): antes el cliente mandaba
+-- p_today/p_yesterday ya calculados, y el servidor solo los validaba contra
+-- un margen de ±2 días — mitigaba el abuso más burdo, pero seguía siendo el
+-- cliente quien "declaraba" qué día era. Ahora el cliente solo manda su
+-- TIMEZONE (nombre IANA, ej. "America/Argentina/Buenos_Aires" — necesario
+-- de verdad, no cosmético: sin él, el corte de "día" caería a medianoche
+-- UTC, que en Argentina son las 21hs, y alguien que abre la app a las 22hs
+-- vería "ayer"). "Hoy" se calcula ENTERAMENTE server-side, a partir del
+-- reloj real de Postgres + ese timezone — el cliente ya no puede declarar
+-- una fecha arbitraria.
+--
+-- Queda un solo vector: cambiar de timezone repetidas veces EN EL MISMO
+-- MOMENTO REAL para que "today" salte de un día a otro sin que pase tiempo
+-- de verdad (ej. UTC-12 y después UTC+14 en el mismo minuto — 26hs de
+-- diferencia). streak_updated_at (columna nueva, dedicada — no reutiliza
+-- "updated_at" porque otras funciones como award_points también la tocan,
+-- lo que daría falsos positivos) cierra ese hueco: no permite otro
+-- incremento si el último fue hace menos de 12hs REALES, sin importar qué
+-- timezone declare. Nadie usa la app dos veces por día con menos de 12hs
+-- reales entre medio de forma legítima para efectos de la racha.
+alter table contributors add column if not exists streak_updated_at timestamptz;
+
+drop function if exists public.bump_streak(text, text, date, date);
+
+create or replace function public.bump_streak(p_user_id text, p_display_name text, p_timezone text default 'UTC')
 returns table(streak_days integer, is_new_today boolean)
 language plpgsql
 security definer
@@ -1175,38 +1435,58 @@ as $$
 declare
   cur record;
   new_streak integer;
+  tz text;
+  today date;
+  yesterday date;
 begin
   if auth.uid() is null or auth.uid()::text <> p_user_id then
     raise exception 'Solo podés actualizar tu propia racha.';
   end if;
 
+  -- Timezone inválido/desconocido cae a UTC en vez de tirar un error feo —
+  -- "AT TIME ZONE" con un nombre que Postgres no reconoce rompe con una
+  -- excepción interna poco clara; mejor degradar que romper la racha.
+  tz := coalesce(p_timezone, 'UTC');
+  if not exists (select 1 from pg_timezone_names where name = tz) then
+    tz := 'UTC';
+  end if;
+
+  today := (now() at time zone tz)::date;
+  yesterday := today - 1;
+
   select * into cur from contributors where id = p_user_id;
 
-  if cur.id is not null and cur.last_active_date = p_today then
+  if cur.id is not null and cur.last_active_date = today then
     return query select coalesce(cur.streak_days, 0), false;
     return;
   end if;
 
-  if cur.id is not null and cur.last_active_date = p_yesterday then
+  if cur.id is not null and cur.streak_updated_at is not null and cur.streak_updated_at > now() - interval '12 hours' then
+    return query select coalesce(cur.streak_days, 0), false;
+    return;
+  end if;
+
+  if cur.id is not null and cur.last_active_date = yesterday then
     new_streak := coalesce(cur.streak_days, 0) + 1;
   else
     new_streak := 1;
   end if;
 
-  insert into contributors (id, nickname, points, reportes, reencuentros, streak_days, last_active_date, updated_at)
-  values (p_user_id, coalesce(p_display_name, p_user_id), 0, 0, 0, new_streak, p_today, now())
+  insert into contributors (id, nickname, points, reportes, reencuentros, streak_days, last_active_date, streak_updated_at, updated_at)
+  values (p_user_id, coalesce(p_display_name, p_user_id), 0, 0, 0, new_streak, today, now(), now())
   on conflict (id) do update set
     nickname = coalesce(p_display_name, contributors.nickname),
     streak_days = new_streak,
-    last_active_date = p_today,
+    last_active_date = today,
+    streak_updated_at = now(),
     updated_at = now();
 
   return query select new_streak, true;
 end;
 $$;
 
-revoke all on function public.bump_streak(text, text, date, date) from public;
-grant execute on function public.bump_streak(text, text, date, date) to authenticated;
+revoke all on function public.bump_streak(text, text, text) from public, anon, authenticated;
+grant execute on function public.bump_streak(text, text, text) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Hallazgo de auditoría de seguridad (2026-08-07): reports_insert_all (más
@@ -1255,12 +1535,17 @@ create policy "reports_insert_own_or_guest" on reports
 -- deberían cambiar después de creado el reporte: cambiar el dueño de una
 -- fila ya existente no es un caso de uso real de esta app).
 -- ---------------------------------------------------------------------------
+-- push_subscription tampoco está en esta lista (auditoría integral,
+-- 2026-08-09): ahora solo se toca vía subscribe_report_push (security
+-- definer, verifica dueño o push_token) — dejarla en este grant hubiera
+-- permitido que el dueño logueado de un reporte la pisara con un UPDATE
+-- directo, esquivando esa función a propósito.
 revoke update on reports from anon, authenticated;
 grant update (
   tipo, especie, nombre, color, color_otro, tamano, sexo, edad, peso, zona,
   lat, lng, fecha, descripcion, contacto_whatsapp, contacto_email, foto_url,
   hist, embedding, foto_urls, hists, embeddings, nickname, resuelto,
-  resuelto_por, resuelto_por_user_id, resuelto_en, push_subscription, raza,
+  resuelto_por, resuelto_por_user_id, resuelto_en, raza,
   detalles, ciudad, provincia
 ) on reports to anon, authenticated;
 

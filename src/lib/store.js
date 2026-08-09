@@ -52,14 +52,31 @@ function rowToReport(row) {
   };
 }
 
+// Auditoría integral (2026-08-09) — hallazgo real: "path" venía armado a
+// partir del id del reporte (ver createReport más abajo), y el id de un
+// reporte NO es secreto (aparece en la URL pública /r/<id> y en los links
+// de compartir). Con "upsert: true" y la policy de Storage abierta a
+// cualquiera (insert público, necesario para que invitados sin login
+// puedan reportar), CUALQUIERA que conociera o adivinara el id de un
+// reporte ajeno podía subir un archivo al mismo path y REEMPLAZAR su foto
+// — sin necesitar ser su dueño ni tocar la fila de "reports" en absoluto.
+// El sufijo aleatorio de abajo (crypto.randomUUID(), 122 bits — no
+// practicable de adivinar) hace que cada subida caiga siempre en un path
+// nuevo e impredecible, cerrando el hueco sin necesitar mover el upload
+// detrás de una ruta propia (que hubiera roto el borrado de fotos —
+// felpus_photos_owner_delete depende de que "owner" quede seteado al
+// auth.uid() real de quien sube, algo que se pierde si el upload pasa por
+// la service_role key). upsert ahora en false: como cada path es siempre
+// nuevo, no hace falta pisar nada — si alguna vez colisiona (no debería),
+// mejor que falle fuerte a que sobreescriba en silencio.
 export async function uploadPhoto(dataUrl, path) {
   const res = await fetch(dataUrl);
   const blob = await res.blob();
   const ext = blob.type.includes("svg") ? "svg" : "jpg";
-  const fullPath = `${path}.${ext}`;
+  const fullPath = `${path}-${crypto.randomUUID()}.${ext}`;
   const { error } = await supabase.storage.from(PHOTOS_BUCKET).upload(fullPath, blob, {
     contentType: blob.type || "image/jpeg",
-    upsert: true,
+    upsert: false,
   });
   if (error) throw error;
   const { data } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(fullPath);
@@ -409,11 +426,16 @@ export async function createReport(report) {
     },
     body: JSON.stringify({ row }),
   });
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
     throw new Error(data?.error || "No se pudo publicar el reporte. Probá de nuevo.");
   }
-  return { ...report, foto: uploaded[0].url, fotos: uploaded };
+  // pushToken (auditoría integral, 2026-08-09): capability token para poder
+  // activar notificaciones push de ESTE reporte sin login — ver
+  // subscribeReportPush en push.js y el comentario largo en schema.sql.
+  // Solo llega acá, una vez, en la respuesta directa de publicar; nunca se
+  // vuelve a poder leer después (no es una columna pública).
+  return { ...report, foto: uploaded[0].url, fotos: uploaded, pushToken: data?.pushToken || null };
 }
 
 // Al confirmar un reencuentro, se borran los datos de contacto (WhatsApp/
@@ -561,13 +583,21 @@ export async function unsaveReport(userId, reportId) {
 // fallaba el 100% de las veces (RLS deniega el UPDATE del upsert), y el
 // error tumbaba todo el flujo de "confirmar reencuentro" con un mensaje
 // genérico, aunque el reporte ya se hubiera guardado como resuelto igual.
-export async function awardPoints(userId, displayName, delta, reason) {
+// sourceId: auditoría integral (2026-08-09) — el id del reporte que
+// originó estos puntos (el que se acaba de publicar, el que se acaba de
+// resolver, o el reporte "original" que recibe el bono). La RPC lo usa
+// para verificar que el evento sea real y para no otorgar puntos dos veces
+// por el mismo reporte (ver el comentario largo junto a award_points en
+// schema.sql) — sin esto, cualquier cuenta logueada podía pedirle puntos al
+// servidor por cualquier motivo, cuantas veces quisiera.
+export async function awardPoints(userId, displayName, delta, reason, sourceId) {
   if (!userId) return;
   const rpcResult = await supabase.rpc("award_points", {
     p_user_id: userId,
     p_display_name: displayName || null,
     p_delta: delta,
     p_reason: reason,
+    p_source_id: sourceId,
   });
   if (!rpcResult.error) return;
   if (!isMissingFunctionError(rpcResult.error)) throw rpcResult.error;
@@ -611,19 +641,27 @@ function localDateStr(d = new Date()) {
 // escritura directa a "contributors" que tocaba columnas sensibles
 // (streak_days) sin pasar por una función — igual que awardPoints/sendHeart,
 // ahora usa bump_streak (RPC, ver schema.sql), que corre server-side con
-// auth.uid() verificado. today/yesterday se calculan ACÁ (no en el RPC) a
-// propósito: son el huso horario local de quien usa la app, no el del
-// servidor — ver el comentario largo en schema.sql.
+// auth.uid() verificado.
+//
+// REDISEÑO (auditoría integral, 2026-08-09): antes today/yesterday se
+// calculaban ACÁ y se los mandaba tal cual al servidor — el servidor
+// confiaba ciegamente en esas fechas, así que alcanzaba con mandar
+// p_today=mañana, luego pasado mañana, etc. para inflar la racha en loop.
+// Ahora solo se manda el TIMEZONE (nombre IANA, ej. "America/Argentina/
+// Buenos_Aires") — la fecha "de hoy" la calcula el propio Postgres a partir
+// de su reloj real + ese timezone (ver bump_streak en schema.sql), así que
+// el cliente ya no puede declarar qué día es. El timezone real sigue
+// siendo necesario (no alcanza con la fecha en UTC): sin él, el corte de
+// "día" caería a la medianoche UTC, que para Argentina son las 21hs — un
+// usuario que abre la app a las 22hs vería "ayer" en vez de "hoy".
 export async function bumpStreak(userId, displayName) {
   if (!userId) return null;
-  const today = localDateStr();
-  const yesterday = localDateStr(new Date(Date.now() - 24 * 3600 * 1000));
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
   const rpcResult = await supabase.rpc("bump_streak", {
     p_user_id: userId,
     p_display_name: displayName || null,
-    p_today: today,
-    p_yesterday: yesterday,
+    p_timezone: timezone,
   });
   if (!rpcResult.error) {
     const row = Array.isArray(rpcResult.data) ? rpcResult.data[0] : rpcResult.data;
@@ -633,11 +671,15 @@ export async function bumpStreak(userId, displayName) {
   if (!isMissingFunctionError(rpcResult.error)) throw rpcResult.error;
 
   // Antes de correr la migración que crea bump_streak (ver
-  // PENDIENTE_DECISION.md): cae al lee-y-escribe de siempre. Sin la
-  // migración corrida, esta escritura directa TODAVÍA no está protegida por
-  // el revoke de columnas (que se agrega en la misma migración) — es el
-  // mismo estado que ya tenía la app antes de este hallazgo, no una
-  // regresión nueva.
+  // PENDIENTE_DECISION.md): cae al lee-y-escribe de siempre, calculando
+  // today/yesterday en el huso horario local acá mismo (el mismo cálculo
+  // que usaba el cliente antes del rediseño de arriba) — sin la migración
+  // corrida, esta escritura directa TODAVÍA no está protegida por el
+  // revoke de columnas (que se agrega en la misma migración) — es el mismo
+  // estado que ya tenía la app antes de este hallazgo, no una regresión
+  // nueva.
+  const today = localDateStr();
+  const yesterday = localDateStr(new Date(Date.now() - 24 * 3600 * 1000));
   const { data: existing, error: fetchError } = await supabase
     .from(CONTRIBUTORS_TABLE)
     .select("*")

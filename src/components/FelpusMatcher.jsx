@@ -1399,12 +1399,12 @@ export default function FelpusMatcher() {
       // hallazgo de auditoría: antes SIEMPRE pasaba esto en cualquier
       // confirmación con un bono real de por medio, con o sin la migración.
       try {
-        await awardPointsRemote(user.id, resolverDisplayName, PUNTOS_REENCUENTRO, "reencuentro");
+        await awardPointsRemote(user.id, resolverDisplayName, PUNTOS_REENCUENTRO, "reencuentro", ids[0]);
         const seenBonusIds = new Set();
         for (const b of bonusFor) {
           if (!b?.userId || b.userId === user.id || seenBonusIds.has(b.userId)) continue;
           seenBonusIds.add(b.userId);
-          await awardPointsRemote(b.userId, b.displayName, PUNTOS_BONO_ORIGINAL, "bono-reporte-original");
+          await awardPointsRemote(b.userId, b.displayName, PUNTOS_BONO_ORIGINAL, "bono-reporte-original", b.reportId);
         }
       } catch (e) {
         logError("No se pudieron sumar los puntos del reencuentro", e);
@@ -1490,10 +1490,10 @@ export default function FelpusMatcher() {
     await processPhotoFile(file);
   }
 
-  async function handleActivatePush(reportId) {
+  async function handleActivatePush(reportId, pushToken) {
     setPushSubState("loading");
     try {
-      await subscribeReportPush(reportId);
+      await subscribeReportPush(reportId, pushToken);
       setPushSubState("active");
       pushToast("success", "🔔 Listo — te avisamos acá si aparece una coincidencia.");
     } catch (e) {
@@ -1714,7 +1714,8 @@ export default function FelpusMatcher() {
           user.id,
           googleDisplayName || user.email,
           reportKind === "perdida" ? PUNTOS_PERDIDA : PUNTOS_ENCONTRADA,
-          "reporte"
+          "reporte",
+          savedReport.id
         );
         await loadLeaderboard();
       } else {
@@ -3227,7 +3228,7 @@ export default function FelpusMatcher() {
                   {isPushSupported() && pushSubState !== "active" && (
                     <button
                       type="button"
-                      onClick={() => handleActivatePush(matchResult.source.id)}
+                      onClick={() => handleActivatePush(matchResult.source.id, matchResult.source.pushToken)}
                       disabled={pushSubState === "loading"}
                       className="mt-3 w-full flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold border disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
                       style={{ borderColor: C.border, color: C.text }}
@@ -3320,8 +3321,8 @@ export default function FelpusMatcher() {
                                     markResolvedAndReward({
                                       repObjs: [matchResult.source, m.report],
                                       bonusFor: [
-                                        { userId: matchResult.source.userId, displayName: matchResult.source.nickname },
-                                        { userId: m.report.userId, displayName: m.report.nickname },
+                                        { userId: matchResult.source.userId, displayName: matchResult.source.nickname, reportId: matchResult.source.id },
+                                        { userId: m.report.userId, displayName: m.report.nickname, reportId: m.report.id },
                                       ],
                                     })
                                   }
@@ -3595,7 +3596,7 @@ export default function FelpusMatcher() {
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] flex-1" style={{ color: C.muted }}>¿Confirmás el reencuentro?</span>
                         <button
-                          onClick={() => markResolvedAndReward({ repObjs: [r], bonusFor: [{ userId: r.userId, displayName: r.nickname }] })}
+                          onClick={() => markResolvedAndReward({ repObjs: [r], bonusFor: [{ userId: r.userId, displayName: r.nickname, reportId: r.id }] })}
                           className="text-[11px] font-bold text-white rounded-lg px-2.5 py-1"
                           style={{ background: C.greenSolid }}
                         >
@@ -4443,7 +4444,7 @@ export default function FelpusMatcher() {
                               <div className="flex items-center gap-2">
                                 <span className="text-[11px]" style={{ color: C.muted }}>¿Confirmás?</span>
                                 <button
-                                  onClick={() => markResolvedAndReward({ repObjs: [r], bonusFor: [{ userId: r.userId, displayName: r.nickname }] })}
+                                  onClick={() => markResolvedAndReward({ repObjs: [r], bonusFor: [{ userId: r.userId, displayName: r.nickname, reportId: r.id }] })}
                                   className="text-[11px] font-bold text-white rounded-lg px-2.5 py-1"
                                   style={{ background: C.greenSolid }}
                                 >
@@ -4714,7 +4715,7 @@ export default function FelpusMatcher() {
         onConfirm={() =>
           markResolvedAndReward({
             repObjs: [detailReport],
-            bonusFor: [{ userId: detailReport?.userId, displayName: detailReport?.nickname }],
+            bonusFor: [{ userId: detailReport?.userId, displayName: detailReport?.nickname, reportId: detailReport?.id }],
           })
         }
         onCancelConfirm={() => setConfirmingId(null)}

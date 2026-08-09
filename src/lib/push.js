@@ -18,10 +18,21 @@ export function urlBase64ToUint8Array(base64String) {
 }
 
 // Pide permiso, se suscribe con el service worker ya registrado, y guarda
-// la suscripción en el reporte puntual vía RPC. Lanza si el usuario
-// rechaza el permiso o si algo falla — el que llama decide cómo avisarlo
-// (toast de error, etc.), acá no se silencia nada.
-export async function subscribeReportPush(reportId) {
+// la suscripción en el reporte puntual. Lanza si el usuario rechaza el
+// permiso o si algo falla — el que llama decide cómo avisarlo (toast de
+// error, etc.), acá no se silencia nada.
+//
+// Hallazgo de auditoría de seguridad (2026-08-09): antes esto llamaba
+// directo a la RPC subscribe_report_push con la anon key, y esa función
+// leía la IP para el rate limit de un header HTTP falsificable — mismo
+// patrón que ya se cerró para report-contact/flag-report/create-report
+// (ver PENDIENTE_DECISION.md #-14). Además, como el id del reporte no es
+// secreto (aparece en la URL pública /r/<id>), cualquiera que lo conociera
+// podía pisar la suscripción de otra persona. Ahora pasa por
+// /api/subscribe-push (server-side, IP real de Vercel), y pushToken es el
+// capability token que autoriza la llamada para reportes de invitado —
+// ver createReport en store.js, que lo entrega una sola vez al publicar.
+export async function subscribeReportPush(reportId, pushToken) {
   if (!isPushSupported()) {
     throw new Error("Este navegador no soporta notificaciones push.");
   }
@@ -44,11 +55,21 @@ export async function subscribeReportPush(reportId) {
     });
   }
 
-  const { error } = await supabase.rpc("subscribe_report_push", {
-    p_report_id: reportId,
-    p_subscription: subscription.toJSON(),
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData?.session?.access_token;
+
+  const res = await fetch("/api/subscribe-push", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: JSON.stringify({ reportId, subscription: subscription.toJSON(), pushToken }),
   });
-  if (error) throw error;
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error || "No pudimos activar las notificaciones. Probá de nuevo.");
+  }
   return true;
 }
 

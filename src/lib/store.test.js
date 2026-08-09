@@ -365,20 +365,26 @@ describe("flagReport", () => {
 // ver schema.sql) es la solución; estos tests fijan que awardPoints() la use
 // primero y sólo caiga al viejo comportamiento si todavía no existe.
 describe("awardPoints", () => {
-  it("con la RPC disponible, la llama con los parámetros correctos y no toca .from()", async () => {
+  // sourceId (auditoría integral, 2026-08-09): award_points pasó a ser
+  // event-sourced — la RPC verifica contra "reports" que el evento sea real
+  // y usa (reason, source_id) como clave única para no otorgar puntos dos
+  // veces por el mismo reporte. awardPoints() ahora tiene que mandar
+  // p_source_id siempre (server-side es quien decide si corresponde o no).
+  it("con la RPC disponible, la llama con los parámetros correctos (incluido p_source_id) y no toca .from()", async () => {
     supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: null });
-    await awardPoints("user-1", "Ana", 50, "reencuentro");
+    await awardPoints("user-1", "Ana", 50, "reencuentro", "report-abc");
     expect(supabaseMock.rpc).toHaveBeenCalledWith("award_points", {
       p_user_id: "user-1",
       p_display_name: "Ana",
       p_delta: 50,
       p_reason: "reencuentro",
+      p_source_id: "report-abc",
     });
     expect(supabaseMock.from).not.toHaveBeenCalled();
   });
 
   it("sin userId, no llama a nada (guest sin cuenta)", async () => {
-    await awardPoints(null, "Invitado", 10, "reporte");
+    await awardPoints(null, "Invitado", 10, "reporte", "report-xyz");
     expect(supabaseMock.rpc).not.toHaveBeenCalled();
     expect(supabaseMock.from).not.toHaveBeenCalled();
   });
@@ -391,7 +397,7 @@ describe("awardPoints", () => {
     const upsertBuilder = makeBuilder({ error: null });
     supabaseMock.from.mockReturnValueOnce(upsertBuilder);
 
-    await awardPoints("user-1", "Ana", 50, "reencuentro");
+    await awardPoints("user-1", "Ana", 50, "reencuentro", "report-abc");
 
     expect(supabaseMock.from).toHaveBeenCalledTimes(2);
     const upserted = upsertBuilder.upsert.mock.calls[0][0];
@@ -400,10 +406,26 @@ describe("awardPoints", () => {
   });
 
   it("un error real de la RPC (no 'función no existe') se propaga, sin caer al lee-y-escribe", async () => {
-    const realError = { code: "P0001", message: "Solo podés sumarte puntos a vos mismo con este motivo." };
+    const realError = { code: "P0001", message: "Solo podés sumarte puntos por tus propios reencuentros." };
     supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: realError });
-    await expect(awardPoints("otro-user", "X", 20, "reencuentro")).rejects.toBe(realError);
+    await expect(awardPoints("otro-user", "X", 20, "reencuentro", "report-abc")).rejects.toBe(realError);
     expect(supabaseMock.from).not.toHaveBeenCalled();
+  });
+
+  it("un intento de doble otorgamiento (mismo evento) es rechazado del lado del servidor, no silencioso en el cliente", async () => {
+    // La RPC deduplica con un unique index (reason, source_id) — cuando SÍ
+    // hay conflicto real, no tira error (insert con conflicto → no-op), así
+    // que del lado del cliente esto se ve igual que un award_points exitoso
+    // (rpcResult.error es null). El caso a cubrir del lado del cliente es
+    // que awardPoints() no haga NINGÚN chequeo propio de "ya se lo di" —
+    // toda la idempotencia vive server-side, awardPoints() solo pasa los
+    // datos tal cual.
+    supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: null });
+    await awardPoints("user-1", "Ana", 10, "reporte", "report-ya-premiado");
+    expect(supabaseMock.rpc).toHaveBeenCalledWith(
+      "award_points",
+      expect.objectContaining({ p_source_id: "report-ya-premiado" })
+    );
   });
 });
 
@@ -415,13 +437,23 @@ describe("awardPoints", () => {
 // bump_streak (RPC) cierra ese hueco; estos tests fijan que bumpStreak() la
 // use primero y sólo caiga al viejo comportamiento si todavía no existe.
 describe("bumpStreak", () => {
-  it("con la RPC disponible, la llama con los parámetros correctos y no toca .from()", async () => {
+  // p_timezone, no p_today/p_yesterday (auditoría integral, 2026-08-09):
+  // bump_streak calcula "hoy" enteramente server-side a partir de su propio
+  // reloj + el timezone declarado — el cliente ya no puede mandar una fecha
+  // arbitraria. bumpStreak() solo tiene que mandar el nombre IANA del
+  // timezone real del navegador (Intl.DateTimeFormat().resolvedOptions()),
+  // nunca una fecha.
+  it("con la RPC disponible, la llama con el timezone real (no fechas) y no toca .from()", async () => {
     supabaseMock.rpc.mockResolvedValueOnce({ data: [{ streak_days: 3, is_new_today: true }], error: null });
     const result = await bumpStreak("user-1", "Ana");
-    expect(supabaseMock.rpc).toHaveBeenCalledWith(
-      "bump_streak",
-      expect.objectContaining({ p_user_id: "user-1", p_display_name: "Ana" })
-    );
+    expect(supabaseMock.rpc).toHaveBeenCalledWith("bump_streak", {
+      p_user_id: "user-1",
+      p_display_name: "Ana",
+      p_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    });
+    const callArgs = supabaseMock.rpc.mock.calls[0][1];
+    expect(callArgs).not.toHaveProperty("p_today");
+    expect(callArgs).not.toHaveProperty("p_yesterday");
     expect(supabaseMock.from).not.toHaveBeenCalled();
     expect(result).toEqual({ streakDays: 3, isNewToday: true });
   });

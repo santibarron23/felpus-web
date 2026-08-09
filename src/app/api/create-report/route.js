@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { logError } from "../../../lib/log";
+import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
 
 // Corre en el servidor — nunca en el navegador, así que la service role key
 // nunca queda expuesta al público.
@@ -45,6 +46,10 @@ export async function POST(request) {
   }
   const supabase = createClient(supabaseUrl, serviceKey);
 
+  if (!isJsonRequest(request)) {
+    return Response.json({ error: "Content-Type inválido." }, { status: 415 });
+  }
+
   let row;
   try {
     const body = await request.json();
@@ -69,7 +74,7 @@ export async function POST(request) {
     }
   }
 
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+  const ip = getClientIp(request);
   if (ip) {
     try {
       await supabase
@@ -118,5 +123,21 @@ export async function POST(request) {
     return Response.json({ error: finalError.message || "No se pudo publicar el reporte." }, { status: 400 });
   }
 
-  return Response.json({ ok: true });
+  // push_token (auditoría integral, 2026-08-09): capability token para
+  // activar notificaciones push de ESTE reporte sin necesitar login (ver
+  // subscribe_report_push en schema.sql) — se genera solo con un default en
+  // la base y se entrega UNA sola vez acá, en la respuesta directa de quien
+  // acaba de publicar. Select aparte (no en el mismo insert) y en su propio
+  // try/catch: si todavía no se corrió la migración que agrega la columna,
+  // esto no debe romper la publicación en sí, solo dejar "activar
+  // notificaciones" indisponible para invitados hasta entonces.
+  let pushToken = null;
+  try {
+    const { data } = await supabase.from("reports").select("push_token").eq("id", attemptRow.id).maybeSingle();
+    pushToken = data?.push_token || null;
+  } catch (e) {
+    logError("No se pudo leer push_token del reporte recién publicado", e);
+  }
+
+  return Response.json({ ok: true, pushToken });
 }

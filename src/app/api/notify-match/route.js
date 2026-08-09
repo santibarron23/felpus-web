@@ -63,11 +63,20 @@ function rowToMatchable(row) {
 }
 
 // Columnas explícitas, SIN contacto_whatsapp/contacto_email: esas dos
-// tienen el SELECT revocado a nivel de Postgres para la key acá usada
-// (NEXT_PUBLIC_SUPABASE_ANON_KEY — ver schema.sql), así que un "select=*"
-// directamente fallaría por completo. El email de la coincidencia que
-// termina superando el umbral se pide aparte, recién cuando hace falta
-// (ver fetchReportContactServer más abajo).
+// tienen el SELECT revocado a nivel de Postgres incluso para service_role
+// vía la RPC get_report_contact (que sí las expone, rate-limitada) — acá se
+// listan aparte porque select=* no las traería de todos modos. El email de
+// la coincidencia que termina superando el umbral se pide aparte, recién
+// cuando hace falta (ver fetchReportContactServer más abajo).
+//
+// push_subscription: auditoría integral (2026-08-09) — se sacó del SELECT
+// otorgado a anon/authenticated (una PushSubscription no debería ser
+// legible en bloque por nadie con la anon key). Este webhook nunca corrió
+// en el navegador (lo dispara Postgres server-to-server, protegido por
+// x-webhook-secret) así que no había motivo real para que usara la anon
+// key en primer lugar — pasa a usar SUPABASE_SERVICE_ROLE_KEY para esta
+// consulta también (antes solo se usaba para el contacto de la coincidencia
+// puntual, ver fetchReportContactServer).
 const CANDIDATE_COLUMNS =
   "id,tipo,especie,raza,nombre,color,color_otro,tamano,sexo,edad,peso,zona,lat,lng,descripcion,push_subscription,foto_url,hist,embedding,foto_urls,hists,embeddings,creado_en";
 
@@ -185,16 +194,15 @@ export async function POST(request) {
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const resendKey = process.env.RESEND_API_KEY;
-  if (!supabaseUrl || !supabaseKey || !resendKey) {
+  // SUPABASE_SERVICE_ROLE_KEY pasa a ser obligatoria acá (antes solo lo era
+  // para pedir el contacto de la coincidencia puntual): fetchCandidates
+  // también la necesita ahora para poder leer push_subscription, que ya no
+  // es legible con la anon key (auditoría integral, 2026-08-09).
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceKey || !resendKey) {
     return Response.json({ error: "Faltan variables de entorno en el servidor." }, { status: 501 });
   }
-  // Sin SUPABASE_SERVICE_ROLE_KEY el webhook sigue funcionando (push sigue
-  // andando igual, ver pushConfigured más abajo) — solo el canal de email
-  // se queda sin poder pedir el contacto, así que no bloquea todo el
-  // endpoint. Ver comentario en fetchReportContactServer.
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   let payload;
   try {
@@ -209,7 +217,7 @@ export async function POST(request) {
   }
 
   const newReport = rowToMatchable(row);
-  const candidateRows = await fetchCandidates(supabaseUrl, supabaseKey, row);
+  const candidateRows = await fetchCandidates(supabaseUrl, serviceKey, row);
   const candidates = candidateRows.map(rowToMatchable);
 
   // Mismo umbral para los dos canales — un push es tan intrusivo como un

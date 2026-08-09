@@ -1,4 +1,5 @@
 import { logError } from "../../../lib/log";
+import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
 
 // Corre en el servidor — nunca en el navegador, así que la service role key
 // nunca queda expuesta al público.
@@ -24,6 +25,10 @@ export async function POST(request) {
     return Response.json({ error: "Servidor no configurado (falta SUPABASE_SERVICE_ROLE_KEY)." }, { status: 501 });
   }
 
+  if (!isJsonRequest(request)) {
+    return Response.json({ error: "Content-Type inválido." }, { status: 415 });
+  }
+
   let reportId, reason;
   try {
     const body = await request.json();
@@ -39,7 +44,7 @@ export async function POST(request) {
     return Response.json({ error: "Motivo de denuncia no reconocido." }, { status: 400 });
   }
 
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+  const ip = getClientIp(request);
 
   try {
     const res = await fetch(`${supabaseUrl}/rest/v1/rpc/flag_report`, {
