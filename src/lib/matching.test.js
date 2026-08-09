@@ -281,6 +281,96 @@ describe("scoreMatch", () => {
     ).score;
     expect(conTextoIgual).toBeGreaterThan(sinTexto);
   });
+
+  // Auditoría integral (2026-08-09) — hallazgo P1: "fecha" (cuándo se
+  // perdió/encontró de verdad, distinto de creadoEn) se pedía en el
+  // formulario pero nunca se usaba en el scoring. Estos tests fijan que
+  // ahora sí aporta señal, siempre gradual (nunca descarta un match por
+  // fecha sola — una mascota puede aparecer semanas después).
+  describe("fecha", () => {
+    it("fechas cercanas dan más score que fechas muy separadas", () => {
+      const a = makeReport({ fecha: "2026-08-01" });
+      const cercana = scoreMatch(a, makeReport({ id: "r2", fecha: "2026-08-02" })).score;
+      const lejana = scoreMatch(a, makeReport({ id: "r3", fecha: "2026-05-01" })).score;
+      expect(cercana).toBeGreaterThan(lejana);
+    });
+
+    it("sin fecha de alguno de los dos lados, es neutro (ni ayuda ni penaliza)", () => {
+      // Mismo par de reportes salvo por tener o no "fecha" — el resto de
+      // los campos coincide, así que cualquier diferencia de score viene
+      // pura y exclusivamente de fechaSimilarity.
+      const conFechaIgual = scoreMatch(
+        makeReport({ fecha: "2026-08-01" }),
+        makeReport({ id: "r2", fecha: "2026-08-01" })
+      ).score;
+      const sinFechaNinguno = scoreMatch(makeReport({ fecha: undefined }), makeReport({ id: "r2", fecha: undefined })).score;
+      const fechaMuyLejana = scoreMatch(
+        makeReport({ fecha: "2026-08-01" }),
+        makeReport({ id: "r2", fecha: "2020-01-01" })
+      ).score;
+      // Neutro cae ESTRICTAMENTE entre "coinciden perfecto" y "muy lejanas"
+      // — nunca es tratado como si coincidieran (optimista de más) ni como
+      // si estuvieran en las antípodas del calendario (pesimista de más).
+      expect(sinFechaNinguno).toBeLessThan(conFechaIgual);
+      expect(sinFechaNinguno).toBeGreaterThan(fechaMuyLejana);
+    });
+
+    it("una fecha muy lejana NUNCA lleva el score a 0 por sí sola (nunca es un corte binario)", () => {
+      const a = makeReport({ fecha: "2026-08-01" });
+      const b = makeReport({ id: "r2", fecha: "2020-01-01" }); // ~6 años de diferencia
+      expect(scoreMatch(a, b).score).toBeGreaterThan(0);
+    });
+
+    it("locationReferenceKm usa la fecha real del evento, no creadoEn — una mascota perdida hace días tolera más distancia", () => {
+      // Mismo par de coordenadas (~600m de diferencia) en los dos casos —
+      // la única diferencia es CUÁNDO dicen que pasó el evento. Si el radio
+      // de tolerancia todavía mirara creadoEn (ambos "ahora"), el score de
+      // ubicación sería idéntico en los dos casos; si mira "fecha", el caso
+      // con más días transcurridos debería tolerar la distancia mejor.
+      const perdidaHaceRato = makeReport({
+        fecha: "2026-07-20", // ~20 días antes de la fecha del "encontrada"
+        creadoEn: Date.now(),
+        lat: -34.588,
+        lng: -58.43,
+      });
+      const encontradaHoy = makeReport({
+        id: "r2",
+        tipo: "encontrada",
+        fecha: "2026-08-09",
+        creadoEn: Date.now(),
+        lat: -34.593,
+        lng: -58.436,
+      });
+      const perdidaRecien = makeReport({
+        id: "r3",
+        fecha: "2026-08-08", // 1 día antes
+        creadoEn: Date.now(),
+        lat: -34.588,
+        lng: -58.43,
+      });
+      const scoreConMasDias = scoreMatch(perdidaHaceRato, encontradaHoy).locScore;
+      const scoreConPocosDias = scoreMatch(perdidaRecien, encontradaHoy).locScore;
+      expect(scoreConMasDias).toBeGreaterThan(scoreConPocosDias);
+    });
+  });
+
+  // Auditoría integral (2026-08-09): "tamano" comparaba exacto, distinto al
+  // trato ya dado a edad/peso (categoría vecina = evidencia parcial, no 0).
+  describe("tamano", () => {
+    it("categoría vecina (chico/mediano o mediano/grande) da más score que la opuesta (chico/grande)", () => {
+      const chico = makeReport({ tamano: "chico" });
+      const vecino = scoreMatch(chico, makeReport({ id: "r2", tamano: "mediano" })).score;
+      const opuesto = scoreMatch(chico, makeReport({ id: "r3", tamano: "grande" })).score;
+      expect(vecino).toBeGreaterThan(opuesto);
+    });
+
+    it("mismo tamano sigue dando el score más alto de los tres casos", () => {
+      const chico = makeReport({ tamano: "chico" });
+      const igual = scoreMatch(chico, makeReport({ id: "r2", tamano: "chico" })).score;
+      const vecino = scoreMatch(chico, makeReport({ id: "r3", tamano: "mediano" })).score;
+      expect(igual).toBeGreaterThan(vecino);
+    });
+  });
 });
 
 describe("matchBreakdown", () => {

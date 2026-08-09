@@ -68,6 +68,12 @@ export const EDAD_OPTIONS = [
 
 export const PESO_OPTIONS = ["Menos de 5 kg", "5 a 10 kg", "10 a 20 kg", "20 a 30 kg", "Más de 30 kg", "No sé"];
 
+// Orden real de las 3 categorías (ids guardados en reports.tamano, ver el
+// <select> del formulario) — usado para tratar "tamano" igual que edad/peso
+// en el matching: una categoría vecina es evidencia parcial, no un fallo
+// total (ver ordinalSimilarity).
+export const TAMANO_OPTIONS = ["chico", "mediano", "grande"];
+
 // Sugerencias para el <datalist> de raza (no un <select> cerrado: hay
 // cientos de razas y mezclas reales, forzar una lista fija excluiría a la
 // mayoría de las mascotas mestizas). RAZA_ESPECIALES va SIEMPRE primero,
@@ -575,9 +581,12 @@ function structuredFieldSimilarity(a, b) {
   if (a.sexo && b.sexo && a.sexo !== "No sé" && b.sexo !== "No sé") {
     parts.push({ weight: 0.2, value: a.sexo === b.sexo ? 1 : 0 });
   }
-  if (a.tamano && b.tamano) {
-    parts.push({ weight: 0.15, value: a.tamano === b.tamano ? 1 : 0 });
-  }
+  // Auditoría integral (2026-08-09): comparaba exacto, a diferencia de
+  // edad/peso — inconsistente para el mismo tipo de dato (una categoría
+  // ordinal de 3 valores donde dos personas distintas fácilmente discrepan
+  // en una, ej. un perro "mediano" que para quien lo encontró es "grande").
+  const tamanoSim = ordinalSimilarity(a.tamano, b.tamano, TAMANO_OPTIONS);
+  if (tamanoSim != null) parts.push({ weight: 0.15, value: tamanoSim });
   const edadSim = ordinalSimilarity(a.edad, b.edad, EDAD_OPTIONS);
   if (edadSim != null) parts.push({ weight: 0.15, value: edadSim });
   const pesoSim = ordinalSimilarity(a.peso, b.peso, PESO_OPTIONS);
@@ -598,23 +607,61 @@ function hasAiEmbedding(report) {
 }
 
 // Radio de referencia para el score de distancia, dinámico según cuántos
-// días pasaron desde el más viejo de los dos reportes — una mascota perdida
-// hace una semana pudo haberse alejado mucho más que una perdida hace una
-// hora, así que toleramos más distancia sin penalizar tanto el score.
-// Tope en 14 días para no diluir la señal de ubicación indefinidamente.
+// días pasaron desde el evento real — una mascota perdida hace una semana
+// pudo haberse alejado mucho más que una perdida hace una hora, así que
+// toleramos más distancia sin penalizar tanto el score. Tope en 14 días
+// para no diluir la señal de ubicación indefinidamente.
 const RADIO_BASE_KM = 8;
 const RADIO_EXTRA_KM_POR_DIA = 2;
 const RADIO_DIAS_TOPE = 14;
 
+// Auditoría integral (2026-08-09): usaba creadoEn (cuándo se CARGÓ el
+// reporte al sistema) en vez de "fecha" (cuándo pasó de verdad el
+// evento) — dos cosas distintas: alguien puede buscar a su mascota varios
+// días antes de animarse a publicar. Con creadoEn, ese caso calculaba un
+// radio de tolerancia mucho más chico del que corresponde de verdad,
+// penalizando un match real (la mascota tuvo esos días de más para
+// alejarse) por el reloj equivocado. Usa "fecha" cuando ambos lados la
+// tienen; si falta en alguno, cae a creadoEn (mejor aproximación
+// disponible) — nunca deja el radio sin definir.
 function locationReferenceKm(a, b) {
   const now = Date.now();
-  const masViejo = Math.min(a.creadoEn ?? now, b.creadoEn ?? now);
+  const fechaMs = (r) => (r.fecha ? new Date(r.fecha).getTime() : null);
+  const aRef = fechaMs(a) ?? a.creadoEn ?? now;
+  const bRef = fechaMs(b) ?? b.creadoEn ?? now;
+  const masViejo = Math.min(aRef, bRef);
   const diasTranscurridos = Math.max(0, (now - masViejo) / (24 * 3600 * 1000));
   const diasEfectivos = Math.min(diasTranscurridos, RADIO_DIAS_TOPE);
   return RADIO_BASE_KM + diasEfectivos * RADIO_EXTRA_KM_POR_DIA;
 }
 
+// Auditoría integral (2026-08-09) — hallazgo real: el formulario le pide a
+// la persona la fecha en que la mascota se perdió/encontró, pero el
+// algoritmo nunca la usaba para nada más que corregir locationReferenceKm
+// de arriba. Dos reportes con fechas muy cercanas es evidencia real (es
+// más probable que sean el mismo evento); muy lejanas, menos — pero NUNCA
+// un corte binario (una mascota puede aparecer semanas después), mismo
+// criterio de decaimiento gradual que ya usa locScore. Si falta la fecha
+// en cualquiera de los dos lados (campo opcional), 0.5 neutro — ni ayuda
+// ni penaliza, no hay señal real que comparar.
+const FECHA_VENTANA_DIAS = 21;
+function fechaSimilarity(a, b) {
+  if (!a.fecha || !b.fecha) return 0.5;
+  const diffMs = Math.abs(new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
+  if (Number.isNaN(diffMs)) return 0.5;
+  const diffDias = diffMs / (24 * 3600 * 1000);
+  return Math.exp(-diffDias / FECHA_VENTANA_DIAS);
+}
+
 export function scoreMatch(a, b) {
+  // Especies distintas (ej. perro vs gato) nunca son la misma mascota —
+  // cortar acá evita calcular similitud de imagen/texto/fecha para un par
+  // que ya se sabe que va a dar 0 (findMatches/notify-match no filtran los
+  // candidatos por especie antes de llamar a scoreMatch, solo por tipo).
+  if (a.especie !== b.especie) {
+    return { score: 0, imgSim: 0, textSim: 0, locScore: 0, fechaSim: 0, distanceLabel: "" };
+  }
+
   const imgSim = imageSimilarity(a, b);
   const structuredSim = structuredFieldSimilarity(a, b);
   const descSim = jaccard(tokenize(a.descripcion), tokenize(b.descripcion));
@@ -636,24 +683,26 @@ export function scoreMatch(a, b) {
     distanceLabel = sameZone ? "misma zona" : "zona distinta";
   }
 
-  // Especies distintas (ej. perro vs gato) nunca son la misma mascota — el
-  // score queda en 0% sin importar cuánto se parezcan el color o la zona.
-  const speciesFactor = a.especie === b.especie ? 1 : 0;
+  const fechaSim = fechaSimilarity(a, b);
 
   // Pesos adaptativos: con IA visual real, la imagen es la señal más fuerte;
   // sin ella (histograma de color nomás), pesan más los campos
-  // estructurados y la ubicación.
+  // estructurados y la ubicación. fecha entra con un peso chico y fijo en
+  // los dos casos (0.10) — es una señal real pero más débil que las demás,
+  // y con el "neutro" de arriba nunca castiga a quien no la cargó.
   const weights =
     hasAiEmbedding(a) && hasAiEmbedding(b)
-      ? { img: 0.5, text: 0.3, loc: 0.2 }
-      : { img: 0.2, text: 0.5, loc: 0.3 };
+      ? { img: 0.45, text: 0.27, loc: 0.18, fecha: 0.1 }
+      : { img: 0.18, text: 0.45, loc: 0.27, fecha: 0.1 };
 
-  const combined = speciesFactor * (weights.img * imgSim + weights.text * textSim + weights.loc * locScore);
+  const combined =
+    weights.img * imgSim + weights.text * textSim + weights.loc * locScore + weights.fecha * fechaSim;
   return {
     score: Math.max(0, Math.min(1, combined)),
     imgSim,
     textSim,
     locScore,
+    fechaSim,
     distanceLabel,
   };
 }

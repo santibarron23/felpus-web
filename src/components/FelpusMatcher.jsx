@@ -496,6 +496,16 @@ export default function FelpusMatcher() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [myRank, setMyRank] = useState(null);
   const [confirmingId, setConfirmingId] = useState(null);
+  // Auditoría integral (2026-08-09): el botón "Sí, confirmar"/"Sí, ya está
+  // en casa" no se deshabilitaba mientras la confirmación estaba en
+  // vuelo — un doble-tap (común en mobile con conexión lenta, justo el
+  // escenario de alguien angustiado tocando la pantalla) podía disparar
+  // markResolvedAndReward() dos veces antes de que confirmingId pasara a
+  // null. El otorgamiento de puntos duplicado ya quedó cerrado del lado
+  // del servidor (award_points es idempotente por evento, ver schema.sql),
+  // pero el botón igual debería reflejar "ya estoy procesando esto" —
+  // evita además una segunda escritura innecesaria a resolveReports.
+  const [resolvingId, setResolvingId] = useState(null);
   // "Comparar fotos" en una tarjeta de coincidencia — mismo patrón que
   // confirmingId (un solo id "abierto" por vez, alcanza para una lista).
   const [comparingId, setComparingId] = useState(null);
@@ -1345,10 +1355,16 @@ export default function FelpusMatcher() {
       pushToast("error", "Iniciá sesión con Google para confirmar reencuentros y sumar puntos.");
       return;
     }
+    // Re-entrada: si ya hay una confirmación en vuelo para este mismo
+    // reporte, un segundo click (doble-tap) no dispara nada nuevo.
+    const firstId = repObjs[0]?.id;
+    if (firstId && resolvingId === firstId) return;
+    setResolvingId(firstId ?? true);
     const ownedRepObjs = repObjs.filter((r) => r.userId === user.id);
     if (ownedRepObjs.length === 0) {
       pushToast("error", "Solo quien publicó este reporte puede marcarlo como reencontrado.");
       setConfirmingId(null);
+      setResolvingId(null);
       return;
     }
     const resolverDisplayName = googleDisplayName || user.email || "Colaborador";
@@ -1416,6 +1432,8 @@ export default function FelpusMatcher() {
     } catch (e) {
       logError(e);
       pushToast("error", "No pudimos guardar el reencuentro. Probá de nuevo.");
+    } finally {
+      setResolvingId(null);
     }
   }
 
@@ -2147,7 +2165,15 @@ export default function FelpusMatcher() {
                   value={nickname}
                   onChange={(e) => setNickname(e.target.value)}
                   maxLength={40}
-                  placeholder="Para sumar puntos como colaborador"
+                  // Auditoría integral (2026-08-09): decía "Para sumar
+                  // puntos como colaborador" — para alguien SIN sesión (la
+                  // mayoría en un momento de pánico por una mascota
+                  // perdida), este es el único campo de identificación
+                  // visible y handleSubmit lo exige primero de todos, pero
+                  // el texto daba a entender que era opcional/solo para
+                  // gamificación. Mismo texto que ya usa el mensaje de
+                  // error de más abajo, para no decir dos cosas distintas.
+                  placeholder="Así te reconocemos por ayudar"
                   className="block w-full text-sm font-semibold outline-none bg-transparent min-w-0"
                   style={{ color: fieldErrors.apodo ? C.red : C.text }}
                 />
@@ -3326,10 +3352,11 @@ export default function FelpusMatcher() {
                                       ],
                                     })
                                   }
-                                  className="text-[11px] font-bold text-white rounded-lg px-2.5 py-1"
+                                  disabled={resolvingId === matchResult.source.id}
+                                  className="text-[11px] font-bold text-white rounded-lg px-2.5 py-1 disabled:opacity-60"
                                   style={{ background: C.greenSolid }}
                                 >
-                                  Sí, confirmar
+                                  {resolvingId === matchResult.source.id ? "Confirmando…" : "Sí, confirmar"}
                                 </button>
                                 <button onClick={() => setConfirmingId(null)} className="text-[11px] font-semibold" style={{ color: C.muted }}>
                                   Cancelar
@@ -3597,10 +3624,11 @@ export default function FelpusMatcher() {
                         <span className="text-[11px] flex-1" style={{ color: C.muted }}>¿Confirmás el reencuentro?</span>
                         <button
                           onClick={() => markResolvedAndReward({ repObjs: [r], bonusFor: [{ userId: r.userId, displayName: r.nickname, reportId: r.id }] })}
-                          className="text-[11px] font-bold text-white rounded-lg px-2.5 py-1"
+                          disabled={resolvingId === r.id}
+                          className="text-[11px] font-bold text-white rounded-lg px-2.5 py-1 disabled:opacity-60"
                           style={{ background: C.greenSolid }}
                         >
-                          Sí, ya está en casa
+                          {resolvingId === r.id ? "Confirmando…" : "Sí, ya está en casa"}
                         </button>
                         <button onClick={() => setConfirmingId(null)} className="text-[11px] font-semibold" style={{ color: C.muted }}>
                           Cancelar
@@ -4445,10 +4473,11 @@ export default function FelpusMatcher() {
                                 <span className="text-[11px]" style={{ color: C.muted }}>¿Confirmás?</span>
                                 <button
                                   onClick={() => markResolvedAndReward({ repObjs: [r], bonusFor: [{ userId: r.userId, displayName: r.nickname, reportId: r.id }] })}
-                                  className="text-[11px] font-bold text-white rounded-lg px-2.5 py-1"
+                                  disabled={resolvingId === r.id}
+                                  className="text-[11px] font-bold text-white rounded-lg px-2.5 py-1 disabled:opacity-60"
                                   style={{ background: C.greenSolid }}
                                 >
-                                  Sí, ya está en casa
+                                  {resolvingId === r.id ? "Confirmando…" : "Sí, ya está en casa"}
                                 </button>
                                 <button onClick={() => setConfirmingId(null)} className="text-[11px] font-semibold" style={{ color: C.muted }}>
                                   Cancelar
@@ -4711,6 +4740,7 @@ export default function FelpusMatcher() {
         }}
         onResolve={() => detailReport && handleConfirmTrigger(detailReport)}
         confirming={confirmingId === detailReport?.id}
+        resolving={!!detailReport && resolvingId === detailReport.id}
         isOwner={!!detailReport && detailReport.userId === user?.id}
         onConfirm={() =>
           markResolvedAndReward({

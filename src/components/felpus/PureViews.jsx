@@ -230,10 +230,11 @@ function contactMessage(report) {
   return `Hola! Vi en Felpus tu publicación de ${nombre} en ${report.zona}. Creo que puedo ayudar.\n${SITE_URL}/r/${report.id}`;
 }
 
-export function DetailModal({ report, contactStatus, onRetryContact, onClose, onResolve, confirming, onConfirm, onCancelConfirm, isLoggedIn, isOwner, onDelete, onFlagReport, saved, onToggleSaved }) {
+export function DetailModal({ report, contactStatus, onRetryContact, onClose, onResolve, confirming, resolving, onConfirm, onCancelConfirm, isLoggedIn, isOwner, onDelete, onFlagReport, saved, onToggleSaved }) {
   const C = useTheme();
   const [activeIndex, setActiveIndex] = useState(0);
   const [generatingFlyer, setGeneratingFlyer] = useState(false);
+  const [flyerErrorMsg, setFlyerErrorMsg] = useState("");
   const [deleteConfirming, setDeleteConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -271,10 +272,16 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
 
   async function handleDownloadFlyer() {
     setGeneratingFlyer(true);
+    setFlyerErrorMsg("");
     try {
       await downloadFlyer(report, displayColor(report));
     } catch (e) {
+      // Auditoría integral (2026-08-09): antes esto solo loggeaba — el
+      // botón volvía a su estado normal sin ninguna señal de que no pasó
+      // nada, para alguien buscando imprimir carteles para pegar en el
+      // barrio (uno de los usos reales más importantes de la app).
       logError("No se pudo generar el flyer", e);
+      setFlyerErrorMsg("No pudimos generar el flyer. Probá de nuevo.");
     } finally {
       setGeneratingFlyer(false);
     }
@@ -522,13 +529,23 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
               Flyer
             </button>
           </div>
+          {flyerErrorMsg && (
+            <p className="flex items-center gap-1.5 text-xs pt-1" style={{ color: C.redDark }} aria-live="polite">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {flyerErrorMsg}
+            </p>
+          )}
           {!report.resuelto && (
             <div className="pt-1">
               {confirming ? (
                 <div className="flex items-center gap-2 bg-[#EAF3EC] dark:bg-[#1C2E22] rounded-xl p-2.5">
                   <span className="text-xs flex-1" style={{ color: C.greenDark }}>¿Confirmás el reencuentro?</span>
-                  <button onClick={onConfirm} className="text-xs font-bold text-white rounded-lg px-3 py-1.5" style={{ background: C.greenSolid }}>
-                    Sí, confirmar
+                  <button
+                    onClick={onConfirm}
+                    disabled={resolving}
+                    className="text-xs font-bold text-white rounded-lg px-3 py-1.5 disabled:opacity-60"
+                    style={{ background: C.greenSolid }}
+                  >
+                    {resolving ? "Confirmando…" : "Sí, confirmar"}
                   </button>
                   <button onClick={onCancelConfirm} className="text-xs font-semibold" style={{ color: C.muted }}>
                     Cancelar
