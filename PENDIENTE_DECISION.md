@@ -1,5 +1,75 @@
 # Decisiones pendientes — requieren acción o información tuya
 
+## -15. Auditoría integral de seguridad server-authoritative (2026-08-09) — requiere que corras schema.sql y confirmes
+
+**Contexto:** a pedido explícito, auditoría dirigida al principio "el
+servidor verifica, nunca confía en lo que declara el cliente" — cubrió
+push notifications, sistema de puntos, rate limiting de embeddings, logs
+de error y Storage, más una revisión completa de las ~16 funciones
+`security definer` del proyecto y sus GRANT/REVOKE.
+
+**8 hallazgos reales corregidos** (commits `Seguridad integral...` y
+`Matching + UX...`):
+
+1. **push_subscription** (incluye el endpoint real del navegador de quien
+   reportó) era legible por SELECT público — sacada del grant, notify-match
+   pasa a usar la service role key.
+2. **subscribe_report_push**: leía la IP de un header falsificable (mismo
+   patrón que ya se había cerrado para get_report_contact/flag_report), y
+   dejaba pisar la suscripción de OTRO reporte con solo conocer su id
+   (público, no un secreto). Ahora exige `push_token` (capability token,
+   entregado una sola vez al publicar) o ser el dueño logueado — nueva
+   ruta `/api/subscribe-push`.
+3. **award_points**: rediseñada de "el cliente pide X puntos por motivo Y"
+   a event-sourced e idempotente (`points_events`, UNIQUE por evento) — ya
+   no se pueden otorgar puntos dos veces por el mismo reporte, y la
+   función verifica contra `reports` que el evento sea real antes de
+   otorgar nada.
+4. **bump_streak**: ya no confía en fechas que manda el cliente — calcula
+   "hoy" server-side a partir de su propio reloj + el timezone real
+   declarado.
+5. **check_embed_rate_limit**: ya no acepta `client_ip`/`max_per_minute`
+   de cualquiera con la anon key — restringida a `service_role`.
+6. **error_logs**: el insert directo (rate limit en un trigger con el
+   mismo header falsificable) se cerró — pasa por `/api/log-error`, con
+   retención acotada a 30 días.
+7. **Storage — hallazgo más serio de esta ronda**: `uploadPhoto()` armaba
+   el path de cada foto a partir del id del reporte (público, no
+   secreto) con `upsert:true` — **cualquiera podía reemplazar la foto de
+   un reporte ajeno** subiendo un archivo al mismo path, sin ser su
+   dueño. Cerrado con un sufijo aleatorio (`crypto.randomUUID()`) por
+   archivo, `upsert:false`. El bucket también quedó con `file_size_limit`
+   (8MB) y `allowed_mime_types` (antes sin límite propio).
+8. **matching.js** (de paso, mismo espíritu "no dejar que el cliente
+   determine algo importante sin verificarlo"): "fecha" se le pedía a la
+   persona pero nunca se usaba en el scoring — podía ocultar reencuentros
+   reales por calcular el radio de tolerancia de ubicación con el reloj
+   equivocado (`creadoEn` en vez de la fecha real del evento).
+
+**Riesgo residual aceptado y documentado** (no arreglado, por qué):
+- Storage sigue con INSERT público abierto — moverlo a una ruta
+  server-side hubiera roto el borrado de fotos propias (depende de que
+  Storage sepa quién subió el archivo, algo que se pierde si el upload
+  pasa por la service role key). Ver el comentario largo junto a
+  `felpus_photos_public_insert` en `schema.sql` para el detalle completo
+  y la recomendación para la próxima iteración.
+- `award_points` no verifica que el "bono-reporte-original" sea EXACTAMENTE
+  el reporte que el algoritmo de matching mostró como coincidencia (solo
+  que sea de tipo opuesto y que quien llama haya resuelto algo real hace
+  poco) — portar todo `matching.js` a PL/pgSQL para validarlo del todo
+  sería sobreingeniería frente al riesgo real (en el peor caso, alguien
+  ya logueado que ya resolvió de verdad le suma 20 puntos a la cuenta de
+  OTRA persona real, no a la propia).
+
+**Paso pendiente:**
+1. Abrí el SQL Editor de tu proyecto Supabase.
+2. Pegá y ejecutá todo `supabase/schema.sql` de nuevo (agrega
+   `points_events`, `push_token`, `streak_updated_at`, y varios rediseños
+   de funciones — es seguro re-correrlo completo, todo es idempotente).
+3. Contame cuando termine para hacer la verificación adversarial en vivo
+   (curl contra la base real, mismo método que ya usamos para el hallazgo
+   #-14) antes de dar esto por cerrado del todo.
+
 ## -14. RESUELTO (2026-08-08): el rate limiting por IP de toda la app se evadía falsificando X-Forwarded-For
 
 **No lo arreglé todavía a propósito** — la corrección real necesita un
