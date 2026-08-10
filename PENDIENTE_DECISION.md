@@ -1,6 +1,6 @@
 # Decisiones pendientes — requieren acción o información tuya
 
-## -15. Auditoría integral de seguridad server-authoritative (2026-08-09) — requiere que corras schema.sql y confirmes
+## -15. RESUELTO (2026-08-09): Auditoría integral de seguridad server-authoritative — verificado en vivo
 
 **Contexto:** a pedido explícito, auditoría dirigida al principio "el
 servidor verifica, nunca confía en lo que declara el cliente" — cubrió
@@ -61,14 +61,30 @@ de error y Storage, más una revisión completa de las ~16 funciones
   ya logueado que ya resolvió de verdad le suma 20 puntos a la cuenta de
   OTRA persona real, no a la propia).
 
-**Paso pendiente:**
-1. Abrí el SQL Editor de tu proyecto Supabase.
-2. Pegá y ejecutá todo `supabase/schema.sql` de nuevo (agrega
-   `points_events`, `push_token`, `streak_updated_at`, y varios rediseños
-   de funciones — es seguro re-correrlo completo, todo es idempotente).
-3. Contame cuando termine para hacer la verificación adversarial en vivo
-   (curl contra la base real, mismo método que ya usamos para el hallazgo
-   #-14) antes de dar esto por cerrado del todo.
+**Verificación en vivo (2026-08-09), contra la base real, con curl:**
+- 12 pruebas adversariales, una por cada protección de arriba —
+  todas se comportaron como debían: `permission denied` o `function not
+  found` contra cada intento de ataque (IP falsa, token de otro reporte,
+  llamar `check_embed_rate_limit`/`subscribe_report_push` con la anon key,
+  leer `push_subscription` por SELECT, duplicar un `award_points`, etc.),
+  y los casos normales (lectura pública de reportes, RPCs legítimas)
+  siguieron funcionando sin cambios.
+- Bucket de Storage: confirmado `file_size_limit = 8388608` y
+  `allowed_mime_types` aplicados sobre `felpus-photos`.
+- Flujo completo end-to-end contra el servidor local apuntando a la base
+  real: `create-report` (rechaza `Content-Type` que no sea JSON, devuelve
+  un `pushToken` real) → `subscribe-push` con token incorrecto (403), con
+  el token correcto (200), y — la prueba más importante — el mismo token
+  reusado contra un reporte AJENO (403, no permite secuestrar la
+  suscripción de otro). `report-contact` y `flag-report` siguen andando
+  igual que antes. Reporte de prueba y su fila en `report_flags`
+  borrados con la service role key al terminar.
+- Chequeo visual: la home carga sin errores de consola, el conteo de
+  mascotas quedó igual que antes de la prueba (confirma que la limpieza
+  funcionó), y el nuevo texto "Así te reconocemos por ayudar" aparece en
+  el input de apodo.
+
+Cerrado.
 
 ## -14. RESUELTO (2026-08-08): el rate limiting por IP de toda la app se evadía falsificando X-Forwarded-For
 
