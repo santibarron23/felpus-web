@@ -1,5 +1,5 @@
 import { logError } from "../../../lib/log";
-import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
+import { isJsonRequest, getClientIp, isRateLimitMessage } from "../../../lib/httpGuards";
 
 // Corre en el servidor — nunca en el navegador, así que la service role key
 // nunca queda expuesta al público.
@@ -64,7 +64,12 @@ export async function POST(request) {
       // como 400 con el mensaje real en .message — se lo pasamos tal cual
       // al cliente, es el mismo texto pensado para mostrarle a la persona.
       const errBody = await res.json().catch(() => ({}));
-      const status = res.status === 400 ? 429 : res.status;
+      // Control integral (2026-08-10): ver isRateLimitMessage en
+      // httpGuards.js — hoy get_report_contact solo tiene una excepción de
+      // 400 (el rate limit real), pero mapear TODO 400 a 429 a ciegas
+      // queda mal si el día de mañana se agrega otra, así que se aplica el
+      // mismo criterio acá por consistencia con flag-report.
+      const status = res.status === 400 && isRateLimitMessage(errBody?.message) ? 429 : res.status;
       return Response.json({ error: errBody?.message || "No se pudo obtener el contacto." }, { status });
     }
 

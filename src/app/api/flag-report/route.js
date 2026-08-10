@@ -1,5 +1,5 @@
 import { logError } from "../../../lib/log";
-import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
+import { isJsonRequest, getClientIp, isRateLimitMessage } from "../../../lib/httpGuards";
 
 // Corre en el servidor — nunca en el navegador, así que la service role key
 // nunca queda expuesta al público.
@@ -59,7 +59,11 @@ export async function POST(request) {
 
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
-      const status = res.status === 400 ? 429 : res.status;
+      // Control integral (2026-08-10): antes cualquier 400 se etiquetaba
+      // 429 — ver isRateLimitMessage en httpGuards.js para el detalle
+      // completo. flag_report también devuelve 400 para "no se encontró
+      // ese reporte", que no es rate limit.
+      const status = res.status === 400 && isRateLimitMessage(errBody?.message) ? 429 : res.status;
       return Response.json({ error: errBody?.message || "No se pudo enviar la denuncia." }, { status });
     }
 

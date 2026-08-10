@@ -38,3 +38,21 @@ export function isJsonRequest(request) {
 export function getClientIp(request) {
   return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
 }
+
+// Control integral (2026-08-10): flag-report y report-contact convertían
+// CUALQUIER 400 que devolviera la RPC de Supabase en un 429 ("demasiados
+// pedidos") — asumían que el único motivo posible de un 400 era el rate
+// limit. No es así: get_report_contact solo tiene esa excepción, pero
+// flag_report también puede fallar con "No se encontró ese reporte." (si
+// el reporte se ocultó/borró entre que se cargó la pantalla y se denunció)
+// o "Motivo de denuncia no reconocido." — casos legítimos, no de límite.
+// El mensaje que ve la persona ya era el correcto en los dos casos (viene
+// tal cual de errBody.message), pero el status code mentía — justo lo que
+// se mira primero al leer métricas/logs de tráfico real. Esta función
+// distingue el caso real de rate limit por el texto del mensaje (todas las
+// excepciones de límite en schema.sql arrancan con "Demasiad" o mencionan
+// "límite") en vez de asumirlo por el status HTTP solo.
+export function isRateLimitMessage(message) {
+  if (!message) return false;
+  return /demasiad|límite|limite/i.test(message);
+}
