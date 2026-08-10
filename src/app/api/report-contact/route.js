@@ -1,4 +1,5 @@
 import { logError } from "../../../lib/log";
+import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
 
 // Corre en el servidor — nunca en el navegador, así que la service role key
 // nunca queda expuesta al público.
@@ -24,6 +25,16 @@ export async function POST(request) {
     return Response.json({ error: "Servidor no configurado (falta SUPABASE_SERVICE_ROLE_KEY)." }, { status: 501 });
   }
 
+  // Auditoría de seguridad (2026-08-10): esta ruta era la única de las
+  // nuevas (create-report, flag-report, subscribe-push, log-error) que no
+  // exigía Content-Type: application/json — un <form enctype="text/plain">
+  // de otro sitio podía mandar un pedido "simple" (sin preflight CORS) con
+  // un body que igual parsea como JSON válido. Mismo guard que ya usan las
+  // demás, por consistencia.
+  if (!isJsonRequest(request)) {
+    return Response.json({ error: "Content-Type inválido." }, { status: 415 });
+  }
+
   let reportId;
   try {
     const body = await request.json();
@@ -35,7 +46,7 @@ export async function POST(request) {
     return Response.json({ error: "Falta reportId." }, { status: 400 });
   }
 
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+  const ip = getClientIp(request);
 
   try {
     const res = await fetch(`${supabaseUrl}/rest/v1/rpc/get_report_contact`, {

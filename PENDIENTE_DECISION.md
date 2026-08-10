@@ -180,6 +180,15 @@ afectadas. Verificado en vivo con curl contra la base real (anon key):
 las 5 rutas de ataque devuelven `42501 permission denied` y el acceso
 público normal sigue funcionando igual.
 
+**Verificación adicional (2026-08-10):** repasando las 5 rutas server-side
+de esta entrada + `/api/subscribe-push` + `/api/log-error`, encontré que
+`/api/report-contact` era la única que NO exigía `Content-Type:
+application/json` (el guard `isJsonRequest` que sí tienen las otras 4,
+pensado contra `<form enctype="text/plain">` de otro sitio) — inconsistencia
+menor, corregida por consistencia. Probado en vivo: `text/plain` ahora
+devuelve 415, JSON real sigue funcionando igual. `npm test` (253/253) y
+`npm run build` sin errores después del cambio.
+
 ## -13. RESUELTO (2026-08-08): 3 huecos reales de autorización en Supabase — la migración ya se corrió
 
 **Qué encontré (auditoría adversarial):** revisando cada policy RLS y
