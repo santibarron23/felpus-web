@@ -2544,6 +2544,18 @@ export default function FelpusMatcher() {
                 {fieldErrors.fotos && (
                   <p className="text-[11px] mb-1.5" style={{ color: C.red }}>{fieldErrors.fotos}</p>
                 )}
+                {/* Pedido del usuario (2026-08-10): evitar que se suban
+                    carteles/flyers ya armados o imágenes generadas en vez de
+                    fotos reales — no hay forma confiable de detectar esto
+                    automáticamente sin arriesgar rechazar fotos reales (el
+                    peor error posible acá), así que la primera capa es
+                    simplemente pedirlo claro ANTES de que alguien elija un
+                    archivo. El resto de las capas ya existían: denunciar
+                    "Es falsa o engañosa" (ver REPORT_FLAG_REASONS en
+                    matching.js) y el panel de admin. */}
+                <p className="text-[11px] mb-1.5" style={{ color: C.muted }}>
+                  Una foto real de la mascota, tal cual es — no un cartel armado ni una imagen generada.
+                </p>
                 <input
                   ref={fileInputRef}
                   type="file"
