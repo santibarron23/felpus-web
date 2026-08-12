@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { Inter, Baloo_2, JetBrains_Mono } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import ServiceWorkerRegister from "../components/felpus/ServiceWorkerRegister";
 import { ThemeProvider } from "../components/felpus/ThemeProvider";
@@ -171,6 +172,18 @@ export default async function RootLayout({ children }) {
           <ServiceWorkerRegister />
           {children}
         </ThemeProvider>
+        {/* Vercel Web Analytics (2026-08-10, a pedido del usuario para poder
+            ver de dónde viene el tráfico de un lanzamiento real): gratis en
+            el plan Hobby, sin cookies, no pide consentimiento. En producción
+            en Vercel, este componente sirve su propio script y manda las
+            vistas de página vía rutas del mismo dominio (/_vercel/insights/*
+            — no un dominio externo), así que no necesita agregar nada al
+            CSP de acá arriba. En local (npm run dev) queda inerte a
+            propósito (así lo documenta la librería) — no hay nada que
+            verificar en el navegador local, solo en producción. Todavía
+            falta un paso manual fuera del código: activarlo en el dashboard
+            de Vercel (Project → Analytics → Enable). */}
+        <Analytics />
       </body>
     </html>
   );
