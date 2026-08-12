@@ -12,7 +12,11 @@ const csp = [
   // por el dominio de Supabase, que es justo lo que este SDK vino a evitar.
   // 'unsafe-eval' solo en desarrollo: el hot-reload de Next.js (webpack) lo
   // necesita para funcionar; el build de producción no usa eval().
-  `script-src 'self' 'unsafe-inline' ${isDev ? "'unsafe-eval' " : ""}https://maps.googleapis.com https://accounts.google.com`,
+  // googletagmanager.com (2026-08-10, Google Analytics 4 vía
+  // @next/third-parties/google, a pedido del usuario): ese paquete carga
+  // gtag.js desde ese dominio — sin esto acá se repite el mismo bloqueo
+  // silencioso que ya se documentó para accounts.google.com más arriba.
+  `script-src 'self' 'unsafe-inline' ${isDev ? "'unsafe-eval' " : ""}https://maps.googleapis.com https://accounts.google.com https://www.googletagmanager.com`,
   // La app usa mucho style={{...}} inline (atributos style="..."), así que
   // style-src necesita 'unsafe-inline' — si no, se rompe todo el diseño.
   // accounts.google.com: hoja de estilos que carga el propio script de
@@ -40,7 +44,11 @@ const csp = [
   // accounts.google.com acá también: Google Identity Services hace sus
   // propios pedidos (fetch/FedCM) contra ese origen para pedir/emitir el ID
   // token, además de la sola carga inicial del script (ver script-src).
-  `connect-src 'self' data: https://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://places.googleapis.com https://accounts.google.com${isDev ? " ws://localhost:* http://localhost:*" : ""}`,
+  // google-analytics.com/googletagmanager.com (GA4, ver script-src): gtag.js
+  // manda los eventos de medición (vistas de página, etc.) a esos dos
+  // dominios — sin esto en connect-src, el script carga bien pero cada
+  // evento se pierde en silencio, sin ningún aviso salvo en la consola.
+  `connect-src 'self' data: https://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://places.googleapis.com https://accounts.google.com https://www.google-analytics.com https://www.googletagmanager.com${isDev ? " ws://localhost:* http://localhost:*" : ""}`,
   "frame-src 'self' https://accounts.google.com",
   "object-src 'none'",
   "base-uri 'self'",

@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { Inter, Baloo_2, JetBrains_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import { GoogleAnalytics } from "@next/third-parties/google";
 import "./globals.css";
 import ServiceWorkerRegister from "../components/felpus/ServiceWorkerRegister";
 import { ThemeProvider } from "../components/felpus/ThemeProvider";
@@ -184,6 +185,17 @@ export default async function RootLayout({ children }) {
             falta un paso manual fuera del código: activarlo en el dashboard
             de Vercel (Project → Analytics → Enable). */}
         <Analytics />
+        {/* Google Analytics 4 (2026-08-10, a pedido del usuario — además de
+            Vercel Analytics de arriba, GA4 da desglose de campañas/UTM y
+            vistas en tiempo real). gaId condicional: si algún día se corre
+            sin NEXT_PUBLIC_GA_MEASUREMENT_ID configurada (ej. un fork, un
+            entorno de staging sin esa env var todavía), el componente
+            simplemente no se monta en vez de mandar "G-undefined" a
+            Google. Mismo criterio que ya usa GoogleMapsScript/PlacesScript
+            con su propia apiKey. */}
+        {process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID && (
+          <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID} />
+        )}
       </body>
     </html>
   );
