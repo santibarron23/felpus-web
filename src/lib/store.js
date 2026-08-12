@@ -1,5 +1,4 @@
 import { supabase } from "./supabaseClient";
-import { computeHistogram, makePlaceholderSvg, normalizeNickname } from "./matching";
 import { logError } from "./log";
 
 const REPORTS_TABLE = "reports";
@@ -358,8 +357,11 @@ export async function adminFetchMetrics() {
 
 export async function createReport(report) {
   // Acepta tanto el formato nuevo (report.fotos: hasta 3 fotos) como el
-  // formato de un solo dataUrl que sigue usando el sembrado de datos de
-  // ejemplo (seedIfEmpty).
+  // formato legado de un solo dataUrl (report.foto/report.hist) — ya no
+  // lo genera ningún camino real de la app (el sembrado de datos de
+  // ejemplo que lo usaba, seedIfEmpty, se quitó — ver el comentario junto
+  // a donde vivía, más abajo en este archivo), pero se deja el soporte
+  // por si un test o un caller externo todavía lo pasa así.
   const fotosInput = report.fotos?.length
     ? report.fotos
     : [{ dataUrl: report.foto, hist: report.hist, embedding: report.embedding || null }];
@@ -725,58 +727,21 @@ export async function sendHeart(contributorId) {
 }
 
 // ---------------------------------------------------------------------------
-// Datos de ejemplo para que la app no arranque vacía la primera vez.
-// Se insertan una sola vez, sólo si la tabla reports está vacía.
+// seedIfEmpty() vivía acá — sembraba reportes y colaboradores de ejemplo la
+// primera vez que la tabla estaba vacía, con un "lock" en contributors para
+// no duplicar si dos personas abrían la app al mismo tiempo.
+//
+// Control integral (2026-08-10): quedó rota (y se llamaba en CADA carga de
+// la home, sin excepción) desde que se endureció contributors_insert_own
+// (`auth.uid()::text = id`, ver schema.sql) — la fila de lock y los
+// colaboradores de ejemplo usan ids derivados de nickname, no un
+// auth.uid() real, así que ese insert nunca puede pasar la policy para un
+// visitante sin sesión. El error se atrapaba en silencio (lockError
+// truthy → return), pero el pedido HTTP fallido (401) se disparaba antes
+// de eso igual, en cada visita — verificado en vivo contra felpus.com. Se
+// quita en vez de "arreglarse" porque ya no hace falta: la base tiene
+// contenido real (reportes, reencuentros, colaboradores) desde hace rato.
+// Si en el futuro hace falta poblar una base nueva/de demo, tiene que
+// hacerse server-side con la service role key (mismo patrón que
+// create-report), no desde un cliente anónimo — la RLS ya no lo permite.
 // ---------------------------------------------------------------------------
-const SEED_DEFS = [
-  { tipo: "perdida", especie: "perro", nombre: "Rocky", color: "marrón y blanco", tamano: "mediano", zona: "Palermo", lat: -34.588, lng: -58.43, fecha: "2026-07-20", descripcion: "Perro mediano marrón con manchas blancas, collar azul, muy sociable. Se perdió cerca de Plaza Serrano.", nickname: "Vecina de Palermo", bg: "#9d7957", fg: "#f6eee1" },
-  { tipo: "encontrada", especie: "perro", nombre: "", color: "marrón claro y blanco", tamano: "mediano", zona: "Palermo", lat: -34.585, lng: -58.432, fecha: "2026-07-22", descripcion: "Encontramos un perro mediano marrón claro con manchas blancas, collar celeste, deambulando cerca de Plaza Serrano.", nickname: "Kiosco Don Raúl", bg: "#8f6a48", fg: "#f6eee1" },
-  { tipo: "perdida", especie: "gato", nombre: "Mishi", color: "negro", tamano: "chico", zona: "Recoleta", lat: -34.588, lng: -58.393, fecha: "2026-07-18", descripcion: "Gato pequeño completamente negro, muy asustadizo, se escapó por el balcón en Recoleta.", nickname: "Fam. Ibarra", bg: "#2b1b12", fg: "#e4661e" },
-  { tipo: "encontrada", especie: "gato", nombre: "", color: "gris atigrado", tamano: "chico", zona: "Belgrano", lat: -34.562, lng: -58.456, fecha: "2026-07-23", descripcion: "Gata chica gris atigrada encontrada en Belgrano, parece tener dueño, muy mansa.", nickname: "Portería Belgrano", bg: "#8a8a8a", fg: "#2b1b12" },
-  { tipo: "encontrada", especie: "perro", nombre: "", color: "negro", tamano: "grande", zona: "Recoleta", lat: -34.589, lng: -58.395, fecha: "2026-07-19", descripcion: "Perro grande negro sin collar, encontrado cerca del cementerio de Recoleta, parece perdido hace días.", nickname: "Vecina de Palermo", bg: "#2b1b12", fg: "#f0483a" },
-];
-
-export async function seedIfEmpty() {
-  // Antes de sembrar los datos de ejemplo, "reclamamos" un lock atómico.
-  // Esto evita que se sembren duplicados si el efecto que llama a esta
-  // función se dispara dos veces (pasa en desarrollo con React StrictMode,
-  // o si dos personas abren la app al mismo tiempo por primera vez).
-  const { error: lockError } = await supabase
-    .from(CONTRIBUTORS_TABLE)
-    .insert({ id: "__seed_lock__", nickname: "seed-lock", points: 0, reportes: 0, reencuentros: 0 });
-
-  if (lockError) {
-    // Ya existe el lock: alguien más ya sembró los datos (o lo está haciendo
-    // en este mismo instante). No hacemos nada más.
-    return;
-  }
-
-  for (const s of SEED_DEFS) {
-    try {
-      const svg = makePlaceholderSvg(s.especie, s.bg, s.fg);
-      const hist = await computeHistogram(svg);
-      const id = `seed-${s.especie}-${s.tipo}-${Math.random().toString(36).slice(2, 8)}`;
-      const { bg, fg, ...rest } = s;
-      await createReport({ ...rest, id, foto: svg, hist });
-    } catch (e) {
-      logError("No se pudo insertar un reporte de ejemplo", e);
-    }
-  }
-
-  const seedUsers = [
-    { nickname: "Vecina de Palermo", points: 25, reportes: 2, reencuentros: 0 },
-    { nickname: "Kiosco Don Raúl", points: 15, reportes: 1, reencuentros: 0 },
-    { nickname: "Fam. Ibarra", points: 10, reportes: 1, reencuentros: 0 },
-  ];
-  for (const u of seedUsers) {
-    try {
-      const id = normalizeNickname(u.nickname);
-      const { data: existing } = await supabase.from(CONTRIBUTORS_TABLE).select("id").eq("id", id).maybeSingle();
-      if (!existing) {
-        await supabase.from(CONTRIBUTORS_TABLE).insert({ id, ...u, updated_at: new Date().toISOString() });
-      }
-    } catch (e) {
-      logError("No se pudo insertar un contribuyente de ejemplo", e);
-    }
-  }
-}

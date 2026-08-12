@@ -98,7 +98,6 @@ import {
   awardPoints as awardPointsRemote,
   sendHeart,
   bumpStreak,
-  seedIfEmpty,
   flagReport,
   adminListAllReports,
   adminDeleteReport,
@@ -1251,7 +1250,6 @@ export default function FelpusMatcher() {
   const loadAll = useCallback(async () => {
     setLoadingReports(true);
     try {
-      await seedIfEmpty();
       const items = await fetchReports();
       setReports(items);
       setLoadError(false);
