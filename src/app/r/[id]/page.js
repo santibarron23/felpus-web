@@ -6,12 +6,25 @@ import { SITE_URL } from "../../../lib/site";
 // de src/lib/supabaseClient.js — ese está armado para persistir sesión en
 // el navegador, algo que no aplica ni hace falta acá). Es una sola lectura
 // pública, ya permitida por la policy "reports_select_all".
+// Columnas explícitas, NO "select=*": desde que se endureció el acceso de
+// la anon key a "reports" (revoke select on reports from anon,
+// authenticated; grant select (columna, columna, ...) — ver schema.sql),
+// pedir "*" incluye columnas que esa key ya no tiene permiso de leer
+// (contacto_whatsapp/contacto_email, nunca estuvieron en la lista) y
+// Postgres rechaza el SELECT completo con un 401, no solo esas columnas.
+// Bug real encontrado en vivo (2026-08-10): esto rompía la meta etiqueta
+// Open Graph de CADA reporte compartido — al fallar el fetch, la página
+// caía al fallback genérico y Facebook/WhatsApp mostraban el banner de la
+// marca en vez de la foto real de la mascota. Esta lista trae solo lo que
+// generateMetadata()/el JSON-LD de abajo realmente usan.
+const REPORT_OG_COLUMNS = "id,tipo,especie,nombre,zona,descripcion,foto_url,resuelto,creado_en";
+
 async function fetchReport(id) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) return null;
   try {
-    const res = await fetch(`${url}/rest/v1/reports?id=eq.${encodeURIComponent(id)}&select=*`, {
+    const res = await fetch(`${url}/rest/v1/reports?id=eq.${encodeURIComponent(id)}&select=${REPORT_OG_COLUMNS}`, {
       headers: { apikey: key, Authorization: `Bearer ${key}` },
       next: { revalidate: 60 },
     });
