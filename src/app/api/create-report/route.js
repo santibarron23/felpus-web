@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { logError } from "../../../lib/log";
 import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
+import { validateReportContact } from "../../../lib/reportValidation";
 
 // Corre en el servidor — nunca en el navegador, así que la service role key
 // nunca queda expuesta al público.
@@ -60,6 +61,15 @@ export async function POST(request) {
   if (!row || typeof row !== "object" || !row.id) {
     return Response.json({ error: "Falta el reporte a publicar." }, { status: 400 });
   }
+
+  // Antes del rate limit a propósito: un error de tipeo en el contacto no
+  // debería consumirle el cupo por hora a alguien real. Ver
+  // lib/reportValidation.js para el porqué de esta validación.
+  const contact = validateReportContact(row);
+  if (!contact.ok) {
+    return Response.json({ error: contact.error }, { status: 400 });
+  }
+  row = { ...row, contacto_whatsapp: contact.whatsapp, contacto_email: contact.email };
 
   let realUserId = null;
   const authHeader = request.headers.get("authorization");

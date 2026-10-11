@@ -9,10 +9,13 @@
 // Tailwind (si el problema fuera de build/CSS, esto igual debe verse bien).
 import { useEffect } from "react";
 import { logError } from "../lib/log";
+import { reloadOnceForStaleDeploy } from "../lib/staleDeploy";
 
 export default function GlobalError({ error, reset }) {
   useEffect(() => {
     logError("Error no capturado en el layout raíz", error);
+    // Mismo caso que error.js — ver lib/staleDeploy.js.
+    reloadOnceForStaleDeploy(error);
   }, [error]);
 
   return (

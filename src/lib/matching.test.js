@@ -327,8 +327,15 @@ describe("scoreMatch", () => {
       // de tolerancia todavía mirara creadoEn (ambos "ahora"), el score de
       // ubicación sería idéntico en los dos casos; si mira "fecha", el caso
       // con más días transcurridos debería tolerar la distancia mejor.
+      // Fechas RELATIVAS a hoy, no fijas (revisión 2026-10-11): la versión
+      // anterior usaba "2026-07-20"/"2026-08-08" escritas a mano asumiendo
+      // que hoy era agosto — al pasar el tiempo, AMBOS casos superaban el
+      // tope de RADIO_DIAS_TOPE (14 días) y daban el mismo puntaje, así que
+      // el test empezó a fallar solo, sin ningún cambio de código. Los 10 y
+      // 1 días de acá quedan siempre por debajo de ese tope.
+      const diasAtras = (n) => new Date(Date.now() - n * 24 * 3600 * 1000).toISOString().slice(0, 10);
       const perdidaHaceRato = makeReport({
-        fecha: "2026-07-20", // ~20 días antes de la fecha del "encontrada"
+        fecha: diasAtras(10),
         creadoEn: Date.now(),
         lat: -34.588,
         lng: -58.43,
@@ -336,14 +343,14 @@ describe("scoreMatch", () => {
       const encontradaHoy = makeReport({
         id: "r2",
         tipo: "encontrada",
-        fecha: "2026-08-09",
+        fecha: diasAtras(0),
         creadoEn: Date.now(),
         lat: -34.593,
         lng: -58.436,
       });
       const perdidaRecien = makeReport({
         id: "r3",
-        fecha: "2026-08-08", // 1 día antes
+        fecha: diasAtras(1),
         creadoEn: Date.now(),
         lat: -34.588,
         lng: -58.43,

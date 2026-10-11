@@ -11,6 +11,7 @@ import { RefreshCw } from "lucide-react";
 import Mascot from "../components/Mascot";
 import { useTheme } from "../components/felpus/ThemeProvider";
 import { logError } from "../lib/log";
+import { reloadOnceForStaleDeploy } from "../lib/staleDeploy";
 
 export default function Error({ error, reset }) {
   // A diferencia de global-error.js (que reemplaza <html>/<body> entero y
@@ -21,6 +22,9 @@ export default function Error({ error, reset }) {
   const C = useTheme();
   useEffect(() => {
     logError("Error no capturado en un segmento de la app", error);
+    // Pestaña abierta desde antes de un deploy (ver lib/staleDeploy.js):
+    // se recarga sola una vez en vez de dejar a la persona en esta pantalla.
+    reloadOnceForStaleDeploy(error);
   }, [error]);
 
   return (

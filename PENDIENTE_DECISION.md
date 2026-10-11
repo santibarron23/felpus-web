@@ -1,5 +1,42 @@
 # Decisiones pendientes — requieren acción o información tuya
 
+## -16. Revisión a 2 meses de producción (2026-10-11)
+
+**Corregido:**
+1. **CRÍTICO — `next` 15.5.23 → 15.5.27**: RCE sin autenticación en el
+   optimizador de imágenes con AVIF (GHSA-2xp9-vwfh-vxw4) + cache poisoning
+   de SSG/ISR. Parche dentro de la misma versión menor. También arrastra
+   `sharp` 0.35.5 (libheif/librsvg). 17 → 11 vulnerabilidades, 0 críticas.
+2. **`remotePatterns` abierto a cualquier `*.supabase.co`**: `/_next/image`
+   funcionaba como proxy/optimizador de imágenes para CUALQUIER proyecto de
+   Supabase (consumo de cuota de Vercel + superficie del CVE de arriba).
+   Ahora solo el host real + bucket `felpus-photos`. Verificado: foto propia
+   200, otro proyecto 400, otro bucket 400.
+3. **`error_logs` perdía la causa de los errores de Supabase**: el logger
+   solo reconocía `instanceof Error`, y postgrest-js devuelve objetos planos.
+   Caso real: "No se pudieron cargar los reportes" (iPhone, 9/10) sin ningún
+   detalle. Ahora conserva message/code/details/hint.
+4. **"Loading chunk failed" tras un deploy** (caso real en error_logs, mismo
+   síntoma que el "lista vacía" de agosto): la página se recarga sola una
+   vez, con guardia anti-bucle de 30s.
+5. **`/api/create-report` aceptaba reportes sin contacto** (solo lo exigía el
+   formulario). Ahora el servidor exige WhatsApp (8-15 dígitos) o email.
+6. Test con fecha vencida (`locationReferenceKm`): fallaba solo por el paso
+   del tiempo; ahora usa fechas relativas a hoy.
+
+**Sin cambio, para que decidas vos:**
+- **Datos de ejemplo**: siguen los 10 reportes `seed-*` (sin contacto: quien
+  los encuentra no puede escribirle a nadie) + 4 filas en `contributors`.
+  También quedan 2 de pruebas mías: `diag-1785431328791` (oculto) y las
+  denuncias desde `::1`. El borrado lo bloqueó el clasificador de permisos
+  en agosto — necesita tu OK explícito o que lo corras vos.
+- **Reportes viejos activos**: 13 de los 16 activos tienen más de 50 días.
+  Sugerencia de producto: preguntarle al dueño "¿sigue perdida?" a los 30
+  días y archivar si no responde.
+- **Vulnerabilidades restantes (11)**: todas de herramientas de build/lint
+  (Tailwind 3, ESLint) o el `postcss` interno de Next — no corren en el sitio
+  en vivo. Arreglarlas exige Tailwind 4 y Next 16 (migraciones mayores).
+
 ## -15. RESUELTO (2026-08-09): Auditoría integral de seguridad server-authoritative — verificado en vivo
 
 **Contexto:** a pedido explícito, auditoría dirigida al principio "el

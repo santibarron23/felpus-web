@@ -1,5 +1,28 @@
 const isDev = process.env.NODE_ENV === "development";
 
+// Revisión de seguridad (2026-10-11): remotePatterns permitía
+// "**.supabase.co" — o sea, CUALQUIER proyecto de Supabase del mundo, no
+// solo el de Felpus. Eso convertía /_next/image en un proxy/optimizador de
+// imágenes abierto: cualquiera podía hostear una imagen en su propio
+// proyecto de Supabase y hacerla procesar por el optimizador de felpus.com
+// (consumiendo la cuota de optimización de imágenes del plan de Vercel, y
+// exponiendo ese procesamiento a archivos arbitrarios — justo la superficie
+// de GHSA-2xp9-vwfh-vxw4, RCE en el optimizador con AVIF, parcheada en
+// next 15.5.24). Ahora se restringe al host real del proyecto y al bucket
+// de fotos, que es de donde salen el 100% de las fotos (verificado contra
+// los reportes reales en producción). Si falta la env var (ej. un build
+// sin configurar), cae al patrón amplio anterior en vez de romper el build.
+const supabaseHost = (() => {
+  try {
+    return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).hostname;
+  } catch {
+    return null;
+  }
+})();
+const supabasePhotosPattern = supabaseHost
+  ? { protocol: "https", hostname: supabaseHost, pathname: "/storage/v1/object/public/felpus-photos/**" }
+  : { protocol: "https", hostname: "**.supabase.co" };
+
 const csp = [
   "default-src 'self'",
   // Google Maps inyecta sus propios <script> dinámicamente; los fonts de
@@ -75,10 +98,7 @@ const nextConfig = {
   },
   images: {
     remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "**.supabase.co",
-      },
+      supabasePhotosPattern,
       // Avatar de Google (googleAvatar en useAuth.js) — mismo host que ya
       // está permitido en el CSP img-src de acá arriba, ahora también
       // habilitado para next/image.
