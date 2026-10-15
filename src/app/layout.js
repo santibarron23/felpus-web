@@ -29,7 +29,7 @@ const baloo2 = Baloo_2({ subsets: ["latin"], weight: ["600", "700", "800"], vari
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], weight: ["500", "700"], variable: "--font-jetbrains-mono", display: "swap" });
 const TITLE = "Felpus - Buscador inteligente de mascotas perdidas y encontradas";
 const DESCRIPTION =
-  "Reportá una mascota perdida o encontrada con foto y descripción. Felpus busca coincidencias automáticamente por imagen, texto y zona.";
+  "Reportá gratis una mascota perdida o encontrada en Salta y toda Argentina. Felpus busca coincidencias automáticamente por foto, descripción y zona.";
 
 export const metadata = {
   metadataBase: new URL(SITE_URL),
