@@ -1,4 +1,5 @@
 import { SITE_URL } from "../lib/site";
+import { CITIES } from "../lib/cities";
 
 // Cada reporte activo tiene su propia URL indexable (/r/[id]) — sin esto el
 // sitemap solo listaba el home y buscadores no podían descubrir las
@@ -34,6 +35,13 @@ export default async function sitemap() {
       changeFrequency: "daily",
       priority: 1,
     },
+    // Páginas locales (lib/cities.js): el contenido cambia con cada reporte.
+    ...Object.keys(CITIES).map((slug) => ({
+      url: `${SITE_URL}/mascotas-perdidas/${slug}`,
+      lastModified: new Date(),
+      changeFrequency: "daily",
+      priority: 0.9,
+    })),
     {
       url: `${SITE_URL}/privacidad`,
       lastModified: new Date("2026-08-06"),

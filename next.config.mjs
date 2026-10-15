@@ -52,7 +52,7 @@ const csp = [
   "font-src 'self' https://fonts.gstatic.com",
   // data:/blob: para las fotos redimensionadas en canvas y los placeholders
   // SVG generados en el cliente; googleusercontent.com para el avatar de Google.
-  "img-src 'self' data: blob: https://*.supabase.co https://maps.gstatic.com https://maps.googleapis.com https://*.googleusercontent.com",
+  "img-src 'self' data: blob: https://*.supabase.co https://maps.gstatic.com https://maps.googleapis.com https://*.googleusercontent.com https://*.google-analytics.com https://www.googletagmanager.com",
   // places.googleapis.com es un dominio DISTINTO de maps.googleapis.com: lo
   // usa el autocompletado de zona (PlaceAutocompleteElement, API nueva de
   // Places) para sus pedidos de sugerencias — sin esto en connect-src, el
@@ -71,7 +71,11 @@ const csp = [
   // manda los eventos de medición (vistas de página, etc.) a esos dos
   // dominios — sin esto en connect-src, el script carga bien pero cada
   // evento se pierde en silencio, sin ningún aviso salvo en la consola.
-  `connect-src 'self' data: https://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://places.googleapis.com https://accounts.google.com https://www.google-analytics.com https://www.googletagmanager.com${isDev ? " ws://localhost:* http://localhost:*" : ""}`,
+  // *.google-analytics.com (2026-10-15): gtag.js manda los eventos a
+  // region1.google-analytics.com (subdominio regional), no a www. — con
+  // solo "www." el CSP bloqueaba TODOS los page_view (visto en consola), así
+  // que GA4 no estaba midiendo nada.
+  `connect-src 'self' data: https://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://places.googleapis.com https://accounts.google.com https://www.google-analytics.com https://*.google-analytics.com https://www.googletagmanager.com${isDev ? " ws://localhost:* http://localhost:*" : ""}`,
   "frame-src 'self' https://accounts.google.com",
   "object-src 'none'",
   "base-uri 'self'",

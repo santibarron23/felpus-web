@@ -4790,6 +4790,13 @@ export default function FelpusMatcher() {
             resto navega con goToTab(), sin cambiar de ruta), por eso van acá
             en vez de ocupar un lugar en la bottom nav de 4 ítems. */}
         <p className="text-[10px] flex items-center gap-1.5 justify-center pt-0.5" style={{ color: C.muted }}>
+          {/* Link interno a la página local de SEO (/mascotas-perdidas/salta):
+              sin un enlace desde el home, Google la descubre solo por el
+              sitemap y le da mucho menos peso. */}
+          <Link href="/mascotas-perdidas/salta" className="underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded">
+            Mascotas perdidas en Salta
+          </Link>
+          <span aria-hidden="true">·</span>
           <Link href="/privacidad" className="underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded">
             Política de Privacidad
           </Link>
