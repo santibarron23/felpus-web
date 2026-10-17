@@ -7,7 +7,7 @@ import ServiceWorkerRegister from "../components/felpus/ServiceWorkerRegister";
 import { ThemeProvider } from "../components/felpus/ThemeProvider";
 import { C, CD } from "../lib/theme";
 import { safeJsonLdString } from "../lib/jsonLd";
-import { SITE_URL } from "../lib/site";
+import { SITE_URL, SOCIAL_LINKS } from "../lib/site";
 
 // Self-hosteadas por next/font en vez de @import en globals.css (como
 // estaban antes, junto con Montserrat) — @import agrega una petición extra
@@ -81,6 +81,14 @@ const jsonLd = {
   url: SITE_URL,
   description: DESCRIPTION,
   inLanguage: "es-AR",
+  publisher: {
+    "@type": "Organization",
+    name: "Felpus",
+    url: SITE_URL,
+    logo: `${SITE_URL}/assets/icon-512.png`,
+    // Perfiles oficiales: ayuda a Google a asociar las redes con el sitio.
+    sameAs: Object.values(SOCIAL_LINKS).filter(Boolean),
+  },
 };
 
 // Corre de forma síncrona, ANTES de que React hidrate, y escribe

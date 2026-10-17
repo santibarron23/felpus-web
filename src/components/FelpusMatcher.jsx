@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import SocialLinks from "./felpus/SocialLinks";
 import {
   PawPrint,
   Search,
@@ -4780,6 +4781,7 @@ export default function FelpusMatcher() {
       />
 
       <footer className="max-w-2xl mx-auto px-4 pb-24 pt-2 space-y-1.5">
+        <SocialLinks className="pb-1" />
         <p className="text-[11px] font-semibold flex items-center gap-1 justify-center" style={{ color: C.greenDark }}>
           <PartyPopper className="w-3.5 h-3.5" /> {resueltas.length} mascotas reencontradas gracias a la comunidad
         </p>
