@@ -15,6 +15,6 @@ export const SITE_URL = "https://felpus.com";
 // Redes sociales oficiales de Felpus — las usan los footers (SocialLinks.jsx)
 // y el JSON-LD (sameAs). Una red en null no se muestra en ningún lado.
 export const SOCIAL_LINKS = {
-  instagram: null,
+  instagram: "https://www.instagram.com/felpusapp/",
   facebook: "https://www.facebook.com/profile.php?id=61558051041773",
 };
