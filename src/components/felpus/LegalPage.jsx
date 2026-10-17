@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
+import SocialLinks from "./SocialLinks";
 
 // Layout compartido por /privacidad y /terminos — mismo lenguaje visual que
 // el resto de Felpus (header con logo + botón "volver", tarjeta felpus-display,
@@ -73,7 +74,8 @@ export default function LegalPage({ title, updated, otherHref, otherLabel, child
         )}
       </main>
 
-      <footer className="max-w-2xl mx-auto px-4 pb-10 pt-2">
+      <footer className="max-w-2xl mx-auto px-4 pb-10 pt-2 space-y-2">
+        <SocialLinks />
         <p className="text-[11px] text-center" style={{ color: C.muted }}>
           Felpus ·{" "}
           <a href="mailto:contacto.felpus@gmail.com" className="underline underline-offset-2">

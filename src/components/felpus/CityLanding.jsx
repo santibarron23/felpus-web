@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ArrowLeft, MapPin, PawPrint, Search, Share2, Stethoscope, Camera } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
+import SocialLinks from "./SocialLinks";
 
 // Vista de /mascotas-perdidas/<ciudad> — mismo lenguaje visual que
 // LegalPage.jsx (header con logo, tarjetas felpus-display, paleta vía
@@ -212,7 +213,8 @@ export default function CityLanding({ city, perdidas, encontradas, reencuentros,
         </div>
       </main>
 
-      <footer className="max-w-3xl mx-auto px-4 pb-10 pt-2">
+      <footer className="max-w-3xl mx-auto px-4 pb-10 pt-2 space-y-2">
+        <SocialLinks />
         <p className="text-[11px] text-center" style={{ color: C.muted }}>
           Felpus · Buscador de mascotas perdidas y encontradas en {n} ·{" "}
           <Link href="/privacidad" className="underline underline-offset-2">Privacidad</Link> ·{" "}
