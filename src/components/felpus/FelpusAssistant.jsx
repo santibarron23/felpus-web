@@ -1,0 +1,848 @@
+"use client";
+
+// Asistente Felpus: botón flotante + panel de chat. Habla con /api/chat (la
+// IA corre solo en el servidor) y nunca publica nada por su cuenta: arma un
+// borrador que la persona revisa y corrige acá, y "Revisar y publicar" lo
+// pasa al formulario real de Felpus (onApplyDraft), donde se publica con el
+// botón de siempre. Lo que no necesita IA (bienvenida, preguntas frecuentes,
+// respuestas de respaldo) se resuelve acá mismo, sin costo.
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
+import { PawPrint, X, Send, Camera, Loader2, Pencil, Trash2, ArrowRight, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
+import { useTheme } from "./ThemeProvider";
+import {
+  ASSISTANT_NAME,
+  GREETING,
+  QUICK_ACTIONS,
+  FAQ_TOPICS,
+  FALLBACK_ACTIONS,
+  contextualSuggestions,
+  faqById,
+  fallbackReply,
+} from "../../lib/chatFaq";
+import { emptyDraft, normalizeDraft, isDraftEmpty, composeDraftDescription, draftToFormFields, MAX_USER_CHARS } from "../../lib/chatbot";
+import { COLOR_OPTIONS, TAMANO_OPTIONS, EDAD_OPTIONS, MAX_FOTOS, resizeImageFile, computeHistogram, formatFechaAR } from "../../lib/matching";
+import { logError } from "../../lib/log";
+
+const STORAGE_KEY = "felpus_asistente_v1";
+const MAX_STORED_MESSAGES = 40;
+const MAX_FILE_MB = 15;
+const VISION_MAX_DIM = 640;
+
+function newId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+// Métricas de producto (GA4, si está configurado — ver layout.js). Solo
+// nombres de eventos y valores no personales: nunca texto de la charla.
+function track(name, params = {}) {
+  try {
+    if (typeof window !== "undefined" && typeof window.gtag === "function") window.gtag("event", name, params);
+  } catch {
+    // sin analytics no pasa nada
+  }
+}
+
+function loadStored() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    return {
+      messages: Array.isArray(data.messages) ? data.messages.filter((m) => m && typeof m.content === "string").slice(-MAX_STORED_MESSAGES) : [],
+      draft: normalizeDraft(data.draft),
+      draftStartedAt: typeof data.draftStartedAt === "number" ? data.draftStartedAt : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveStored(state) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // localStorage lleno o bloqueado: el chat sigue andando, solo no se recuerda
+  }
+}
+
+// Versión chica de la foto para que Claude la mire (menos tokens = menos
+// costo). La foto completa (con marca de agua e histograma) queda para el
+// formulario y el matching.
+function downscaleForVision(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    img.onload = () => {
+      const scale = Math.min(1, VISION_MAX_DIM / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", 0.8));
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
+const greetingMessage = () => ({ id: "greeting", role: "assistant", content: GREETING, local: true, quick: true });
+
+export default function FelpusAssistant({ section = "inicio", openReport = null, onApplyDraft, onOpenReport, onNavigate, publishedToken = 0, openToken = 0 }) {
+  const C = useTheme();
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState(() => [greetingMessage()]);
+  const [draft, setDraft] = useState(emptyDraft);
+  const [draftStartedAt, setDraftStartedAt] = useState(null);
+  const [photos, setPhotos] = useState([]); // [{ dataUrl, hist }] — solo en memoria
+  const [pendingImage, setPendingImage] = useState(null); // versión chica, se manda UNA vez
+  const [processingPhoto, setProcessingPhoto] = useState(false);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+  const fabRef = useRef(null);
+  const inputRef = useRef(null);
+  const listRef = useRef(null);
+  const fileRef = useRef(null);
+  const openedAtRef = useRef(null);
+
+  // Restaurar la charla y el borrador de este dispositivo (después del
+  // montaje: localStorage no existe en el render del servidor).
+  useEffect(() => {
+    const stored = loadStored();
+    if (stored) {
+      if (stored.messages.length) setMessages([greetingMessage(), ...stored.messages.filter((m) => m.id !== "greeting")]);
+      setDraft(stored.draft);
+      setDraftStartedAt(stored.draftStartedAt);
+    }
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    saveStored({
+      // Sin fotos ni tarjetas pesadas: solo texto, para no llenar el almacenamiento.
+      messages: messages.filter((m) => m.id !== "greeting").map(({ id, role, content, local }) => ({ id, role, content, local })),
+      draft,
+      draftStartedAt,
+    });
+  }, [messages, draft, draftStartedAt, hydrated]);
+
+  // Se publicó (en el formulario) un reporte que salió de este chat: el
+  // borrador ya cumplió su función.
+  useEffect(() => {
+    if (!publishedToken) return;
+    setDraft(emptyDraft());
+    setDraftStartedAt(null);
+    setPhotos([]);
+    setPendingImage(null);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: newId(),
+        role: "assistant",
+        local: true,
+        content: "¡Tu reporte quedó publicado! 🐾 Ya podés ver sus posibles coincidencias en la pantalla de resultados. Si necesitás algo más, acá estoy.",
+      },
+    ]);
+  }, [publishedToken]);
+
+  // Apertura pedida desde afuera (ej. "Preguntale al asistente" en una ficha).
+  useEffect(() => {
+    if (openToken) setOpen(true);
+  }, [openToken]);
+
+  useEffect(() => {
+    if (open) {
+      openedAtRef.current = Date.now();
+      track("asistente_abierto", { seccion: section });
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (open && listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+  }, [messages, open, busy, draft]);
+
+  const close = useCallback(() => {
+    setOpen(false);
+    setTimeout(() => fabRef.current?.focus(), 0);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, close]);
+
+  const pushLocal = useCallback((msg) => setMessages((prev) => [...prev, { id: newId(), role: "assistant", local: true, ...msg }]), []);
+
+  const send = useCallback(
+    async (rawText) => {
+      const text = (rawText || "").trim() || (pendingImage ? "Te mando una foto de la mascota." : "");
+      if (!text || busy) return;
+      const image = pendingImage;
+      const userMsg = { id: newId(), role: "user", content: image ? `📷 ${text}` : text, thumb: image ? photos[photos.length - 1]?.dataUrl : null };
+      const nextMessages = [...messages, userMsg];
+      setMessages(nextMessages);
+      setInput("");
+      setPendingImage(null);
+      setBusy(true);
+      track("asistente_mensaje", { seccion: section, con_foto: !!image });
+
+      // Solo la charla real con la IA: la bienvenida, las preguntas
+      // frecuentes y los avisos locales no se mandan (menos tokens).
+      const history = nextMessages.filter((m) => !m.local).map((m) => ({ role: m.role, content: m.content }));
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: history,
+            draft,
+            context: { section, reportId: openReport?.id || null, hasPhoto: photos.length > 0 },
+            image,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const kind = data.code || (res.status === 429 ? "rate_limit" : res.status === 501 || res.status === 503 ? "unavailable" : "error");
+          track("asistente_error", { codigo: kind, status: res.status });
+          if (res.status === 400 && data.error) pushLocal({ content: data.error });
+          else pushLocal({ content: fallbackReply(kind), actions: FALLBACK_ACTIONS });
+          if (image) setPendingImage(image); // no se perdió: se puede reintentar
+          return;
+        }
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: newId(),
+            role: "assistant",
+            content: data.reply,
+            cards: data.matches?.length ? data.matches : data.results?.length ? data.results : null,
+            cardsKind: data.matches?.length ? "matches" : data.results ? "results" : null,
+          },
+        ]);
+        if (data.results) track("asistente_busqueda", { resultados: data.results.length });
+        if (data.matches) track("asistente_coincidencias", { cantidad: data.matches.length });
+        if (data.draft) {
+          setDraft(normalizeDraft(data.draft));
+          if (!draftStartedAt) {
+            setDraftStartedAt(Date.now());
+            track("asistente_borrador_iniciado", { tipo: data.draft.tipo || "" });
+          }
+        }
+      } catch (e) {
+        logError("No se pudo hablar con el asistente", e);
+        track("asistente_error", { codigo: "red" });
+        pushLocal({ content: fallbackReply("error"), actions: FALLBACK_ACTIONS });
+        if (image) setPendingImage(image);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, messages, draft, draftStartedAt, section, openReport, photos, pendingImage, pushLocal]
+  );
+
+  function handleQuick(action) {
+    track("asistente_acceso_rapido", { id: action.id });
+    if (action.faq) {
+      setMessages((prev) => [...prev, { id: newId(), role: "user", local: true, content: action.label }]);
+      pushLocal({ content: "Elegí un tema o escribime tu pregunta:", faqMenu: true });
+      return;
+    }
+    send(action.send);
+  }
+
+  function handleFaq(topic) {
+    track("asistente_faq", { id: topic.id });
+    setMessages((prev) => [...prev, { id: newId(), role: "user", local: true, content: topic.label }]);
+    pushLocal({ content: topic.answer, actions: topic.action ? [topic.action] : null });
+  }
+
+  function handleAction(id) {
+    if (id === "ir-reportar") {
+      onNavigate?.("reportar");
+      close();
+    } else if (id === "ir-explorar") {
+      onNavigate?.("explorar");
+      close();
+    } else if (id === "abrir-faq") {
+      pushLocal({ content: "Elegí un tema:", faqMenu: true });
+    }
+  }
+
+  async function handlePickPhoto(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      pushLocal({ content: "Ese archivo no es una imagen. Probá con una foto." });
+      return;
+    }
+    if (file.size > MAX_FILE_MB * 1024 * 1024) {
+      pushLocal({ content: `La foto pesa demasiado (máximo ${MAX_FILE_MB} MB).` });
+      return;
+    }
+    if (photos.length >= MAX_FOTOS) {
+      pushLocal({ content: `Ya tenés ${MAX_FOTOS} fotos, que es el máximo por reporte.` });
+      return;
+    }
+    setProcessingPhoto(true);
+    try {
+      // Mismo procesamiento que el formulario (resizeImageFile +
+      // computeHistogram): al pasar al formulario, la foto ya va lista
+      // para publicar y para el matching, sin procesarla de nuevo.
+      const dataUrl = await resizeImageFile(file);
+      const hist = await computeHistogram(dataUrl);
+      const vision = await downscaleForVision(dataUrl);
+      setPhotos((prev) => [...prev, { dataUrl, hist }]);
+      setPendingImage(vision);
+      track("asistente_foto");
+      inputRef.current?.focus();
+    } catch (err) {
+      logError("No se pudo procesar la foto del chat", err);
+      pushLocal({ content: "No pude procesar esa foto. Probá con otra." });
+    } finally {
+      setProcessingPhoto(false);
+    }
+  }
+
+  function removePendingPhoto() {
+    setPendingImage(null);
+    setPhotos((prev) => prev.slice(0, -1));
+  }
+
+  function handlePublish() {
+    const fields = draftToFormFields(draft);
+    track("asistente_a_formulario", {
+      con_foto: photos.length > 0,
+      segundos: draftStartedAt ? Math.round((Date.now() - draftStartedAt) / 1000) : null,
+    });
+    onApplyDraft?.({ ...fields, fotos: photos.map((p) => ({ dataUrl: p.dataUrl, hist: p.hist, embedding: null })), startedAt: draftStartedAt });
+    pushLocal({ content: "Listo, te pasé todo al formulario. Revisalo, agregá tu contacto y tocá \"Publicar\". Si querés volver, el chat queda acá." });
+    close();
+  }
+
+  function handleDiscard() {
+    track("asistente_borrador_descartado");
+    setDraft(emptyDraft());
+    setDraftStartedAt(null);
+    setPhotos([]);
+    setPendingImage(null);
+    pushLocal({ content: "Borré el borrador. Si querés empezar de nuevo, contame qué pasó." });
+  }
+
+  function handleReset() {
+    setMessages([greetingMessage()]);
+    setDraft(emptyDraft());
+    setDraftStartedAt(null);
+    setPhotos([]);
+    setPendingImage(null);
+    track("asistente_reiniciado");
+  }
+
+  const suggestions = useMemo(() => contextualSuggestions(section, { hasOpenReport: !!openReport }), [section, openReport]);
+  const showDraft = !isDraftEmpty(draft);
+  const onlyGreeting = messages.length === 1;
+
+  return (
+    <>
+      {!open && (
+        <button
+          ref={fabRef}
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label={`Abrir ${ASSISTANT_NAME}`}
+          aria-expanded={false}
+          className="felpus-assistant-fab fixed right-4 z-40 flex items-center gap-2 rounded-full pl-3 pr-4 h-12 text-white text-sm font-bold shadow-lg transition-transform duration-200 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-4 focus-visible:ring-[var(--felpus-focus)]/40"
+          style={{ background: C.redSolid, bottom: "calc(96px + env(safe-area-inset-bottom, 0px))" }}
+        >
+          <PawPrint className="w-5 h-5" aria-hidden="true" />
+          <span className="hidden sm:inline">Asistente</span>
+          {showDraft && <span className="w-2 h-2 rounded-full bg-white" aria-label="Tenés un borrador sin publicar" />}
+        </button>
+      )}
+
+      {open && (
+        <section
+          role="dialog"
+          aria-modal="false"
+          aria-labelledby="felpus-assistant-title"
+          className="felpus-assistant-panel felpus-sheet-panel fixed z-[75] inset-x-0 bottom-0 top-[6vh] sm:top-auto sm:left-auto sm:right-4 sm:bottom-6 sm:w-[390px] sm:h-[640px] sm:max-h-[calc(100vh-48px)] flex flex-col rounded-t-3xl sm:rounded-3xl shadow-2xl border overflow-hidden"
+          style={{ background: C.surface, borderColor: C.border, color: C.text }}
+        >
+          <header className="flex items-center gap-2.5 px-4 py-3 shrink-0" style={{ background: C.redSolid }}>
+            <span className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center" aria-hidden="true">
+              <PawPrint className="w-5 h-5 text-white" />
+            </span>
+            <div className="flex-1 min-w-0">
+              <h2 id="felpus-assistant-title" className="text-white font-extrabold text-sm leading-tight">
+                {ASSISTANT_NAME}
+              </h2>
+              <p className="text-white/80 text-[11px] leading-tight">Te ayuda a buscar y a reportar</p>
+            </div>
+            {!onlyGreeting && (
+              <button
+                type="button"
+                onClick={handleReset}
+                className="p-2 rounded-full text-white/90 hover:bg-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                aria-label="Empezar una charla nueva"
+                title="Empezar de nuevo"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={close}
+              className="p-2 rounded-full text-white hover:bg-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+              aria-label="Cerrar asistente (la charla queda guardada)"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </header>
+
+          <div ref={listRef} role="log" aria-live="polite" aria-relevant="additions" className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 space-y-3" style={{ background: C.cream }}>
+            {messages.map((m) => (
+              <MessageBubble
+                key={m.id}
+                m={m}
+                C={C}
+                onQuick={handleQuick}
+                onFaq={handleFaq}
+                onAction={handleAction}
+                onOpenReport={(id) => {
+                  track("asistente_ficha_abierta", { desde: m.cardsKind || "" });
+                  // La ficha se abre debajo del panel: se cierra el chat (la
+                  // charla queda guardada) para que se vea.
+                  close();
+                  onOpenReport?.(id);
+                }}
+                disabled={busy}
+              />
+            ))}
+            {showDraft && (
+              <DraftPreview
+                C={C}
+                draft={draft}
+                photos={photos}
+                onChange={(d) => setDraft(normalizeDraft(d))}
+                onPublish={handlePublish}
+                onDiscard={handleDiscard}
+              />
+            )}
+            {busy && (
+              <div className="flex items-center gap-1.5 px-3 py-2.5 rounded-2xl rounded-bl-md w-fit" style={{ background: C.surface }}>
+                <span className="sr-only">El asistente está escribiendo…</span>
+                {[0, 1, 2].map((i) => (
+                  <span key={i} className="felpus-typing-dot w-1.5 h-1.5 rounded-full" style={{ background: C.muted, animationDelay: `${i * 0.15}s` }} aria-hidden="true" />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <form
+            className="shrink-0 border-t px-3 pt-2.5"
+            style={{ borderColor: C.border, background: C.surface, paddingBottom: "calc(10px + env(safe-area-inset-bottom, 0px))" }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              send(input);
+            }}
+          >
+            {/* Ayuda según dónde está la persona (sección o ficha abierta). */}
+            {suggestions.length > 0 && !busy && (
+              <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+                {suggestions.map((sg) => (
+                  <span key={sg.id} className="shrink-0 whitespace-nowrap">
+                    <Chip C={C} onClick={() => handleQuick(sg)}>
+                      {sg.label}
+                    </Chip>
+                  </span>
+                ))}
+              </div>
+            )}
+            {(pendingImage || processingPhoto) && (
+              <div className="flex items-center gap-2 mb-2 text-xs" style={{ color: C.muted }}>
+                {processingPhoto ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> Preparando la foto…
+                  </>
+                ) : (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element -- data URL local, no pasa por el optimizador */}
+                    <img src={pendingImage} alt="Foto lista para enviar" className="w-10 h-10 rounded-lg object-cover" />
+                    <span className="flex-1">Foto lista: se manda con tu próximo mensaje.</span>
+                    <button type="button" onClick={removePendingPhoto} className="p-1 rounded-full" aria-label="Quitar la foto" style={{ color: C.muted }}>
+                      <X className="w-4 h-4" />
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+            <div className="flex items-end gap-2">
+              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePickPhoto} tabIndex={-1} aria-hidden="true" />
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={busy || processingPhoto || !!pendingImage}
+                className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center border disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                style={{ borderColor: C.border, color: C.text, background: C.surfaceSubtle }}
+                aria-label="Adjuntar una foto de la mascota"
+                title="Adjuntar foto"
+              >
+                <Camera className="w-5 h-5" />
+              </button>
+              <label htmlFor="felpus-assistant-input" className="sr-only">
+                Escribile al asistente
+              </label>
+              <textarea
+                id="felpus-assistant-input"
+                ref={inputRef}
+                rows={1}
+                value={input}
+                maxLength={MAX_USER_CHARS}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    send(input);
+                  }
+                }}
+                placeholder="Contame qué pasó…"
+                className="flex-1 resize-none rounded-2xl border px-3.5 py-2.5 text-sm max-h-28 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                style={{ borderColor: C.border, background: C.surfaceSubtle, color: C.text }}
+              />
+              <button
+                type="submit"
+                disabled={busy || (!input.trim() && !pendingImage)}
+                className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center text-white disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                style={{ background: C.redSolid }}
+                aria-label="Enviar mensaje"
+              >
+                {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+              </button>
+            </div>
+            <p className="text-[10px] mt-1.5 text-center" style={{ color: C.muted }}>
+              Asistente con IA: puede equivocarse. No compartas teléfonos ni direcciones en el chat.
+            </p>
+          </form>
+        </section>
+      )}
+    </>
+  );
+}
+
+function Chip({ C, children, onClick, disabled }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="text-left text-[13px] font-semibold rounded-full px-3.5 py-2 border transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+      style={{ background: C.surface, borderColor: C.border, color: C.red }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MessageBubble({ m, C, onQuick, onFaq, onAction, onOpenReport, disabled }) {
+  const isUser = m.role === "user";
+  return (
+    <div className={`felpus-fadein flex flex-col ${isUser ? "items-end" : "items-start"} gap-2`}>
+      <div
+        className={`max-w-[88%] px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words ${isUser ? "rounded-2xl rounded-br-md text-white" : "rounded-2xl rounded-bl-md"}`}
+        style={isUser ? { background: C.redSolid } : { background: C.surface, color: C.text }}
+      >
+        {m.thumb && (
+          // eslint-disable-next-line @next/next/no-img-element -- data URL local
+          <img src={m.thumb} alt="Foto enviada" className="w-28 h-28 object-cover rounded-xl mb-1.5" />
+        )}
+        <span className="sr-only">{isUser ? "Vos: " : "Asistente: "}</span>
+        {m.content}
+      </div>
+      {m.quick && (
+        <div className="flex flex-wrap gap-2 max-w-full">
+          {QUICK_ACTIONS.map((a) => (
+            <Chip key={a.id} C={C} onClick={() => onQuick(a)} disabled={disabled}>
+              {a.label}
+            </Chip>
+          ))}
+        </div>
+      )}
+      {m.faqMenu && (
+        <div className="flex flex-wrap gap-2">
+          {FAQ_TOPICS.map((t) => (
+            <Chip key={t.id} C={C} onClick={() => onFaq(t)}>
+              {t.label}
+            </Chip>
+          ))}
+        </div>
+      )}
+      {m.actions?.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {m.actions.map((a) => (
+            <Chip key={a.id} C={C} onClick={() => onAction(a.id)}>
+              {a.label}
+            </Chip>
+          ))}
+        </div>
+      )}
+      {m.cards?.length > 0 && (
+        <div className="w-full space-y-2" role="list" aria-label={m.cardsKind === "matches" ? "Posibles coincidencias" : "Resultados de la búsqueda"}>
+          {m.cardsKind === "matches" && (
+            <p className="text-[11px] font-semibold px-1" style={{ color: C.muted }}>
+              Posibles coincidencias — revisalas con calma, no son seguras.
+            </p>
+          )}
+          {m.cards.map((card) => (
+            <ResultCard key={card.id} C={C} card={card} kind={m.cardsKind} onOpen={() => onOpenReport(card.id)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const PROB_LABEL = { alta: "Probabilidad alta", media: "Probabilidad media", baja: "Probabilidad baja" };
+
+function ResultCard({ C, card, kind, onOpen }) {
+  const titulo = [card.nombre || (card.especie === "gato" ? "Gato" : "Perro"), card.tipo === "perdida" ? "perdido/a" : "encontrado/a"].join(" · ");
+  const rasgos = [card.color, card.tamano, card.raza].filter(Boolean).join(", ");
+  const probColor = card.probabilidad === "alta" ? C.green : card.probabilidad === "media" ? C.orangeInk : C.muted;
+  return (
+    <div role="listitem">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="w-full flex gap-3 p-2.5 rounded-2xl border text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+        style={{ background: C.surface, borderColor: C.border }}
+        aria-label={`Ver la publicación: ${titulo}${card.zona ? `, ${card.zona}` : ""}`}
+      >
+        <span className="relative w-16 h-16 shrink-0 rounded-xl overflow-hidden" style={{ background: C.surfaceMuted }}>
+          {card.foto ? (
+            <Image src={card.foto} alt="" fill sizes="64px" className="object-cover" />
+          ) : (
+            <PawPrint className="w-6 h-6 absolute inset-0 m-auto" style={{ color: C.muted }} aria-hidden="true" />
+          )}
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-[13px] font-bold truncate" style={{ color: C.text }}>
+            {titulo}
+          </span>
+          {rasgos && (
+            <span className="block text-xs truncate" style={{ color: C.muted }}>
+              {rasgos}
+            </span>
+          )}
+          <span className="block text-xs truncate" style={{ color: C.muted }}>
+            {[card.zona, card.fecha ? formatFechaAR(card.fecha) : null].filter(Boolean).join(" · ")}
+          </span>
+          <span className="flex items-center gap-2 mt-0.5 text-[11px] font-bold">
+            {kind === "matches" && card.probabilidad && <span style={{ color: probColor }}>{PROB_LABEL[card.probabilidad]}</span>}
+            <span style={{ color: card.resuelto ? C.green : C.red }}>{card.resuelto ? "Reencontrada" : "Activa"}</span>
+            <span className="ml-auto flex items-center gap-0.5" style={{ color: C.red }}>
+              Ver ficha <ArrowRight className="w-3 h-3" aria-hidden="true" />
+            </span>
+          </span>
+        </span>
+      </button>
+    </div>
+  );
+}
+
+const fieldClass =
+  "w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40";
+
+function DraftPreview({ C, draft, photos, onChange, onPublish, onDiscard }) {
+  const [editing, setEditing] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const descripcion = composeDraftDescription(draft);
+  const set = (k) => (e) => onChange({ ...draft, [k]: e.target.value });
+  const fieldStyle = { borderColor: C.border, background: C.surfaceSubtle, color: C.text };
+  const listo = draft.tipo && draft.especie && draft.zona && (draft.color || draft.colorDetalle);
+  const resumen = [
+    ["Tipo", draft.tipo === "perdida" ? "Perdida" : draft.tipo === "encontrada" ? "Encontrada" : ""],
+    ["Especie", draft.especie === "perro" ? "Perro" : draft.especie === "gato" ? "Gato" : ""],
+    ["Nombre", draft.nombre],
+    ["Color", draft.colorDetalle || draft.color],
+    ["Tamaño", draft.tamano],
+    ["Sexo", draft.sexo],
+    ["Zona", draft.zona],
+    ["Fecha", draft.fecha ? formatFechaAR(draft.fecha) : ""],
+  ];
+
+  return (
+    <section className="felpus-fadein rounded-2xl border-2 p-3 space-y-2.5" style={{ background: C.surface, borderColor: C.red }} aria-labelledby="felpus-draft-title">
+      <div className="flex items-center gap-2">
+        <h3 id="felpus-draft-title" className="flex-1 text-sm font-extrabold" style={{ color: C.text }}>
+          📝 Vista previa del reporte
+        </h3>
+        <button
+          type="button"
+          onClick={() => setCollapsed((v) => !v)}
+          className="p-1 rounded-full"
+          style={{ color: C.muted }}
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "Mostrar vista previa" : "Ocultar vista previa"}
+        >
+          {collapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+        </button>
+      </div>
+      {!collapsed && (
+        <>
+          {photos.length > 0 && (
+            <div className="flex gap-1.5">
+              {photos.map((p, i) => (
+                // eslint-disable-next-line @next/next/no-img-element -- data URL local
+                <img key={i} src={p.dataUrl} alt={`Foto ${i + 1} del reporte`} className="w-14 h-14 rounded-lg object-cover" />
+              ))}
+            </div>
+          )}
+          {!editing ? (
+            <>
+              <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                {resumen.map(([k, v]) => (
+                  <div key={k} className="min-w-0">
+                    <dt className="font-semibold" style={{ color: C.muted }}>
+                      {k}
+                    </dt>
+                    <dd className="truncate capitalize-first" style={{ color: v ? C.text : C.muted }}>
+                      {v || "Sin dato"}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              <div>
+                <p className="text-[11px] font-semibold mb-0.5" style={{ color: C.muted }}>
+                  Descripción que se va a publicar
+                </p>
+                <p className="text-xs leading-relaxed" style={{ color: C.text }}>
+                  {descripcion}
+                </p>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-2 text-xs">
+              <div className="grid grid-cols-2 gap-2">
+                <label className="space-y-0.5">
+                  <span className="font-semibold" style={{ color: C.muted }}>Tipo</span>
+                  <select className={fieldClass} style={fieldStyle} value={draft.tipo} onChange={set("tipo")}>
+                    <option value="">Sin dato</option>
+                    <option value="perdida">Perdida</option>
+                    <option value="encontrada">Encontrada</option>
+                  </select>
+                </label>
+                <label className="space-y-0.5">
+                  <span className="font-semibold" style={{ color: C.muted }}>Especie</span>
+                  <select className={fieldClass} style={fieldStyle} value={draft.especie} onChange={set("especie")}>
+                    <option value="">Sin dato</option>
+                    <option value="perro">Perro</option>
+                    <option value="gato">Gato</option>
+                  </select>
+                </label>
+                <label className="space-y-0.5">
+                  <span className="font-semibold" style={{ color: C.muted }}>Nombre</span>
+                  <input className={fieldClass} style={fieldStyle} value={draft.nombre} maxLength={40} onChange={set("nombre")} />
+                </label>
+                <label className="space-y-0.5">
+                  <span className="font-semibold" style={{ color: C.muted }}>Color</span>
+                  <select className={fieldClass} style={fieldStyle} value={draft.color} onChange={set("color")}>
+                    <option value="">Sin dato</option>
+                    {COLOR_OPTIONS.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-0.5">
+                  <span className="font-semibold" style={{ color: C.muted }}>Tamaño</span>
+                  <select className={fieldClass} style={fieldStyle} value={draft.tamano} onChange={set("tamano")}>
+                    <option value="">Sin dato</option>
+                    {TAMANO_OPTIONS.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-0.5">
+                  <span className="font-semibold" style={{ color: C.muted }}>Sexo</span>
+                  <select className={fieldClass} style={fieldStyle} value={draft.sexo} onChange={set("sexo")}>
+                    <option value="">Sin dato</option>
+                    <option value="Macho">Macho</option>
+                    <option value="Hembra">Hembra</option>
+                  </select>
+                </label>
+                <label className="space-y-0.5">
+                  <span className="font-semibold" style={{ color: C.muted }}>Edad</span>
+                  <select className={fieldClass} style={fieldStyle} value={draft.edad} onChange={set("edad")}>
+                    <option value="">Sin dato</option>
+                    {EDAD_OPTIONS.filter((e) => e !== "No sé").map((e) => (
+                      <option key={e} value={e}>{e}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-0.5">
+                  <span className="font-semibold" style={{ color: C.muted }}>Fecha</span>
+                  <input type="date" className={fieldClass} style={fieldStyle} value={draft.fecha} onChange={set("fecha")} />
+                </label>
+              </div>
+              <label className="block space-y-0.5">
+                <span className="font-semibold" style={{ color: C.muted }}>Color con tus palabras</span>
+                <input className={fieldClass} style={fieldStyle} value={draft.colorDetalle} maxLength={60} onChange={set("colorDetalle")} />
+              </label>
+              <label className="block space-y-0.5">
+                <span className="font-semibold" style={{ color: C.muted }}>Zona aproximada</span>
+                <input className={fieldClass} style={fieldStyle} value={draft.zona} maxLength={100} onChange={set("zona")} placeholder="Barrio o referencia, no tu dirección" />
+              </label>
+              <label className="block space-y-0.5">
+                <span className="font-semibold" style={{ color: C.muted }}>Detalles (editable)</span>
+                <textarea className={fieldClass} style={fieldStyle} rows={3} value={draft.detalleLibre} maxLength={400} onChange={set("detalleLibre")} />
+              </label>
+              <p className="text-[11px] leading-relaxed" style={{ color: C.muted }}>
+                Así queda: {descripcion}
+              </p>
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2 pt-0.5">
+            <button
+              type="button"
+              onClick={onPublish}
+              disabled={!listo}
+              className="flex-1 min-w-[150px] flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold text-white disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+              style={{ background: C.redSolid }}
+            >
+              Revisar y publicar <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing((v) => !v)}
+              className="flex items-center gap-1 rounded-xl px-3 py-2.5 text-sm font-bold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+              style={{ borderColor: C.border, color: C.text }}
+              aria-pressed={editing}
+            >
+              <Pencil className="w-4 h-4" aria-hidden="true" /> {editing ? "Listo" : "Corregir"}
+            </button>
+            <button
+              type="button"
+              onClick={onDiscard}
+              className="flex items-center rounded-xl px-3 py-2.5 border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+              style={{ borderColor: C.border, color: C.muted }}
+              aria-label="Descartar borrador"
+              title="Descartar borrador"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+          <p className="text-[11px]" style={{ color: C.muted }}>
+            {listo
+              ? "Todavía no está publicado. En el formulario agregás tu contacto y lo publicás con el botón \"Publicar\"."
+              : "Para seguir faltan: si la perdiste o encontraste, perro o gato, zona y color."}
+          </p>
+        </>
+      )}
+    </section>
+  );
+}

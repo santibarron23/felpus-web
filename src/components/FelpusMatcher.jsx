@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import Image from "next/image";
 import Link from "next/link";
 import SocialLinks from "./felpus/SocialLinks";
+import FelpusAssistant from "./felpus/FelpusAssistant";
 import {
   PawPrint,
   Search,
@@ -528,6 +529,13 @@ export default function FelpusMatcher() {
   const { user, authLoading, googleDisplayName, googleAvatar, signInWithGoogle, signOut } = useAuth(pushToast);
   const fileInputRef = useRef(null);
   const deepLinkHandled = useRef(false);
+  // Asistente Felpus (FelpusAssistant.jsx): chatOriginRef marca que el
+  // formulario actual se completó desde el chat (para medir si esos reportes
+  // se terminan publicando y para que el chat descarte su borrador cuando
+  // pasa); chatPublishedToken/chatOpenToken son señales hacia el chat.
+  const chatOriginRef = useRef(null);
+  const [chatPublishedToken, setChatPublishedToken] = useState(0);
+  const [chatOpenToken, setChatOpenToken] = useState(0);
   const isAdmin = user?.email === ADMIN_EMAIL;
 
   // "Mi Felpus" — perfil personal + mascotas guardadas. Igual que el panel
@@ -1597,6 +1605,42 @@ export default function FelpusMatcher() {
     );
   }
 
+  // "Revisar y publicar" desde el Asistente Felpus: vuelca el borrador del
+  // chat (ya validado contra las mismas opciones de este formulario, ver
+  // draftToFormFields en lib/chatbot.js) y las fotos (ya procesadas con
+  // resizeImageFile/computeHistogram, igual que processPhotoFile) en el
+  // formulario de siempre. Publicar sigue siendo exclusivamente handleSubmit,
+  // con todas sus validaciones: el chat nunca publica por su cuenta.
+  function applyChatDraft({ reportKind: kind, form: fields, accesorioChips: acc, reaccionChips: rea, marcaChips: mar, manchaUbicacion: mu, manchaColor: mc, detalleLibre: dl, fotos, startedAt }) {
+    setReportKind(kind === "encontrada" ? "encontrada" : "perdida");
+    setForm((f) => ({
+      ...f,
+      ...fields,
+      // La zona del chat es texto libre: ciudad/lat/lng de una selección
+      // anterior del mapa ya no corresponden.
+      ciudad: "",
+      lat: null,
+      lng: null,
+      fotos: fotos?.length ? fotos.slice(0, MAX_FOTOS) : f.fotos,
+    }));
+    setAccesorioChips(acc || []);
+    setReaccionChips(rea || []);
+    setMarcaChips(mar || []);
+    setManchaUbicacion(mu || "");
+    setManchaColor(mc || "");
+    setDetalleLibre(dl || "");
+    if ((acc || []).length || (rea || []).length || (mar || []).length || dl || fields.nombre || fields.raza || fields.edad) {
+      setShowMoreDetails(true);
+    }
+    setGeoStatus("idle");
+    setFormError("");
+    setFieldErrors({});
+    chatOriginRef.current = { startedAt: startedAt || Date.now() };
+    setDetailReport(null);
+    goToTab("reportar");
+    pushToast("success", "Te dejamos el reporte completado. Revisalo, marcá la ubicación, agregá tu contacto y tocá Publicar.");
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setFormError("");
@@ -1739,6 +1783,17 @@ export default function FelpusMatcher() {
       setMatchResult({ source: savedReport, results: scored, hadCandidates: candidates.length > 0 });
       setReports((prev) => [savedReport, ...prev]);
       playSuccess();
+      if (chatOriginRef.current) {
+        try {
+          window.gtag?.("event", "asistente_reporte_publicado", {
+            segundos: Math.round((Date.now() - chatOriginRef.current.startedAt) / 1000),
+          });
+        } catch {
+          // sin analytics no pasa nada
+        }
+        chatOriginRef.current = null;
+        setChatPublishedToken((t) => t + 1);
+      }
       if (user) {
         await awardPointsRemote(
           user.id,
@@ -4754,6 +4809,23 @@ export default function FelpusMatcher() {
 
       <ToastStack toasts={toasts} />
 
+      <FelpusAssistant
+        section={activeTab}
+        openReport={detailReport ? { id: detailReport.id } : null}
+        onApplyDraft={applyChatDraft}
+        onOpenReport={(id) => {
+          const found = reports.find((r) => r.id === id);
+          if (found) openReportDetail(found);
+          else window.location.assign(`/r/${encodeURIComponent(id)}`);
+        }}
+        onNavigate={(tab) => {
+          if (tab === "reportar") setReportKind("perdida");
+          goToTab(tab);
+        }}
+        publishedToken={chatPublishedToken}
+        openToken={chatOpenToken}
+      />
+
       <DetailModal
         report={detailReport}
         contactStatus={contactStatus}
@@ -4778,6 +4850,7 @@ export default function FelpusMatcher() {
         onFlagReport={handleFlagReport}
         saved={!!detailReport && savedReportIds.has(detailReport.id)}
         onToggleSaved={handleToggleSaved}
+        onAskAssistant={() => setChatOpenToken((t) => t + 1)}
       />
 
       <footer className="max-w-2xl mx-auto px-4 pb-24 pt-2 space-y-1.5">

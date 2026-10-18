@@ -229,7 +229,7 @@ function contactMessage(report) {
   return `Hola! Vi en Felpus tu publicación de ${nombre} en ${report.zona}. Creo que puedo ayudar.\n${SITE_URL}/r/${report.id}`;
 }
 
-export function DetailModal({ report, contactStatus, onRetryContact, onClose, onResolve, confirming, resolving, onConfirm, onCancelConfirm, isLoggedIn, isOwner, onDelete, onFlagReport, saved, onToggleSaved }) {
+export function DetailModal({ report, contactStatus, onRetryContact, onClose, onResolve, confirming, resolving, onConfirm, onCancelConfirm, isLoggedIn, isOwner, onDelete, onFlagReport, saved, onToggleSaved, onAskAssistant }) {
   const C = useTheme();
   const [activeIndex, setActiveIndex] = useState(0);
   const [generatingFlyer, setGeneratingFlyer] = useState(false);
@@ -539,6 +539,17 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
             <p className="flex items-center gap-1.5 text-xs pt-1" style={{ color: C.redDark }} aria-live="polite">
               <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {flyerErrorMsg}
             </p>
+          )}
+          {/* Opcional (Asistente Felpus): sin onAskAssistant la ficha queda igual que antes. */}
+          {onAskAssistant && (
+            <button
+              type="button"
+              onClick={onAskAssistant}
+              className="w-full text-xs font-bold py-1.5 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+              style={{ color: C.red }}
+            >
+              🐾 Preguntale al Asistente Felpus sobre esta publicación
+            </button>
           )}
           {!report.resuelto && (
             <div className="pt-1">
