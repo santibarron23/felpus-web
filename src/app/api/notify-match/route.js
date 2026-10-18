@@ -43,6 +43,10 @@ function rowToMatchable(row) {
     tipo: row.tipo,
     especie: row.especie,
     raza: row.raza || "",
+    // detalles/fecha/provincia: los usa scoreMatch (bono de detalles, filtro
+    // de cronología y de provincia). Sin estas columnas el webhook puntuaba
+    // distinto que la app para el mismo par de reportes.
+    detalles: row.detalles || {},
     nombre: row.nombre || "",
     color: row.color,
     colorOtro: row.color_otro || "",
@@ -51,8 +55,10 @@ function rowToMatchable(row) {
     edad: row.edad || "",
     peso: row.peso || "",
     zona: row.zona,
+    provincia: row.provincia || "",
     lat: row.lat,
     lng: row.lng,
+    fecha: row.fecha || null,
     descripcion: row.descripcion,
     pushSubscription: row.push_subscription || null,
     fotos,
@@ -78,7 +84,7 @@ function rowToMatchable(row) {
 // consulta también (antes solo se usaba para el contacto de la coincidencia
 // puntual, ver fetchReportContactServer).
 const CANDIDATE_COLUMNS =
-  "id,tipo,especie,raza,nombre,color,color_otro,tamano,sexo,edad,peso,zona,lat,lng,descripcion,push_subscription,foto_url,hist,embedding,foto_urls,hists,embeddings,creado_en";
+  "id,tipo,especie,raza,detalles,nombre,color,color_otro,tamano,sexo,edad,peso,zona,provincia,lat,lng,fecha,descripcion,push_subscription,foto_url,hist,embedding,foto_urls,hists,embeddings,creado_en";
 
 async function fetchCandidates(supabaseUrl, apiKey, newReport) {
   const opuesto = newReport.tipo === "perdida" ? "encontrada" : "perdida";
