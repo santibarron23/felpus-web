@@ -292,14 +292,62 @@ export function cosineSimilarity(a, b) {
   return Math.max(0, Math.min(1, (cos + 1) / 2));
 }
 
+// ---------------------------------------------------------------------------
+// Histograma de color: dos versiones conviviendo en el mismo array.
+//
+// v1 (64 bins): RGB 4x4x4 de la foto entera — lo que tienen guardado todos
+// los reportes viejos. Le afecta mucho el fondo (pasto, piso, sillón) y la
+// marca de agua de Felpus, que está en TODAS las fotos.
+//
+// v2 (28 bins, 2026-10): tono/saturación/brillo (HSV) — 12 tonos x 2 niveles
+// de brillo + 4 grises (negro/gris oscuro/gris claro/blanco) — ponderado
+// hacia el centro de la foto (donde casi siempre está la mascota) y sin la
+// esquina de la marca de agua. Medido con las fotos reales de producción
+// (pares de fotos de la MISMA mascota dentro de un reporte vs. fotos de
+// mascotas distintas): separa bastante mejor que v1 (AUC 0.73 vs 0.62).
+//
+// computeHistogram guarda [...v1, ...v2] (92 números) en el mismo campo
+// "hist" de siempre — no hace falta migrar la base. Al comparar: si las dos
+// fotos tienen v2, se usa v2; si alguna es vieja (solo 64), se comparan los
+// 64 primeros (v1) de las dos, que siguen siendo compatibles.
+// ---------------------------------------------------------------------------
+export const HIST_V1_BINS = 64;
+const HIST_V2_TONOS = 12;
+export const HIST_V2_BINS = HIST_V2_TONOS * 2 + 4;
+
+export function histogramSimilarity(h1, h2) {
+  if (!Array.isArray(h1) || !Array.isArray(h2)) return 0;
+  const full = HIST_V1_BINS + HIST_V2_BINS;
+  if (h1.length >= full && h2.length >= full) {
+    return histIntersection(h1.slice(HIST_V1_BINS, full), h2.slice(HIST_V1_BINS, full));
+  }
+  if (h1.length >= HIST_V1_BINS && h2.length >= HIST_V1_BINS && h1.length !== h2.length) {
+    return histIntersection(h1.slice(0, HIST_V1_BINS), h2.slice(0, HIST_V1_BINS));
+  }
+  return histIntersection(h1, h2);
+}
+
+// Embeddings de imagen de CLIP: entre dos fotos cualesquiera de mascotas el
+// coseno ya suele dar 0.5-0.75 (las dos son "foto de un perro"), así que el
+// viejo remapeo (cos+1)/2 dejaba casi todo apretado entre 0.75 y 1 — la
+// señal no discriminaba. Se reescala el rango útil [0.5, 0.95] a [0, 1].
+const EMB_COS_PISO = 0.5;
+const EMB_COS_TECHO = 0.95;
+function embeddingEvidence(a, b) {
+  const sim = cosineSimilarity(a, b);
+  if (sim == null) return null;
+  const cos = sim * 2 - 1;
+  return Math.max(0, Math.min(1, (cos - EMB_COS_PISO) / (EMB_COS_TECHO - EMB_COS_PISO)));
+}
+
 // Similitud de imagen: usa el embedding real de IA (CLIP) cuando ambas fotos
 // lo tienen. Si a alguna le falta (por ejemplo, porque no se configuró
 // Hugging Face, o es un reporte de ejemplo), cae de nuevo al histograma de
 // color, que siempre está disponible.
 function singlePhotoSimilarity(fa, fb) {
-  const embSim = cosineSimilarity(fa.embedding, fb.embedding);
+  const embSim = embeddingEvidence(fa.embedding, fb.embedding);
   if (embSim != null) return embSim;
-  return histIntersection(fa.hist, fb.hist);
+  return histogramSimilarity(fa.hist, fb.hist);
 }
 
 // Un reporte puede tener hasta 3 fotos (fotos: [{hist, embedding}, ...]).
@@ -318,31 +366,84 @@ export function imageSimilarity(a, b) {
   return best;
 }
 
+// v1: RGB 4x4x4 sobre píxeles RGBA (ver comentario de HIST_V1_BINS).
+export function histogramV1FromPixels(data) {
+  const bins = new Array(HIST_V1_BINS).fill(0);
+  let total = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const a = data[i + 3];
+    if (a < 10) continue;
+    const rq = Math.min(3, Math.floor(data[i] / 64));
+    const gq = Math.min(3, Math.floor(data[i + 1] / 64));
+    const bq = Math.min(3, Math.floor(data[i + 2] / 64));
+    bins[rq * 16 + gq * 4 + bq]++;
+    total++;
+  }
+  if (total === 0) total = 1;
+  return bins.map((v) => v / total);
+}
+
+// v2: HSV ponderado al centro, sin la esquina de la marca de agua (ver
+// comentario de HIST_V1_BINS). size = lado de la imagen cuadrada en píxeles.
+const HIST_V2_SIGMA = 0.35;
+const HIST_V2_MARCA_AGUA_DESDE = 0.78;
+export function histogramV2FromPixels(data, size) {
+  const bins = new Array(HIST_V2_BINS).fill(0);
+  let total = 0;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4;
+      if (data[i + 3] < 10) continue;
+      const u = (x + 0.5) / size;
+      const v = (y + 0.5) / size;
+      if (u > HIST_V2_MARCA_AGUA_DESDE && v > HIST_V2_MARCA_AGUA_DESDE) continue;
+      const w = Math.exp(-((u - 0.5) ** 2 + (v - 0.5) ** 2) / (2 * HIST_V2_SIGMA ** 2));
+      const r = data[i] / 255;
+      const g = data[i + 1] / 255;
+      const b = data[i + 2] / 255;
+      const max = Math.max(r, g, b);
+      const croma = max - Math.min(r, g, b);
+      const sat = max === 0 ? 0 : croma / max;
+      let bin;
+      if (sat < 0.2 || max < 0.15) {
+        // Sin color real (negro/gris/blanco): 4 bins por brillo.
+        bin = HIST_V2_TONOS * 2 + Math.min(3, Math.floor(max * 4));
+      } else {
+        let h;
+        if (max === r) h = ((g - b) / croma) % 6;
+        else if (max === g) h = (b - r) / croma + 2;
+        else h = (r - g) / croma + 4;
+        h = (h * 60 + 360) % 360;
+        const tono = Math.floor(h / (360 / HIST_V2_TONOS)) % HIST_V2_TONOS;
+        bin = tono * 2 + (max < 0.55 ? 0 : 1);
+      }
+      bins[bin] += w;
+      total += w;
+    }
+  }
+  if (total === 0) total = 1;
+  return bins.map((v) => v / total);
+}
+
+const HIST_V1_SIZE = 32;
+const HIST_V2_SIZE = 48;
 export function computeHistogram(dataUrl) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
       try {
-        const size = 32;
-        const canvas = document.createElement("canvas");
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, size, size);
-        const data = ctx.getImageData(0, 0, size, size).data;
-        const bins = new Array(64).fill(0);
-        let total = 0;
-        for (let i = 0; i < data.length; i += 4) {
-          const a = data[i + 3];
-          if (a < 10) continue;
-          const rq = Math.min(3, Math.floor(data[i] / 64));
-          const gq = Math.min(3, Math.floor(data[i + 1] / 64));
-          const bq = Math.min(3, Math.floor(data[i + 2] / 64));
-          bins[rq * 16 + gq * 4 + bq]++;
-          total++;
-        }
-        if (total === 0) total = 1;
-        resolve(bins.map((v) => v / total));
+        const pixels = (size) => {
+          const canvas = document.createElement("canvas");
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, size, size);
+          return ctx.getImageData(0, 0, size, size).data;
+        };
+        resolve([
+          ...histogramV1FromPixels(pixels(HIST_V1_SIZE)),
+          ...histogramV2FromPixels(pixels(HIST_V2_SIZE), HIST_V2_SIZE),
+        ]);
       } catch (e) {
         reject(e);
       }
@@ -476,6 +577,79 @@ function colorOtroSimilarity(colorOtroA, colorOtroB) {
   return jaccard(tokenize(colorOtroA), tokenize(colorOtroB));
 }
 
+// ---------------------------------------------------------------------------
+// Compatibilidad de colores (2026-10). Antes el color era "igual o nada":
+// "Marrón" vs "Dorado / beige" (dos personas describiendo al mismo perro
+// caramelo) contaba igual de mal que "Negro" vs "Blanco". Ahora cada par de
+// categorías tiene un grado de compatibilidad, y "Otro color" + el texto que
+// escribió la persona ("negra con fuego", "naranja") se traduce a las
+// categorías que nombra. También cubre colores guardados como texto libre
+// (los reportes de ejemplo tienen "negro", "gris atigrado", etc.).
+// ---------------------------------------------------------------------------
+const COLOR_PALABRAS = [
+  ["Negro", ["negro", "negra", "azabache"]],
+  ["Blanco", ["blanco", "blanca"]],
+  ["Marrón", ["marron", "chocolate", "cafe", "fuego", "higado", "atabacado", "tostado"]],
+  ["Gris", ["gris", "plateado", "plateada", "azulado"]],
+  ["Dorado / beige", ["dorado", "dorada", "beige", "crema", "naranja", "anaranjado", "anaranjada", "amarillo", "rubio", "rubia", "caramelo", "canela", "colorado", "colorada", "rojizo", "rojiza", "miel", "arena"]],
+  ["Atigrado", ["atigrado", "atigrada", "rayado", "rayada", "tabby", "barcino", "barcina"]],
+  ["Manchado / bicolor", ["manchado", "manchada", "bicolor", "tricolor", "carey", "overo", "overa", "moteado", "moteada"]],
+];
+
+// Pares compatibles (simétrico). Lo que no figura acá, entre dos colores
+// distintos, es 0 (incompatible: "Negro" vs "Blanco").
+const COLOR_COMPAT = {
+  "Marrón|Dorado / beige": 0.6,
+  "Negro|Gris": 0.4,
+  "Blanco|Gris": 0.4,
+  "Blanco|Dorado / beige": 0.4,
+  "Negro|Marrón": 0.25,
+  "Gris|Atigrado": 0.5,
+  "Marrón|Atigrado": 0.5,
+  "Dorado / beige|Atigrado": 0.4,
+  "Atigrado|Manchado / bicolor": 0.3,
+  // Un animal bicolor puede describirse por su color dominante.
+  "Negro|Manchado / bicolor": 0.4,
+  "Blanco|Manchado / bicolor": 0.4,
+  "Marrón|Manchado / bicolor": 0.4,
+  "Dorado / beige|Manchado / bicolor": 0.4,
+  "Gris|Manchado / bicolor": 0.4,
+};
+function colorPairCompat(x, y) {
+  if (x === y) return 1;
+  return COLOR_COMPAT[`${x}|${y}`] ?? COLOR_COMPAT[`${y}|${x}`] ?? 0;
+}
+
+// Devuelve las categorías canónicas que nombra un reporte, o null si no hay
+// dato utilizable. Más de un color nombrado ("negra con fuego") se trata
+// además como bicolor.
+function colorCategorias(report) {
+  const color = (report.color || "").trim();
+  if (!color) return null;
+  const texto = color === "Otro color" ? report.colorOtro : COLOR_OPTIONS.includes(color) ? null : color;
+  if (texto == null) return [color];
+  const palabras = normalizeText(texto).split(/\s+/);
+  const cats = COLOR_PALABRAS.filter(([, ps]) => ps.some((p) => palabras.includes(p))).map(([c]) => c);
+  if (cats.length === 0) return null;
+  if (cats.length > 1 && !cats.includes("Manchado / bicolor")) cats.push("Manchado / bicolor");
+  return cats;
+}
+
+// Similitud de color en [0,1], o null si no hay señal (falta el color de
+// algún lado, o "Otro color" sin texto reconocible).
+export function colorSimilarity(a, b) {
+  if (a.color === "Otro color" && b.color === "Otro color") {
+    const directo = colorOtroSimilarity(a.colorOtro, b.colorOtro);
+    if (directo === 1) return 1;
+  }
+  const ca = colorCategorias(a);
+  const cb = colorCategorias(b);
+  if (!ca || !cb) return null;
+  let best = 0;
+  for (const x of ca) for (const y of cb) best = Math.max(best, colorPairCompat(x, y));
+  return best;
+}
+
 // La raza es texto libre con autocompletado (no un <select> cerrado — ver
 // getRazaOptions), así que se compara como texto: igual o una contiene a la
 // otra ("Pitbull" vs "Pitbull/American Staffordshire") cuenta como
@@ -543,18 +717,10 @@ function detallesSimilarity(a, b) {
 function structuredFieldSimilarity(a, b) {
   const parts = [];
 
-  if (a.color && b.color) {
-    if (a.color !== b.color) {
-      parts.push({ weight: 0.35, value: 0 });
-    } else if (a.color === "Otro color") {
-      const colorMatch = colorOtroSimilarity(a.colorOtro, b.colorOtro);
-      // Si ninguno de los dos escribió el detalle, no hay señal — se excluye
-      // del promedio en vez de sumar como si coincidiera.
-      if (colorMatch != null) parts.push({ weight: 0.35, value: colorMatch });
-    } else {
-      parts.push({ weight: 0.35, value: 1 });
-    }
-  }
+  // Grado de compatibilidad (ver colorSimilarity), no "igual o nada". Sin
+  // señal (ej. "Otro color" sin texto) se excluye del promedio.
+  const colorSim = colorSimilarity(a, b);
+  if (colorSim != null) parts.push({ weight: 0.35, value: colorSim });
   // En perro, peso alto (a la par de color): cuando ambos lados la
   // completan con una raza real, es de las señales más fuertes que hay. En
   // gato pesa mucho menos a propósito — mucha más gente no sabe la raza de
@@ -593,8 +759,35 @@ function structuredFieldSimilarity(a, b) {
   if (pesoSim != null) parts.push({ weight: 0.15, value: pesoSim });
 
   const totalWeight = parts.reduce((sum, p) => sum + p.weight, 0);
-  if (totalWeight === 0) return 0;
-  return parts.reduce((sum, p) => sum + p.weight * p.value, 0) / totalWeight;
+  // Ningún campo comparable: sin señal, no "todo distinto" — un valor
+  // neutro-bajo en vez de 0.
+  const sim = totalWeight === 0 ? STRUCTURED_SIN_DATOS : parts.reduce((sum, p) => sum + p.weight * p.value, 0) / totalWeight;
+  // Nombre: si quien encontró a la mascota leyó la chapita (o la llamó y
+  // respondió a ese nombre) y coincide con el del dueño, es de las señales
+  // más fuertes que hay — bono que cubre la mitad de lo que le falta al
+  // resto para llegar a 1. Un nombre distinto NO resta: quien la encontró
+  // suele ponerle uno inventado ("Negrito").
+  const nombreA = normalizeText(a.nombre).trim();
+  const nombreB = normalizeText(b.nombre).trim();
+  if (nombreA.length >= 2 && nombreA === nombreB) return sim + (1 - sim) * 0.5;
+  return sim;
+}
+const STRUCTURED_SIN_DATOS = 0.35;
+
+// La descripción libre arranca con una frase armada sola a partir de los
+// selects (composeDescripcionBase: "Es un perro, de tamaño mediano, color
+// negro, macho.") — esas palabras ya se comparan como campos estructurados,
+// así que en la descripción solo inflaban el parecido entre cualquier par de
+// perros. Se descartan acá para que cuente lo que la persona escribió de
+// verdad (señas, collar, nombre de la calle...).
+const DESC_PALABRAS_DE_RELLENO = new Set([
+  "perro", "perra", "perrito", "perrita", "gato", "gata", "gatito", "gatita", "mascota",
+  "tamano", "color", "chico", "chica", "mediano", "mediana", "grande", "macho", "hembra",
+  "cachorro", "cria", "joven", "adulto", "adulta", "mayor", "anos", "raza", "sin", "mestizo",
+  "tenia", "tiene", "particular", "desconocidos",
+]);
+function descripcionTokens(s) {
+  return tokenize(s).filter((w) => !DESC_PALABRAS_DE_RELLENO.has(w));
 }
 
 // Si ambos reportes tienen al menos una foto con embedding real de IA
@@ -611,6 +804,25 @@ function hasAiEmbedding(report) {
 // pudo haberse alejado mucho más que una perdida hace una hora, así que
 // toleramos más distancia sin penalizar tanto el score. Tope en 14 días
 // para no diluir la señal de ubicación indefinidamente.
+const DIA_MS = 24 * 3600 * 1000;
+
+// Una fecha cargada muy lejos de cuándo se publicó el reporte es casi
+// seguro un error de tipeo (visto en producción: un reporte publicado en
+// 2026-08 con fecha "2024-02-10"). Se ignora — mejor sin dato que un dato
+// que dispara un filtro de cronología equivocado.
+const FECHA_MAX_DIAS_ANTES_DE_PUBLICAR = 180;
+const FECHA_MAX_DIAS_DESPUES_DE_PUBLICAR = 2;
+function fechaConfiableMs(r) {
+  if (!r.fecha) return null;
+  const ms = new Date(r.fecha).getTime();
+  if (Number.isNaN(ms)) return null;
+  if (r.creadoEn) {
+    const diasAntes = (r.creadoEn - ms) / DIA_MS;
+    if (diasAntes > FECHA_MAX_DIAS_ANTES_DE_PUBLICAR || diasAntes < -FECHA_MAX_DIAS_DESPUES_DE_PUBLICAR) return null;
+  }
+  return ms;
+}
+
 const RADIO_BASE_KM = 8;
 const RADIO_EXTRA_KM_POR_DIA = 2;
 const RADIO_DIAS_TOPE = 14;
@@ -626,9 +838,8 @@ const RADIO_DIAS_TOPE = 14;
 // disponible) — nunca deja el radio sin definir.
 function locationReferenceKm(a, b) {
   const now = Date.now();
-  const fechaMs = (r) => (r.fecha ? new Date(r.fecha).getTime() : null);
-  const aRef = fechaMs(a) ?? a.creadoEn ?? now;
-  const bRef = fechaMs(b) ?? b.creadoEn ?? now;
+  const aRef = fechaConfiableMs(a) ?? a.creadoEn ?? now;
+  const bRef = fechaConfiableMs(b) ?? b.creadoEn ?? now;
   const masViejo = Math.min(aRef, bRef);
   const diasTranscurridos = Math.max(0, (now - masViejo) / (24 * 3600 * 1000));
   const diasEfectivos = Math.min(diasTranscurridos, RADIO_DIAS_TOPE);
@@ -639,18 +850,90 @@ function locationReferenceKm(a, b) {
 // la persona la fecha en que la mascota se perdió/encontró, pero el
 // algoritmo nunca la usaba para nada más que corregir locationReferenceKm
 // de arriba. Dos reportes con fechas muy cercanas es evidencia real (es
-// más probable que sean el mismo evento); muy lejanas, menos — pero NUNCA
-// un corte binario (una mascota puede aparecer semanas después), mismo
-// criterio de decaimiento gradual que ya usa locScore. Si falta la fecha
-// en cualquiera de los dos lados (campo opcional), 0.5 neutro — ni ayuda
-// ni penaliza, no hay señal real que comparar.
+// más probable que sean el mismo evento); muy lejanas, menos — gradual,
+// mismo criterio de decaimiento que ya usa locScore. Si falta la fecha (o
+// no es confiable, ver fechaConfiableMs) en cualquiera de los dos lados,
+// 0.5 neutro — ni ayuda ni penaliza, no hay señal real que comparar. El
+// único corte duro por fecha es la cronología imposible (ver
+// cronologiaFactor más abajo).
 const FECHA_VENTANA_DIAS = 21;
 function fechaSimilarity(a, b) {
-  if (!a.fecha || !b.fecha) return 0.5;
-  const diffMs = Math.abs(new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
-  if (Number.isNaN(diffMs)) return 0.5;
-  const diffDias = diffMs / (24 * 3600 * 1000);
-  return Math.exp(-diffDias / FECHA_VENTANA_DIAS);
+  const fa = fechaConfiableMs(a);
+  const fb = fechaConfiableMs(b);
+  if (fa == null || fb == null) return 0.5;
+  return Math.exp(-Math.abs(fa - fb) / DIA_MS / FECHA_VENTANA_DIAS);
+}
+
+// ---------------------------------------------------------------------------
+// Filtros duros y penalizaciones por contradicción (2026-10).
+//
+// La combinación lineal de señales tiene un problema de fondo: una señal
+// buena (misma zona) "compensa" una contradicción clara (perro negro vs.
+// perro dorado), y el par termina en 60%. Medido con los reportes reales
+// de producción: candidatos a 1.276 km pasaban el mínimo, y pares con
+// colores opuestos daban 51-68%. Ahora:
+//  - filtros duros (score 0, no se muestra): especie distinta, demasiado
+//    lejos para que la mascota haya llegado por su cuenta, provincias
+//    distintas (sin coordenadas), o una mascota "encontrada" bastante
+//    ANTES de que la otra se perdiera.
+//  - penalizaciones (multiplican el score): colores incompatibles, tamaño
+//    opuesto (chico/grande), sexo distinto, edad muy distinta, raza real
+//    distinta. Nunca llegan a 0: quien encuentra una mascota puede
+//    equivocarse en el sexo o el tamaño.
+// ---------------------------------------------------------------------------
+const DISTANCIA_MAX_BASE_KM = 40;
+const DISTANCIA_MAX_KM_POR_DIA = 4;
+const DISTANCIA_MAX_DIAS_TOPE = 30;
+function distanciaMaximaKm(a, b) {
+  const refs = [a, b].map((r) => fechaConfiableMs(r) ?? r.creadoEn ?? Date.now());
+  const dias = Math.max(0, (Math.max(...refs) - Math.min(...refs)) / DIA_MS);
+  return DISTANCIA_MAX_BASE_KM + Math.min(dias, DISTANCIA_MAX_DIAS_TOPE) * DISTANCIA_MAX_KM_POR_DIA;
+}
+
+// Una mascota no puede haber sido encontrada antes de perderse. Con margen,
+// porque la fecha del formulario viene precargada con el día de hoy y
+// mucha gente publica días después sin corregirla: hasta 3 días de
+// "encontrada antes" no cambia nada, de 3 a 14 días penaliza, y más de 14
+// días descarta el par.
+const CRONOLOGIA_TOLERANCIA_DIAS = 3;
+const CRONOLOGIA_CORTE_DIAS = 14;
+function cronologiaFactor(a, b) {
+  const perdida = a.tipo === "perdida" ? a : b.tipo === "perdida" ? b : null;
+  const encontrada = a.tipo === "encontrada" ? a : b.tipo === "encontrada" ? b : null;
+  if (!perdida || !encontrada) return 1;
+  const fp = fechaConfiableMs(perdida);
+  const fe = fechaConfiableMs(encontrada);
+  if (fp == null || fe == null) return 1;
+  const diasEncontradaAntes = (fp - fe) / DIA_MS;
+  if (diasEncontradaAntes > CRONOLOGIA_CORTE_DIAS) return 0;
+  if (diasEncontradaAntes > CRONOLOGIA_TOLERANCIA_DIAS) return 0.6;
+  return 1;
+}
+
+const PENALIDAD_COLOR_INCOMPATIBLE = 0.5;
+const PENALIDAD_COLOR_LEJANO = 0.7;
+const PENALIDAD_TAMANO_OPUESTO = 0.6;
+const PENALIDAD_SEXO_DISTINTO = 0.75;
+const PENALIDAD_EDAD_MUY_DISTINTA = 0.8;
+const PENALIDAD_RAZA_DISTINTA = 0.85;
+function contradiccionesFactor(a, b) {
+  let factor = 1;
+  const colorSim = colorSimilarity(a, b);
+  if (colorSim === 0) factor *= PENALIDAD_COLOR_INCOMPATIBLE;
+  else if (colorSim != null && colorSim < 0.5) factor *= PENALIDAD_COLOR_LEJANO;
+  if (ordinalSimilarity(a.tamano, b.tamano, TAMANO_OPTIONS) === 0) factor *= PENALIDAD_TAMANO_OPUESTO;
+  if (a.sexo && b.sexo && a.sexo !== "No sé" && b.sexo !== "No sé" && a.sexo !== b.sexo) {
+    factor *= PENALIDAD_SEXO_DISTINTO;
+  }
+  if (ordinalSimilarity(a.edad, b.edad, EDAD_OPTIONS) === 0) factor *= PENALIDAD_EDAD_MUY_DISTINTA;
+  if (a.especie === "perro" && razaSimilarity(a.raza, b.raza) === 0) factor *= PENALIDAD_RAZA_DISTINTA;
+  return factor;
+}
+
+// descartado: por qué un par quedó afuera ("especie" | "distancia" |
+// "cronologia"), o null si se puntuó normalmente.
+function sinMatch(descartado, distanceLabel = "") {
+  return { score: 0, imgSim: 0, textSim: 0, locScore: 0, fechaSim: 0, distanceLabel, descartado };
 }
 
 export function scoreMatch(a, b) {
@@ -658,24 +941,18 @@ export function scoreMatch(a, b) {
   // cortar acá evita calcular similitud de imagen/texto/fecha para un par
   // que ya se sabe que va a dar 0 (findMatches/notify-match no filtran los
   // candidatos por especie antes de llamar a scoreMatch, solo por tipo).
-  if (a.especie !== b.especie) {
-    return { score: 0, imgSim: 0, textSim: 0, locScore: 0, fechaSim: 0, distanceLabel: "" };
-  }
-
-  const imgSim = imageSimilarity(a, b);
-  const structuredSim = structuredFieldSimilarity(a, b);
-  const descSim = jaccard(tokenize(a.descripcion), tokenize(b.descripcion));
-  // Los campos estructurados (selects) valen mucho más que la redacción
-  // libre de la descripción, que varía de persona a persona aunque sea la
-  // misma mascota.
-  const textSim = 0.75 * structuredSim + 0.25 * descSim;
+  if (a.especie !== b.especie) return sinMatch("especie");
 
   let locScore, distanceLabel;
   if (a.lat != null && a.lng != null && b.lat != null && b.lng != null) {
     const d = haversineKm(a.lat, a.lng, b.lat, b.lng);
-    locScore = Math.exp(-d / locationReferenceKm(a, b));
     distanceLabel = d < 1 ? `${Math.round(d * 1000)} m` : `${d.toFixed(1)} km`;
+    if (d > distanciaMaximaKm(a, b)) return sinMatch("distancia", distanceLabel);
+    locScore = Math.exp(-d / locationReferenceKm(a, b));
   } else {
+    const provA = normalizeText(a.provincia).trim();
+    const provB = normalizeText(b.provincia).trim();
+    if (provA && provB && provA !== provB) return sinMatch("distancia", "otra provincia");
     const zonaA = normalizeText(a.zona);
     const zonaB = normalizeText(b.zona);
     const sameZone = !!zonaA && !!zonaB && (zonaA === zonaB || zonaA.includes(zonaB) || zonaB.includes(zonaA));
@@ -683,27 +960,44 @@ export function scoreMatch(a, b) {
     distanceLabel = sameZone ? "misma zona" : "zona distinta";
   }
 
+  const cronologia = cronologiaFactor(a, b);
+  if (cronologia === 0) return sinMatch("cronologia", distanceLabel);
+
+  const imgSim = imageSimilarity(a, b);
+  const structuredSim = structuredFieldSimilarity(a, b);
+  // Los campos estructurados (selects) valen mucho más que la redacción
+  // libre de la descripción, que varía de persona a persona aunque sea la
+  // misma mascota. La descripción solo entra si los dos lados escribieron
+  // algo propio (ver descripcionTokens); si no, no resta.
+  const tokA = descripcionTokens(a.descripcion);
+  const tokB = descripcionTokens(b.descripcion);
+  const textSim =
+    tokA.length >= 2 && tokB.length >= 2 ? 0.8 * structuredSim + 0.2 * jaccard(tokA, tokB) : structuredSim;
+
   const fechaSim = fechaSimilarity(a, b);
 
   // Pesos adaptativos: con IA visual real, la imagen es la señal más fuerte;
-  // sin ella (histograma de color nomás), pesan más los campos
-  // estructurados y la ubicación. fecha entra con un peso chico y fijo en
-  // los dos casos (0.10) — es una señal real pero más débil que las demás,
-  // y con el "neutro" de arriba nunca castiga a quien no la cargó.
+  // sin ella (histograma de color nomás — hoy, todos los reportes de
+  // producción), pesan más los campos estructurados y la ubicación. fecha
+  // entra con un peso chico y fijo en los dos casos (0.10) — es una señal
+  // real pero más débil que las demás, y con el "neutro" de arriba nunca
+  // castiga a quien no la cargó.
   const weights =
     hasAiEmbedding(a) && hasAiEmbedding(b)
-      ? { img: 0.45, text: 0.27, loc: 0.18, fecha: 0.1 }
-      : { img: 0.18, text: 0.45, loc: 0.27, fecha: 0.1 };
+      ? { img: 0.42, text: 0.3, loc: 0.18, fecha: 0.1 }
+      : { img: 0.12, text: 0.5, loc: 0.28, fecha: 0.1 };
 
   const combined =
     weights.img * imgSim + weights.text * textSim + weights.loc * locScore + weights.fecha * fechaSim;
+  const score = combined * cronologia * contradiccionesFactor(a, b);
   return {
-    score: Math.max(0, Math.min(1, combined)),
+    score: Math.max(0, Math.min(1, score)),
     imgSim,
     textSim,
     locScore,
     fechaSim,
     distanceLabel,
+    descartado: null,
   };
 }
 
@@ -727,20 +1021,15 @@ export function matchBreakdown(a, b) {
     items.push({ key, label, coincide, detail: detail || null });
   };
 
-  if (a.color && b.color) {
-    if (a.color !== b.color) {
-      push("color", "Color", false, `${a.color} / ${b.color}`);
-    } else if (a.color === "Otro color") {
-      const colorMatch = colorOtroSimilarity(a.colorOtro, b.colorOtro);
-      // Ninguno de los dos escribió el detalle: sin señal real, se omite el
-      // ítem entero en vez de mostrarlo como coincidencia o diferencia.
-      if (colorMatch != null) {
-        const coincide = colorMatch >= 0.5;
-        push("color", "Color", coincide, coincide ? null : `${a.colorOtro || a.color} / ${b.colorOtro || b.color}`);
-      }
-    } else {
-      push("color", "Color", true);
-    }
+  // Misma compatibilidad de colores que scoreMatch (ver colorSimilarity):
+  // "Marrón" vs "Dorado / beige" se muestra como parecido, no como
+  // diferencia. Sin señal (ej. "Otro color" sin texto de ningún lado) se
+  // omite el ítem entero.
+  const colorSim = colorSimilarity(a, b);
+  if (colorSim != null) {
+    const colorTxt = (r) => (r.color === "Otro color" && r.colorOtro ? r.colorOtro : r.color);
+    const detail = colorSim >= 1 ? null : colorSim >= 0.5 ? `Parecido: ${colorTxt(a)} / ${colorTxt(b)}` : `${colorTxt(a)} / ${colorTxt(b)}`;
+    push("color", "Color", colorSim >= 0.5, detail);
   }
 
   if (a.tamano && b.tamano) {

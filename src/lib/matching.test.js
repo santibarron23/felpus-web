@@ -34,6 +34,12 @@ import {
   RAZA_NO_SE,
   SCORE_MINIMO,
   computeAdminBreakdowns,
+  colorSimilarity,
+  histogramSimilarity,
+  histogramV1FromPixels,
+  histogramV2FromPixels,
+  HIST_V1_BINS,
+  HIST_V2_BINS,
 } from "./matching";
 
 // Reporte base reutilizable — cada test sobreescribe solo lo que le importa,
@@ -133,6 +139,13 @@ describe("imageSimilarity", () => {
     const a = { embedding: [1, 0], hist: [1, 0] };
     const b = { embedding: [1, 0], hist: [0, 1] }; // hist NO coincide, embedding sí
     expect(imageSimilarity(a, b)).toBeCloseTo(1);
+  });
+
+  it("embeddings 'genéricamente parecidos' (coseno 0.6, dos fotos de perro cualquiera) dan poca similitud", () => {
+    // Antes: (0.6 + 1) / 2 = 0.8 — casi cualquier par de fotos parecía "muy parecido".
+    const a = { embedding: [1, 0] };
+    const b = { embedding: [0.6, 0.8] }; // coseno exacto 0.6
+    expect(imageSimilarity(a, b)).toBeLessThan(0.3);
   });
 
   it("cae al histograma si falta el embedding de un lado", () => {
@@ -299,14 +312,18 @@ describe("scoreMatch", () => {
       // Mismo par de reportes salvo por tener o no "fecha" — el resto de
       // los campos coincide, así que cualquier diferencia de score viene
       // pura y exclusivamente de fechaSimilarity.
+      // creadoEn = el día siguiente a la fecha: una fecha cargada muy lejos de
+      // cuándo se publicó el reporte se ignora como error de tipeo (ver
+      // "fecha absurda" más abajo), y acá queremos una fecha lejana REAL.
+      const publicado = (fecha) => new Date(fecha).getTime() + 24 * 3600 * 1000;
       const conFechaIgual = scoreMatch(
-        makeReport({ fecha: "2026-08-01" }),
-        makeReport({ id: "r2", fecha: "2026-08-01" })
+        makeReport({ fecha: "2026-08-01", creadoEn: publicado("2026-08-01") }),
+        makeReport({ id: "r2", fecha: "2026-08-01", creadoEn: publicado("2026-08-01") })
       ).score;
       const sinFechaNinguno = scoreMatch(makeReport({ fecha: undefined }), makeReport({ id: "r2", fecha: undefined })).score;
       const fechaMuyLejana = scoreMatch(
-        makeReport({ fecha: "2026-08-01" }),
-        makeReport({ id: "r2", fecha: "2020-01-01" })
+        makeReport({ fecha: "2026-08-01", creadoEn: publicado("2026-08-01") }),
+        makeReport({ id: "r2", fecha: "2020-01-01", creadoEn: publicado("2020-01-01") })
       ).score;
       // Neutro cae ESTRICTAMENTE entre "coinciden perfecto" y "muy lejanas"
       // — nunca es tratado como si coincidieran (optimista de más) ni como
@@ -377,6 +394,189 @@ describe("scoreMatch", () => {
       const vecino = scoreMatch(chico, makeReport({ id: "r3", tamano: "mediano" })).score;
       expect(igual).toBeGreaterThan(vecino);
     });
+  });
+
+  // Mejora del matching (2026-10): casos sacados de los reportes reales de
+  // producción, donde la suma lineal de señales dejaba pasar pares
+  // imposibles o claramente contradictorios.
+  describe("filtros duros y contradicciones", () => {
+    const diasAtras = (n) => new Date(Date.now() - n * 24 * 3600 * 1000).toISOString().slice(0, 10);
+
+    it("descarta (score 0) un candidato demasiado lejos para haber llegado por su cuenta", () => {
+      const salta = makeReport({ lat: -24.78, lng: -65.41 });
+      const buenosAires = makeReport({ id: "r2", tipo: "encontrada", lat: -34.588, lng: -58.43 });
+      const res = scoreMatch(salta, buenosAires);
+      expect(res.score).toBe(0);
+      expect(res.descartado).toBe("distancia");
+      expect(res.distanceLabel).toMatch(/km/);
+    });
+
+    it("una distancia de ciudad vecina (~25 km) no se descarta", () => {
+      const a = makeReport({ lat: -24.78, lng: -65.41 });
+      const b = makeReport({ id: "r2", tipo: "encontrada", lat: -24.95, lng: -65.5 });
+      expect(scoreMatch(a, b).score).toBeGreaterThan(0);
+    });
+
+    it("sin coordenadas, provincias distintas también se descartan", () => {
+      const a = makeReport({ lat: null, lng: null, provincia: "Salta" });
+      const b = makeReport({ id: "r2", tipo: "encontrada", lat: null, lng: null, provincia: "Jujuy" });
+      expect(scoreMatch(a, b).descartado).toBe("distancia");
+    });
+
+    it("descarta una mascota encontrada semanas ANTES de que la otra se perdiera", () => {
+      const perdida = makeReport({ tipo: "perdida", fecha: diasAtras(2) });
+      const encontradaAntes = makeReport({ id: "r2", tipo: "encontrada", fecha: diasAtras(60) });
+      const res = scoreMatch(perdida, encontradaAntes);
+      expect(res.score).toBe(0);
+      expect(res.descartado).toBe("cronologia");
+      // Simétrico: no importa cuál de los dos reportes se pasa primero.
+      expect(scoreMatch(encontradaAntes, perdida).descartado).toBe("cronologia");
+    });
+
+    it("unos pocos días de 'encontrada antes' se toleran (la fecha viene precargada con hoy)", () => {
+      const perdida = makeReport({ tipo: "perdida", fecha: diasAtras(0) });
+      const igual = scoreMatch(perdida, makeReport({ id: "r2", tipo: "encontrada", fecha: diasAtras(0) })).score;
+      const dosDias = scoreMatch(perdida, makeReport({ id: "r3", tipo: "encontrada", fecha: diasAtras(2) })).score;
+      const unaSemana = scoreMatch(perdida, makeReport({ id: "r4", tipo: "encontrada", fecha: diasAtras(7) })).score;
+      expect(dosDias).toBeGreaterThan(0.9 * igual);
+      expect(unaSemana).toBeGreaterThan(0);
+      expect(unaSemana).toBeLessThan(dosDias);
+    });
+
+    it("encontrada DESPUÉS de perderse (lo normal) nunca se descarta", () => {
+      const perdida = makeReport({ tipo: "perdida", fecha: diasAtras(40) });
+      const encontrada = makeReport({ id: "r2", tipo: "encontrada", fecha: diasAtras(1) });
+      expect(scoreMatch(perdida, encontrada).descartado).toBeNull();
+    });
+
+    it("una fecha absurda (error de tipeo, ej. 2 años antes de publicar) se ignora en vez de descartar el par", () => {
+      const perdidaConTypo = makeReport({ tipo: "perdida", fecha: "2024-02-10" });
+      const encontrada = makeReport({ id: "r2", tipo: "encontrada", fecha: diasAtras(1) });
+      const res = scoreMatch(perdidaConTypo, encontrada);
+      expect(res.descartado).toBeNull();
+      expect(res.fechaSim).toBe(0.5);
+    });
+
+    it("colores incompatibles bajan fuerte el score aunque todo lo demás coincida", () => {
+      const negro = makeReport({ color: "Negro" });
+      const igual = scoreMatch(negro, makeReport({ id: "r2", color: "Negro" })).score;
+      const blanco = scoreMatch(negro, makeReport({ id: "r3", color: "Blanco" })).score;
+      expect(blanco).toBeLessThan(igual * 0.6);
+    });
+
+    it("colores parecidos (Marrón vs Dorado / beige) puntúan entre igual e incompatible", () => {
+      const marron = makeReport({ color: "Marrón" });
+      const igual = scoreMatch(marron, makeReport({ id: "r2", color: "Marrón" })).score;
+      const dorado = scoreMatch(marron, makeReport({ id: "r3", color: "Dorado / beige" })).score;
+      const blanco = scoreMatch(marron, makeReport({ id: "r4", color: "Blanco" })).score;
+      expect(dorado).toBeLessThan(igual);
+      expect(dorado).toBeGreaterThan(blanco);
+    });
+
+    it("tamaño opuesto (chico/grande) y sexo distinto penalizan, pero nunca llevan a 0", () => {
+      const a = makeReport({ tamano: "chico", sexo: "Macho" });
+      const todoMal = scoreMatch(a, makeReport({ id: "r2", tamano: "grande", sexo: "Hembra" })).score;
+      const todoBien = scoreMatch(a, makeReport({ id: "r3", tamano: "chico", sexo: "Macho" })).score;
+      expect(todoMal).toBeGreaterThan(0);
+      expect(todoMal).toBeLessThan(todoBien * 0.6);
+    });
+
+    it("el mismo nombre de los dos lados (ej. leído de la chapita) sube el score; uno distinto no resta", () => {
+      // Edad distinta para que el resto no dé ya un 100% estructurado.
+      const a = makeReport({ nombre: "Rocky", edad: "Adulto (3-8 años)" });
+      const mismo = scoreMatch(a, makeReport({ id: "r2", nombre: "rocky", edad: "Joven (1-3 años)" })).score;
+      const sinNombre = scoreMatch(a, makeReport({ id: "r3", nombre: "", edad: "Joven (1-3 años)" })).score;
+      const otro = scoreMatch(a, makeReport({ id: "r4", nombre: "Negrito", edad: "Joven (1-3 años)" })).score;
+      expect(mismo).toBeGreaterThan(sinNombre);
+      expect(otro).toBe(sinNombre);
+    });
+
+    it("la frase automática de la descripción ('Es un perro, de tamaño...') no infla el parecido", () => {
+      const a = makeReport({ descripcion: "Es un perro, de tamaño mediano, color negro, macho." });
+      const b = makeReport({ id: "r2", descripcion: "Es un perro, de tamaño mediano, color negro, macho." });
+      const c = makeReport({ id: "r3", descripcion: "" });
+      expect(scoreMatch(a, b).textSim).toBe(scoreMatch(a, c).textSim);
+    });
+  });
+});
+
+describe("colorSimilarity", () => {
+  it("mismo color = 1, incompatibles = 0, parecidos en el medio", () => {
+    expect(colorSimilarity({ color: "Negro" }, { color: "Negro" })).toBe(1);
+    expect(colorSimilarity({ color: "Negro" }, { color: "Blanco" })).toBe(0);
+    const parecido = colorSimilarity({ color: "Marrón" }, { color: "Dorado / beige" });
+    expect(parecido).toBeGreaterThan(0);
+    expect(parecido).toBeLessThan(1);
+  });
+
+  it("traduce el texto de 'Otro color' a las categorías que nombra", () => {
+    // Caso real de producción: Doberman "Negra con fuego".
+    const doberman = { color: "Otro color", colorOtro: "Negra con fuego" };
+    expect(colorSimilarity(doberman, { color: "Negro" })).toBe(1);
+    expect(colorSimilarity(doberman, { color: "Marrón" })).toBe(1);
+    expect(colorSimilarity(doberman, { color: "Blanco" })).toBeLessThan(0.5);
+    // Caso real: gato "Naranja tirando a amarillo" vs "Dorado / beige".
+    expect(colorSimilarity({ color: "Otro color", colorOtro: "Naranja tirando a amarillo" }, { color: "Dorado / beige" })).toBe(1);
+  });
+
+  it("entiende colores guardados como texto libre (reportes de ejemplo)", () => {
+    expect(colorSimilarity({ color: "gris atigrado" }, { color: "Gris" })).toBe(1);
+    expect(colorSimilarity({ color: "negro" }, { color: "Blanco" })).toBe(0);
+  });
+
+  it("sin señal devuelve null (falta el color o 'Otro color' sin texto reconocible)", () => {
+    expect(colorSimilarity({ color: "" }, { color: "Negro" })).toBeNull();
+    expect(colorSimilarity({ color: "Otro color", colorOtro: "" }, { color: "Negro" })).toBeNull();
+    expect(colorSimilarity({ color: "Otro color", colorOtro: "raro" }, { color: "Negro" })).toBeNull();
+  });
+});
+
+describe("histograma v2 (HSV, centro, sin marca de agua)", () => {
+  // Imagen cuadrada de size x size, con fill(x, y) => [r, g, b].
+  function pixels(size, fill) {
+    const data = new Uint8ClampedArray(size * size * 4);
+    for (let y = 0; y < size; y++)
+      for (let x = 0; x < size; x++) {
+        const [r, g, b] = fill(x / size, y / size);
+        data.set([r, g, b, 255], (y * size + x) * 4);
+      }
+    return data;
+  }
+  const size = 48;
+  const hist = (fill) => [
+    ...histogramV1FromPixels(pixels(32, fill)),
+    ...histogramV2FromPixels(pixels(size, fill), size),
+  ];
+
+  it("cada versión suma 1 y el total tiene 64 + 28 bins", () => {
+    const h = hist(() => [200, 120, 40]);
+    expect(h).toHaveLength(HIST_V1_BINS + HIST_V2_BINS);
+    const suma = (arr) => arr.reduce((s, x) => s + x, 0);
+    expect(suma(h.slice(0, HIST_V1_BINS))).toBeCloseTo(1);
+    expect(suma(h.slice(HIST_V1_BINS))).toBeCloseTo(1);
+  });
+
+  it("la misma mascota con otro fondo se parece más en v2 que en v1", () => {
+    // Perro naranja en el centro; fondo pasto verde vs. piso gris.
+    const perro = (u, v) => (Math.hypot(u - 0.5, v - 0.5) < 0.25 ? [210, 130, 50] : null);
+    const enPasto = hist((u, v) => perro(u, v) || [60, 140, 50]);
+    const enPiso = hist((u, v) => perro(u, v) || [150, 150, 150]);
+    const v1 = histIntersection(enPasto.slice(0, HIST_V1_BINS), enPiso.slice(0, HIST_V1_BINS));
+    const v2 = histogramSimilarity(enPasto, enPiso);
+    expect(v2).toBeGreaterThan(v1);
+  });
+
+  it("ignora la esquina de la marca de agua de Felpus", () => {
+    const sinMarca = hist(() => [40, 40, 40]);
+    const conMarca = hist((u, v) => (u > 0.8 && v > 0.8 ? [230, 30, 30] : [40, 40, 40]));
+    expect(histogramSimilarity(sinMarca, conMarca)).toBeCloseTo(1);
+  });
+
+  it("una foto nueva (v1+v2) contra una vieja (solo v1) compara los 64 de v1", () => {
+    const nueva = hist(() => [200, 120, 40]);
+    const vieja = nueva.slice(0, HIST_V1_BINS);
+    expect(histogramSimilarity(nueva, vieja)).toBeCloseTo(1);
+    expect(imageSimilarity({ hist: nueva }, { hist: vieja })).toBeCloseTo(1);
   });
 });
 
