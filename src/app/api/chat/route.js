@@ -107,7 +107,17 @@ export async function POST(request) {
     );
   }
 
-  const client = new Anthropic({ apiKey, maxRetries: 1, timeout: 45_000 });
+  // Las claves de API que no están asignadas a un workspace de Anthropic
+  // exigen el header anthropic-workspace-id en cada pedido (si no, la API
+  // responde 400). ANTHROPIC_WORKSPACE_ID es opcional: con una clave asignada
+  // a un workspace no hace falta.
+  const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
+  const client = new Anthropic({
+    apiKey,
+    maxRetries: 1,
+    timeout: 45_000,
+    ...(workspaceId ? { defaultHeaders: { "anthropic-workspace-id": workspaceId } } : {}),
+  });
   const model = process.env.ANTHROPIC_CHAT_MODEL || DEFAULT_CHAT_MODEL;
   const supa = { supabaseUrl, anonKey };
 

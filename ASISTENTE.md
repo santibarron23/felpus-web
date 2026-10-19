@@ -24,6 +24,7 @@ Botón flotante "Asistente" en toda la app. Ayuda a:
 ## Configuración
 
 - `ANTHROPIC_API_KEY` (**obligatoria para la IA**, secreta, solo en el servidor). Sin ella el asistente igual aparece, con preguntas frecuentes y accesos al formulario.
+- `ANTHROPIC_WORKSPACE_ID` (solo si la clave no está asignada a un workspace de Anthropic; si falta, la API responde "This API key is not scoped to a workspace"). Empieza con `wrkspc_` y no es secreta.
 - `ANTHROPIC_CHAT_MODEL` (opcional). Por defecto `claude-opus-5-5`. Para gastar menos: `claude-sonnet-5-5` o `claude-haiku-5-5`.
 - Correr en Supabase (SQL Editor) el bloque `check_chat_rate_limit` del final de `schema.sql`. Mientras no se corra, se usa el límite de `/api/embed` como respaldo.
 - Recomendado: poner un límite de gasto mensual en console.anthropic.com.
