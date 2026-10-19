@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { loadGoogleMaps, observeMapResize } from "../lib/googleMaps";
 import { logError } from "../lib/log";
+import { requestLocation } from "../lib/geolocation";
 import { useTheme } from "./felpus/ThemeProvider";
 
 // Mapa de sólo lectura que pinta un marcador por cada reporte que tenga
@@ -18,6 +19,10 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
   const mapObjRef = useRef(null);
   const markersRef = useRef([]);
   const onSelectRef = useRef(onSelectReport);
+  const reportsRef = useRef(reports);
+  reportsRef.current = reports;
+  // Si la persona ya movió el mapa a mano, no se lo recentramos encima.
+  const userMovedRef = useRef(false);
   const [status, setStatus] = useState(apiKey ? "loading" : "no-key");
 
   useEffect(() => {
@@ -44,8 +49,27 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
           mapId: "DEMO_MAP_ID",
         });
         mapObjRef.current = map;
+        map.addListener("dragstart", () => {
+          userMovedRef.current = true;
+        });
         stopResizeObserver = observeMapResize(map, containerRef.current);
         setStatus("ready");
+        // Sin ubicación conocida, antes el mapa arrancaba siempre en Buenos
+        // Aires aunque los reportes estuvieran en Salta. Ahora: la ubicación
+        // de la persona si la da; si no, el área donde están los reportes.
+        if (!center) {
+          requestLocation(
+            (pos) => {
+              if (cancelled || userMovedRef.current) return;
+              map.setCenter(pos);
+              map.setZoom(13);
+            },
+            () => {
+              if (cancelled || userMovedRef.current) return;
+              fitToReports(maps, map, reportsRef.current);
+            }
+          );
+        }
       })
       .catch(() => setStatus("error"));
     return () => {
@@ -55,6 +79,15 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
     // Sólo se inicializa una vez con la key disponible.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiKey]);
+
+  // "Más cercanas" (o cualquier ubicación que llegue después de montar el
+  // mapa): antes el centro solo se usaba al crear el mapa y después se
+  // ignoraba.
+  useEffect(() => {
+    if (status !== "ready" || !mapObjRef.current || !center) return;
+    mapObjRef.current.panTo(center);
+    mapObjRef.current.setZoom(13);
+  }, [center, status]);
 
   // Repinta los marcadores cada vez que cambia la lista filtrada de reportes.
   useEffect(() => {
@@ -156,4 +189,17 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
       style={{ height: 340, borderColor: C.border, background: C.surfaceMuted }}
     />
   );
+}
+
+// Encuadra el mapa en los reportes con ubicación (sin acercarse de más si
+// hay uno solo o están todos juntos).
+function fitToReports(maps, map, reports) {
+  const conPunto = (reports || []).filter((r) => r.lat != null && r.lng != null);
+  if (!conPunto.length) return;
+  const bounds = new maps.LatLngBounds();
+  conPunto.forEach((r) => bounds.extend({ lat: r.lat, lng: r.lng }));
+  map.fitBounds(bounds, 40);
+  maps.event.addListenerOnce(map, "idle", () => {
+    if (map.getZoom() > 14) map.setZoom(14);
+  });
 }
