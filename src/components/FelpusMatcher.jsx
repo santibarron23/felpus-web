@@ -1890,8 +1890,12 @@ export default function FelpusMatcher() {
   // realmente cambiaba — carísimo, y encima expuso un crash real cuando el
   // mapa estaba en un estado roto (ver ReportsMap.jsx).
   const filteredReports = useMemo(() => {
-    let list = activeReports.filter((r) => {
-      if (filterTipo !== "todos" && r.tipo !== filterTipo) return false;
+    // "resuelto" (Solo reencontradas, el filtro que activa la tarjeta
+    // "Reencontradas" de Inicio) cambia la base de la lista: en vez de los
+    // reportes activos, muestra solo los reencuentros confirmados.
+    const soloResueltas = filterTipo === "resuelto";
+    let list = (soloResueltas ? resueltas : activeReports).filter((r) => {
+      if (!soloResueltas && filterTipo !== "todos" && r.tipo !== filterTipo) return false;
       if (filterEspecie !== "todos" && r.especie !== filterEspecie) return false;
       if (filterTamano !== "todos" && r.tamano !== filterTamano) return false;
       if (filterColor !== "todos" && r.color !== filterColor) return false;
@@ -1920,6 +1924,8 @@ export default function FelpusMatcher() {
     }
     if (sortBy === "cercania" && myLocation) {
       list = [...list].sort((a, b) => a._dist - b._dist);
+    } else if (soloResueltas) {
+      list = [...list].sort((a, b) => (b.resueltoEn || b.creadoEn) - (a.resueltoEn || a.creadoEn));
     } else {
       list = [...list].sort((a, b) => b.creadoEn - a.creadoEn);
     }
@@ -1927,6 +1933,7 @@ export default function FelpusMatcher() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     activeReports,
+    resueltas,
     filterTipo,
     filterEspecie,
     filterTamano,
@@ -2390,7 +2397,10 @@ export default function FelpusMatcher() {
                   label: "Reencontradas",
                   color: C.green,
                   onClick: () => {
-                    setShowResueltas(true);
+                    setFilterTipo("resuelto");
+                    setFilterFecha("todos");
+                    setExploreView("lista");
+                    setShowResueltas(false);
                     goToTab("explorar");
                   },
                 },
@@ -3509,6 +3519,7 @@ export default function FelpusMatcher() {
                 <option value="todos">Perdidas y encontradas</option>
                 <option value="perdida">Solo perdidas</option>
                 <option value="encontrada">Solo encontradas</option>
+                <option value="resuelto">Solo reencontradas</option>
               </select>
               <select
                 value={filterEspecie}
@@ -3598,7 +3609,9 @@ export default function FelpusMatcher() {
 
             {!loadingReports && (
               <p className="text-xs" style={{ color: C.muted }}>
-                {filteredReports.length} {filteredReports.length === 1 ? "reporte encontrado" : "reportes encontrados"}
+                {filterTipo === "resuelto"
+                  ? `${filteredReports.length} ${filteredReports.length === 1 ? "mascota reencontrada" : "mascotas reencontradas"}`
+                  : `${filteredReports.length} ${filteredReports.length === 1 ? "reporte encontrado" : "reportes encontrados"}`}
               </p>
             )}
 
@@ -3639,13 +3652,27 @@ export default function FelpusMatcher() {
                 {!loadingReports && filteredReports.length === 0 && !loadError && (
                   <div className="bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl p-6 text-center text-sm border" style={{ color: C.muted, borderColor: C.border }}>
                     <Mascot mood="searching" size={88} className="mx-auto mb-2" />
-                    <p className="font-semibold" style={{ color: C.text }}>Todavía no hay reportes por acá.</p>
-                    <p className="mt-1">Probá con otros filtros, o sé la primera persona en publicar uno.</p>
+                    {filterTipo === "resuelto" ? (
+                      <>
+                        <p className="font-semibold" style={{ color: C.text }}>Todavía no hay reencuentros con estos filtros.</p>
+                        <p className="mt-1">Probá con otros filtros.</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-semibold" style={{ color: C.text }}>Todavía no hay reportes por acá.</p>
+                        <p className="mt-1">Probá con otros filtros, o sé la primera persona en publicar uno.</p>
+                      </>
+                    )}
                   </div>
                 )}
 
             <div className="space-y-3">
-              {visibleReports.map((r) => (
+              {visibleReports.map((r) => r.resuelto ? (
+                // Reencontrada (filtro "Solo reencontradas"): misma tarjeta que
+                // la sección "Reencuentros felices", sin coincidencias ni
+                // "Marcar como reencontrada", que ya no aplican.
+                <ReportCard key={r.id} report={r} onOpenDetail={openReportDetail} />
+              ) : (
                 <ReportCard
                   key={r.id}
                   report={r}
@@ -3764,7 +3791,8 @@ export default function FelpusMatcher() {
               </div>
             </div>
 
-            {resueltas.length > 0 && (
+            {/* Con "Solo reencontradas" la lista de arriba ya es esto mismo. */}
+            {resueltas.length > 0 && filterTipo !== "resuelto" && (
               <div className="pt-2">
                 <button
                   onClick={() => setShowResueltas((v) => !v)}
