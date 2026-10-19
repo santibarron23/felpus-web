@@ -424,3 +424,10 @@ describe("prompt", () => {
     expect(p).not.toMatch(/zona o barrio de Salta/);
   });
 });
+
+describe("vista previa sin datos inventados", () => {
+  it("si no se dijo el tamaño, la descripción no lo menciona", () => {
+    const text = composeDraftDescription(normalizeDraft({ tipo: "encontrada", especie: "perro", color: "Negro" }));
+    expect(text).toBe("Es un perro, color negro.");
+  });
+});

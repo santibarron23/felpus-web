@@ -461,7 +461,10 @@ export function draftToFormFields(draft) {
 export function composeDraftDescription(draft) {
   const f = draftToFormFields(draft);
   return [
-    composeDescripcionBase(f.form),
+    // Con el tamaño REAL del borrador, no el "mediano" por defecto del
+    // formulario: si la persona no lo dijo, la vista previa no lo afirma
+    // (visto en la prueba real: "de tamaño mediano" sin que nadie lo dijera).
+    composeDescripcionBase({ ...f.form, tamano: normalizeDraft(draft).tamano }),
     composeAccesorioSentence(f.accesorioChips),
     composeReaccionSentence(f.reaccionChips),
     composeMarcaSentence(f.marcaChips, { manchaUbicacion: f.manchaUbicacion, manchaColor: f.manchaColor }),
