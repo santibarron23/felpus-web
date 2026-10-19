@@ -205,6 +205,11 @@ describe("del borrador al formulario y a la descripción", () => {
     expect(f.form.colorOtro).toBe("");
     expect(f.detalleLibre).toContain("negro con manchas blancas");
   });
+  it("no repite el color si lo dicho es la misma categoría", () => {
+    expect(draftToFormFields(normalizeDraft({ color: "Marrón", color_detalle: "marrón" })).detalleLibre).toBe("");
+    expect(draftToFormFields(normalizeDraft({ color: "Negro", color_detalle: "negra" })).detalleLibre).toBe("");
+    expect(draftToFormFields(normalizeDraft({ color: "Negro", color_detalle: "negra con fuego" })).detalleLibre).toContain("negra con fuego");
+  });
   it("solo un color libre => 'Otro color' con el texto", () => {
     const f = draftToFormFields(normalizeDraft({ color_detalle: "naranja" }));
     expect(f.form).toMatchObject({ color: "Otro color", colorOtro: "naranja" });

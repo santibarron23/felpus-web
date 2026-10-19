@@ -179,7 +179,7 @@ QUÉ HACÉS
    - Cuando estén zona, color y sexo, decile que abajo tiene la vista previa del reporte, que puede corregir cualquier dato ahí, y que con "Revisar y publicar" pasa al formulario de Felpus, donde agrega su contacto y lo publica con el botón "Publicar". Vos no publicás nada: nunca digas que el reporte está publicado.
    - Si la persona corrige algo, guardalo de nuevo.
 
-2. Buscar mascotas. Para preguntas como "¿encontraron algún caniche blanco por San Lorenzo?" usá buscar_reportes. La app muestra las tarjetas con foto: vos resumí en una o dos oraciones qué hay (cuántos, de qué zona, de cuándo) sin repetir ids ni links. Si no hay resultados, decilo y sugerí ampliar la búsqueda (otra zona, más días) o publicar un reporte para que Felpus avise si aparece.
+2. Buscar mascotas. Para preguntas como "¿encontraron algún caniche blanco por San Lorenzo?" usá buscar_reportes. La app muestra las tarjetas con foto: vos resumí en una o dos oraciones qué hay (cuántos, de qué zonas, de cuándo), sin enumerarlos uno por uno y sin repetir ids ni links. Si no hay resultados, decilo y sugerí ampliar la búsqueda (otra zona, más días) o publicar un reporte para que Felpus avise si aparece.
 
 3. Coincidencias. guardar_borrador devuelve las posibles coincidencias del sistema de matching de Felpus. Explicá por qué podrían coincidir usando solo los campos "coincide_en" y "difiere_en", con la probabilidad tal cual (alta, media o baja). Son coincidencias POSIBLES: nunca digas que es la misma mascota ni inventes porcentajes. Un reencuentro está confirmado solo cuando la persona que publicó lo marca en la app.
 
@@ -393,6 +393,18 @@ export function missingFields(draft, { hasPhoto = false } = {}) {
   return faltan;
 }
 
+// "negro con manchas blancas" suma información a "Manchado / bicolor";
+// "marrón" no le agrega nada a "Marrón" (visto en la prueba real: la
+// descripción quedaba "color marrón… Color: marrón.").
+function colorDetalleAporta(d) {
+  if (!d.color || !d.colorDetalle || d.color === "Otro color") return false;
+  const cat = normalizeText(d.color).replace(/[^a-z ]+/g, " ").split(/\s+/).filter(Boolean);
+  const det = normalizeText(d.colorDetalle).replace(/[^a-z ]+/g, " ").split(/\s+/).filter(Boolean);
+  // Igual a la categoría, o una variante de género ("marron"/"negra" vs "negro").
+  const raiz = (w) => w.replace(/[aos]$/, "");
+  return !det.every((w) => cat.some((c) => raiz(c) === raiz(w)));
+}
+
 // Mismo formato de formulario que emptyForm() de matching.js, para que el
 // texto de la vista previa salga de las MISMAS funciones que arman la
 // descripción al publicar (composeDescripcionBase y compañía).
@@ -421,7 +433,7 @@ export function draftToFormFields(draft) {
     manchaColor: d.manchaColor,
     // Si el color quedó en una categoría (ej. "Manchado / bicolor"), la
     // forma en que lo dijo la persona suma como detalle.
-    detalleLibre: [d.color && d.colorDetalle && d.color !== "Otro color" ? `Color: ${d.colorDetalle}.` : "", d.detalleLibre]
+    detalleLibre: [colorDetalleAporta(d) ? `Color: ${d.colorDetalle}.` : "", d.detalleLibre]
       .filter(Boolean)
       .join(" "),
   };
