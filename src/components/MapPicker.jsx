@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { loadGoogleMaps, observeMapResize } from "../lib/googleMaps";
+import { requestLocation } from "../lib/geolocation";
 import { useTheme } from "./felpus/ThemeProvider";
 
 // Mapa con un pin arrastrable/tocable para marcar la ubicación exacta de un
@@ -21,6 +22,12 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter }) {
   // cambie la zona sin que la persona se dé cuenta (la ubicación es clave
   // para el matching).
   const [pending, setPending] = useState(null);
+  // Centro "de arranque" cuando todavía no hay punto marcado: la ubicación
+  // de la persona si la da (antes siempre arrancaba en Buenos Aires), si no
+  // defaultCenter, si no Buenos Aires. Solo centra el mapa: NO marca el
+  // reporte (eso sigue requiriendo tocar y confirmar).
+  const startCenterRef = useRef(null);
+  const userMovedRef = useRef(false);
 
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -52,11 +59,13 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter }) {
           draggable: true,
         });
         marker.addListener("dragend", () => {
+          userMovedRef.current = true;
           const pos = marker.getPosition();
           marker.setOpacity(0.55);
           setPending({ lat: pos.lat(), lng: pos.lng() });
         });
         map.addListener("click", (e) => {
+          userMovedRef.current = true;
           marker.setPosition(e.latLng);
           marker.setOpacity(0.55);
           setPending({ lat: e.latLng.lat(), lng: e.latLng.lng() });
@@ -65,6 +74,20 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter }) {
         markerObjRef.current = marker;
         stopResizeObserver = observeMapResize(map, containerRef.current);
         setStatus("ready");
+        startCenterRef.current = center;
+        if (lat == null || lng == null) {
+          // Si la persona no da permiso (o tarda), el mapa queda donde estaba.
+          requestLocation(
+            (pos) => {
+              if (cancelled || userMovedRef.current) return;
+              startCenterRef.current = pos;
+              map.setCenter(pos);
+              map.setZoom(15);
+              marker.setPosition(pos);
+            },
+            () => {}
+          );
+        }
       })
       .catch(() => setStatus("error"));
 
@@ -100,7 +123,11 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter }) {
   function cancelPending() {
     setPending(null);
     if (markerObjRef.current) {
-      const fallback = { lat: lat ?? defaultCenter?.lat ?? -34.6037, lng: lng ?? defaultCenter?.lng ?? -58.3816 };
+      const start = startCenterRef.current;
+      const fallback = {
+        lat: lat ?? start?.lat ?? defaultCenter?.lat ?? -34.6037,
+        lng: lng ?? start?.lng ?? defaultCenter?.lng ?? -58.3816,
+      };
       markerObjRef.current.setPosition(fallback);
       markerObjRef.current.setOpacity(1);
     }

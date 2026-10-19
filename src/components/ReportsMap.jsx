@@ -60,7 +60,14 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
   useEffect(() => {
     if (status !== "ready" || !mapObjRef.current || !window.google) return;
     markersRef.current.forEach((m) => {
-      m.map = null;
+      // Mismo motivo que el try/catch de abajo: con el mapa roto, sacar un
+      // pin también puede tirar (visto en local con RefererNotAllowedMapError
+      // al cambiar el filtro a "Solo reencontradas": tumbaba toda la página).
+      try {
+        m.map = null;
+      } catch (e) {
+        logError("No se pudo quitar un marcador del mapa", e);
+      }
     });
     markersRef.current = reports
       .filter((r) => r.lat != null && r.lng != null)
