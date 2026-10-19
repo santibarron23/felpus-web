@@ -1569,3 +1569,55 @@ grant update (
 create index if not exists reports_creado_en_idx on reports (creado_en desc);
 create index if not exists reports_resuelto_tipo_especie_idx on reports (resuelto, tipo, especie);
 create index if not exists reports_oculto_idx on reports (oculto) where oculto = true;
+
+-- ---------------------------------------------------------------------------
+-- Rate limiting de /api/chat (Asistente Felpus, 2026-10-18). Cada mensaje
+-- del chat es una llamada paga a la API de Claude, así que el cupo por IP es
+-- chico y además tiene tope diario. Mismo diseño que check_embed_rate_limit:
+-- tabla sin políticas (nadie la lee por la API), función security definer
+-- solo para service_role, y la IP la determina exclusivamente la ruta de
+-- servidor (la que ve Vercel, no falsificable por quien visita el sitio).
+-- Puramente aditivo: no toca ninguna tabla existente. Si todavía no se
+-- corrió, /api/chat usa check_embed_rate_limit como respaldo.
+-- ---------------------------------------------------------------------------
+create table if not exists chat_requests (
+  ip text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists chat_requests_ip_created_idx on chat_requests (ip, created_at);
+alter table chat_requests enable row level security;
+
+create or replace function public.check_chat_rate_limit(client_ip text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  per_minute integer;
+  per_day integer;
+  max_per_minute constant integer := 8;
+  max_per_day constant integer := 80;
+begin
+  if client_ip is null or client_ip = '' then
+    return true;
+  end if;
+
+  delete from chat_requests where created_at < now() - interval '1 day';
+
+  select count(*) filter (where created_at > now() - interval '1 minute'), count(*)
+    into per_minute, per_day
+    from chat_requests
+    where ip = client_ip;
+
+  if per_minute >= max_per_minute or per_day >= max_per_day then
+    return false;
+  end if;
+
+  insert into chat_requests (ip) values (client_ip);
+  return true;
+end;
+$$;
+
+revoke all on function public.check_chat_rate_limit(text) from public, anon, authenticated;
+grant execute on function public.check_chat_rate_limit(text) to service_role;
