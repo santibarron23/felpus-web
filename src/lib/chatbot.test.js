@@ -389,3 +389,45 @@ describe("región (borrador sin coordenadas)", () => {
     expect(r.cards.map((c) => c.id)).toEqual(["salta"]);
   });
 });
+
+describe("punto en el mapa del borrador", () => {
+  it("normalizeDraft acepta coordenadas válidas y descarta las inválidas", () => {
+    expect(normalizeDraft({ lat: -24.78, lng: -65.41 })).toMatchObject({ lat: -24.78, lng: -65.41 });
+    expect(normalizeDraft({ lat: 200, lng: -65 })).toMatchObject({ lat: null, lng: null });
+    expect(normalizeDraft({ lat: -24.78 })).toMatchObject({ lat: null, lng: null });
+    expect(normalizeDraft({ lat: "x", lng: "y" })).toMatchObject({ lat: null, lng: null });
+    expect(isDraftEmpty(normalizeDraft({}))).toBe(true);
+  });
+  it("lo que manda el modelo (sin coordenadas) no borra el punto marcado", () => {
+    const d = mergeDraft(normalizeDraft({ zona: "Centro", lat: -24.78, lng: -65.41 }), { nombre: "Luna" });
+    expect(d).toMatchObject({ nombre: "Luna", lat: -24.78, lng: -65.41 });
+  });
+  it("el punto viaja al formulario y al matching, pero no al modelo", () => {
+    const d = normalizeDraft({ tipo: "perdida", especie: "perro", zona: "Centro", lat: -24.78, lng: -65.41 });
+    expect(draftToFormFields(d).form).toMatchObject({ lat: -24.78, lng: -65.41 });
+    expect(draftToMatchable(d)).toMatchObject({ lat: -24.78, lng: -65.41 });
+    const note = buildContextNote({ section: "inicio", draft: d, hasPhoto: false });
+    expect(note).not.toContain("-24.78");
+    expect(note).toContain("Ya marcó el punto en el mapa");
+  });
+  it("con punto marcado, el matching usa la distancia real (descarta lo lejano)", () => {
+    const d = normalizeDraft({ tipo: "perdida", especie: "perro", color: "Manchado / bicolor", tamano: "mediano", zona: "Barrio X", lat: -24.77, lng: -65.4 });
+    const { cards } = runMatching(d, [row({ id: "cerca" }), row({ id: "lejos", lat: -34.58, lng: -58.42, zona: "Palermo" })]);
+    expect(cards.map((c) => c.id)).toEqual(["cerca"]);
+  });
+});
+
+describe("prompt", () => {
+  it("no asume que la persona está en Salta", () => {
+    const p = buildSystemPrompt(new Date("2026-10-19T12:00:00-03:00"));
+    expect(p).toMatch(/nunca supongas que la persona está en Salta/);
+    expect(p).not.toMatch(/zona o barrio de Salta/);
+  });
+});
+
+describe("vista previa sin datos inventados", () => {
+  it("si no se dijo el tamaño, la descripción no lo menciona", () => {
+    const text = composeDraftDescription(normalizeDraft({ tipo: "encontrada", especie: "perro", color: "Negro" }));
+    expect(text).toBe("Es un perro, color negro.");
+  });
+});
