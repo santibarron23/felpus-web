@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { PawPrint, X, Send, Camera, Loader2, Pencil, Trash2, ArrowRight, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useTheme } from "./ThemeProvider";
 import {
   ASSISTANT_NAME,
@@ -20,9 +21,15 @@ import {
   faqById,
   fallbackReply,
 } from "../../lib/chatFaq";
-import { emptyDraft, normalizeDraft, isDraftEmpty, composeDraftDescription, draftToFormFields, MAX_USER_CHARS } from "../../lib/chatbot";
+import { emptyDraft, normalizeDraft, isDraftEmpty, composeDraftDescription, draftToFormFields, detectRegion, MAX_USER_CHARS } from "../../lib/chatbot";
 import { COLOR_OPTIONS, TAMANO_OPTIONS, EDAD_OPTIONS, MAX_FOTOS, resizeImageFile, computeHistogram, formatFechaAR } from "../../lib/matching";
 import { logError } from "../../lib/log";
+import { loadGoogleMaps, reverseGeocodeLatLng } from "../../lib/googleMaps";
+
+// El mapa (y el script de Google Maps) recién se carga cuando la persona
+// toca "Marcar en el mapa": mismo criterio que el formulario (showMapPicker),
+// cada carga del mapa es facturable.
+const MapPicker = dynamic(() => import("../MapPicker"), { ssr: false });
 
 const STORAGE_KEY = "felpus_asistente_v1";
 const MAX_STORED_MESSAGES = 40;
@@ -316,8 +323,8 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
     setPhotos((prev) => prev.slice(0, -1));
   }
 
-  function handlePublish() {
-    const fields = draftToFormFields(draft);
+  function handlePublish(finalDraft = draft) {
+    const fields = draftToFormFields(finalDraft);
     track("asistente_a_formulario", {
       con_foto: photos.length > 0,
       segundos: draftStartedAt ? Math.round((Date.now() - draftStartedAt) / 1000) : null,
@@ -325,6 +332,30 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
     onApplyDraft?.({ ...fields, fotos: photos.map((p) => ({ dataUrl: p.dataUrl, hist: p.hist, embedding: null })), startedAt: draftStartedAt });
     pushLocal({ content: "Listo, te pasé todo al formulario. Revisalo, agregá tu contacto y tocá \"Publicar\". Si querés volver, el chat queda acá." });
     close();
+  }
+
+  // Punto marcado en el mapa de la vista previa. Si la zona todavía está
+  // vacía, se completa sola con el barrio/ciudad de ese punto (nunca la
+  // dirección exacta, ver reverseGeocodeLatLng) — no pisa lo ya escrito.
+  function handleLocation(lat, lng) {
+    setDraft((d) => normalizeDraft({ ...d, lat, lng }));
+    track("asistente_mapa_marcado");
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return;
+    loadGoogleMaps(apiKey)
+      .then((maps) => reverseGeocodeLatLng(maps, lat, lng))
+      .then((place) => {
+        if (!place) return;
+        const zona = [place.zona, place.ciudad && place.ciudad !== place.zona ? place.ciudad : ""].filter(Boolean).join(", ");
+        setDraft((d) =>
+          normalizeDraft({
+            ...d,
+            zona: d.zona.trim() ? d.zona : zona,
+            provincia: d.provincia.trim() ? d.provincia : place.provincia || "",
+          })
+        );
+      })
+      .catch((e) => logError("No se pudo geocodificar el punto del mapa del asistente", e));
   }
 
   function handleDiscard() {
@@ -431,6 +462,7 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
                 draft={draft}
                 photos={photos}
                 onChange={(d) => setDraft(normalizeDraft(d))}
+                onLocation={handleLocation}
                 onPublish={handlePublish}
                 onDiscard={handleDiscard}
               />
@@ -658,13 +690,36 @@ function ResultCard({ C, card, kind, onOpen }) {
 const fieldClass =
   "w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40";
 
-function DraftPreview({ C, draft, photos, onChange, onPublish, onDiscard }) {
-  const [editing, setEditing] = useState(false);
+function DraftPreview({ C, draft, photos, onChange, onLocation, onPublish, onDiscard }) {
+  // Mientras se corrige, los campos editan una copia local SIN normalizar:
+  // normalizar en cada tecla (trim) se comía el espacio al final y no se
+  // podía separar palabras. Se valida recién al tocar "Listo" o "Revisar y
+  // publicar".
+  const [local, setLocal] = useState(null);
+  const editing = local != null;
   const [collapsed, setCollapsed] = useState(false);
-  const descripcion = composeDraftDescription(draft);
-  const set = (k) => (e) => onChange({ ...draft, [k]: e.target.value });
+  const [showMap, setShowMap] = useState(false);
+  const shown = local || draft;
+  const descripcion = composeDraftDescription(shown);
+  const set = (k) => (e) => setLocal((l) => ({ ...(l || draft), [k]: e.target.value }));
+  const commit = () => {
+    if (!local) return draft;
+    // La zona que completó el mapa mientras se editaba no se pierde.
+    const next = normalizeDraft({
+      ...local,
+      zona: local.zona?.trim() ? local.zona : draft.zona,
+      provincia: local.provincia?.trim() ? local.provincia : draft.provincia,
+      lat: draft.lat,
+      lng: draft.lng,
+    });
+    onChange(next);
+    setLocal(null);
+    return next;
+  };
+  const hasPoint = draft.lat != null && draft.lng != null;
+  const region = detectRegion(draft.zona, draft.provincia);
   const fieldStyle = { borderColor: C.border, background: C.surfaceSubtle, color: C.text };
-  const listo = draft.tipo && draft.especie && draft.zona && (draft.color || draft.colorDetalle);
+  const listo = shown.tipo && shown.especie && shown.zona?.trim() && (shown.color || shown.colorDetalle?.trim());
   const resumen = [
     ["Tipo", draft.tipo === "perdida" ? "Perdida" : draft.tipo === "encontrada" ? "Encontrada" : ""],
     ["Especie", draft.especie === "perro" ? "Perro" : draft.especie === "gato" ? "Gato" : ""],
@@ -673,6 +728,7 @@ function DraftPreview({ C, draft, photos, onChange, onPublish, onDiscard }) {
     ["Tamaño", draft.tamano],
     ["Sexo", draft.sexo],
     ["Zona", draft.zona],
+    ["Ubicación", hasPoint ? "Marcada en el mapa ✓" : ""],
     ["Fecha", draft.fecha ? formatFechaAR(draft.fecha) : ""],
   ];
 
@@ -731,7 +787,7 @@ function DraftPreview({ C, draft, photos, onChange, onPublish, onDiscard }) {
               <div className="grid grid-cols-2 gap-2">
                 <label className="space-y-0.5">
                   <span className="font-semibold" style={{ color: C.muted }}>Tipo</span>
-                  <select className={fieldClass} style={fieldStyle} value={draft.tipo} onChange={set("tipo")}>
+                  <select className={fieldClass} style={fieldStyle} value={shown.tipo} onChange={set("tipo")}>
                     <option value="">Sin dato</option>
                     <option value="perdida">Perdida</option>
                     <option value="encontrada">Encontrada</option>
@@ -739,7 +795,7 @@ function DraftPreview({ C, draft, photos, onChange, onPublish, onDiscard }) {
                 </label>
                 <label className="space-y-0.5">
                   <span className="font-semibold" style={{ color: C.muted }}>Especie</span>
-                  <select className={fieldClass} style={fieldStyle} value={draft.especie} onChange={set("especie")}>
+                  <select className={fieldClass} style={fieldStyle} value={shown.especie} onChange={set("especie")}>
                     <option value="">Sin dato</option>
                     <option value="perro">Perro</option>
                     <option value="gato">Gato</option>
@@ -747,11 +803,11 @@ function DraftPreview({ C, draft, photos, onChange, onPublish, onDiscard }) {
                 </label>
                 <label className="space-y-0.5">
                   <span className="font-semibold" style={{ color: C.muted }}>Nombre</span>
-                  <input className={fieldClass} style={fieldStyle} value={draft.nombre} maxLength={40} onChange={set("nombre")} />
+                  <input className={fieldClass} style={fieldStyle} value={shown.nombre} maxLength={40} onChange={set("nombre")} />
                 </label>
                 <label className="space-y-0.5">
                   <span className="font-semibold" style={{ color: C.muted }}>Color</span>
-                  <select className={fieldClass} style={fieldStyle} value={draft.color} onChange={set("color")}>
+                  <select className={fieldClass} style={fieldStyle} value={shown.color} onChange={set("color")}>
                     <option value="">Sin dato</option>
                     {COLOR_OPTIONS.map((c) => (
                       <option key={c} value={c}>{c}</option>
@@ -760,7 +816,7 @@ function DraftPreview({ C, draft, photos, onChange, onPublish, onDiscard }) {
                 </label>
                 <label className="space-y-0.5">
                   <span className="font-semibold" style={{ color: C.muted }}>Tamaño</span>
-                  <select className={fieldClass} style={fieldStyle} value={draft.tamano} onChange={set("tamano")}>
+                  <select className={fieldClass} style={fieldStyle} value={shown.tamano} onChange={set("tamano")}>
                     <option value="">Sin dato</option>
                     {TAMANO_OPTIONS.map((t) => (
                       <option key={t} value={t}>{t}</option>
@@ -769,7 +825,7 @@ function DraftPreview({ C, draft, photos, onChange, onPublish, onDiscard }) {
                 </label>
                 <label className="space-y-0.5">
                   <span className="font-semibold" style={{ color: C.muted }}>Sexo</span>
-                  <select className={fieldClass} style={fieldStyle} value={draft.sexo} onChange={set("sexo")}>
+                  <select className={fieldClass} style={fieldStyle} value={shown.sexo} onChange={set("sexo")}>
                     <option value="">Sin dato</option>
                     <option value="Macho">Macho</option>
                     <option value="Hembra">Hembra</option>
@@ -777,7 +833,7 @@ function DraftPreview({ C, draft, photos, onChange, onPublish, onDiscard }) {
                 </label>
                 <label className="space-y-0.5">
                   <span className="font-semibold" style={{ color: C.muted }}>Edad</span>
-                  <select className={fieldClass} style={fieldStyle} value={draft.edad} onChange={set("edad")}>
+                  <select className={fieldClass} style={fieldStyle} value={shown.edad} onChange={set("edad")}>
                     <option value="">Sin dato</option>
                     {EDAD_OPTIONS.filter((e) => e !== "No sé").map((e) => (
                       <option key={e} value={e}>{e}</option>
@@ -786,30 +842,53 @@ function DraftPreview({ C, draft, photos, onChange, onPublish, onDiscard }) {
                 </label>
                 <label className="space-y-0.5">
                   <span className="font-semibold" style={{ color: C.muted }}>Fecha</span>
-                  <input type="date" className={fieldClass} style={fieldStyle} value={draft.fecha} onChange={set("fecha")} />
+                  <input type="date" className={fieldClass} style={fieldStyle} value={shown.fecha} onChange={set("fecha")} />
                 </label>
               </div>
               <label className="block space-y-0.5">
                 <span className="font-semibold" style={{ color: C.muted }}>Color con tus palabras</span>
-                <input className={fieldClass} style={fieldStyle} value={draft.colorDetalle} maxLength={60} onChange={set("colorDetalle")} />
+                <input className={fieldClass} style={fieldStyle} value={shown.colorDetalle} maxLength={60} onChange={set("colorDetalle")} />
               </label>
               <label className="block space-y-0.5">
                 <span className="font-semibold" style={{ color: C.muted }}>Zona aproximada</span>
-                <input className={fieldClass} style={fieldStyle} value={draft.zona} maxLength={100} onChange={set("zona")} placeholder="Barrio o referencia, no tu dirección" />
+                <input className={fieldClass} style={fieldStyle} value={shown.zona} maxLength={100} onChange={set("zona")} placeholder="Barrio o referencia, no tu dirección" />
               </label>
               <label className="block space-y-0.5">
                 <span className="font-semibold" style={{ color: C.muted }}>Detalles (editable)</span>
-                <textarea className={fieldClass} style={fieldStyle} rows={3} value={draft.detalleLibre} maxLength={400} onChange={set("detalleLibre")} />
+                <textarea className={fieldClass} style={fieldStyle} rows={3} value={shown.detalleLibre} maxLength={400} onChange={set("detalleLibre")} />
               </label>
               <p className="text-[11px] leading-relaxed" style={{ color: C.muted }}>
                 Así queda: {descripcion}
               </p>
             </div>
           )}
+          {/* Mismo MapPicker que el formulario: el punto se confirma
+              explícitamente ahí adentro antes de guardarse. */}
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => setShowMap((v) => !v)}
+              aria-expanded={showMap}
+              className="w-full flex items-center justify-center gap-1.5 rounded-xl py-2 text-sm font-bold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+              style={{ borderColor: C.border, color: C.text, background: C.surfaceSubtle }}
+            >
+              📍 {showMap ? "Ocultar mapa" : hasPoint ? "Cambiar el punto en el mapa" : "Marcar en el mapa dónde fue"}
+            </button>
+            {showMap && (
+              <div className="rounded-xl overflow-hidden">
+                <MapPicker
+                  lat={draft.lat}
+                  lng={draft.lng}
+                  defaultCenter={region?.geo}
+                  onChange={(lat, lng) => onLocation(lat, lng)}
+                />
+              </div>
+            )}
+          </div>
           <div className="flex flex-wrap gap-2 pt-0.5">
             <button
               type="button"
-              onClick={onPublish}
+              onClick={() => onPublish(commit())}
               disabled={!listo}
               className="flex-1 min-w-[150px] flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold text-white disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
               style={{ background: C.redSolid }}
@@ -818,7 +897,7 @@ function DraftPreview({ C, draft, photos, onChange, onPublish, onDiscard }) {
             </button>
             <button
               type="button"
-              onClick={() => setEditing((v) => !v)}
+              onClick={() => (editing ? commit() : setLocal({ ...draft }))}
               className="flex items-center gap-1 rounded-xl px-3 py-2.5 text-sm font-bold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
               style={{ borderColor: C.border, color: C.text }}
               aria-pressed={editing}

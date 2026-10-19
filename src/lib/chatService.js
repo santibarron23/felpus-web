@@ -147,7 +147,8 @@ export async function runChat({
       }
       return {
         guardado: true,
-        borrador: draft,
+        // Sin coordenadas exactas (ver buildContextNote).
+        borrador: { ...draft, lat: undefined, lng: undefined, punto_en_mapa: draft.lat != null },
         faltan: missingFields(draft, { hasPhoto: context.hasPhoto || !!image }),
         coincidencias,
       };

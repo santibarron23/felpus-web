@@ -1616,11 +1616,13 @@ export default function FelpusMatcher() {
     setForm((f) => ({
       ...f,
       ...fields,
-      // La zona del chat es texto libre: ciudad/lat/lng de una selección
-      // anterior del mapa ya no corresponden.
+      // La zona del chat es texto libre: la ciudad de una selección anterior
+      // del autocompletado ya no corresponde. lat/lng: el punto que se marcó
+      // en el mapa del chat, si se marcó (si no, null — tampoco corresponde
+      // uno anterior).
       ciudad: "",
-      lat: null,
-      lng: null,
+      lat: fields.lat ?? null,
+      lng: fields.lng ?? null,
       fotos: fotos?.length ? fotos.slice(0, MAX_FOTOS) : f.fotos,
     }));
     setAccesorioChips(acc || []);
@@ -1632,7 +1634,7 @@ export default function FelpusMatcher() {
     if ((acc || []).length || (rea || []).length || (mar || []).length || dl || fields.nombre || fields.raza || fields.edad) {
       setShowMoreDetails(true);
     }
-    setGeoStatus("idle");
+    setGeoStatus(fields.lat != null && fields.lng != null ? "done" : "idle");
     setFormError("");
     setFieldErrors({});
     chatOriginRef.current = { startedAt: startedAt || Date.now() };

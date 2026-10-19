@@ -168,14 +168,15 @@ export const SEARCH_TOOL = {
 
 export const CHAT_TOOLS = [DRAFT_TOOL, SEARCH_TOOL];
 
-const SYSTEM_PROMPT_BASE = `Sos el Asistente Felpus, de felpus.com: una app gratuita y comunitaria para reencontrar mascotas perdidas, enfocada en Salta, Argentina. Hablás en español rioplatense, con voseo, cálido y concreto. Mucha gente te escribe desde el celular, angustiada, con faltas de ortografía o mensajes incompletos: entendé la intención, respondé corto (1 a 4 oraciones) y priorizá acciones concretas. Empatía sí, dramatismo no. Nunca prometas que la mascota va a aparecer. Sin títulos ni tablas; como mucho una lista corta.
+const SYSTEM_PROMPT_BASE = `Sos el Asistente Felpus, de felpus.com: una app gratuita y comunitaria para reencontrar mascotas perdidas, enfocada en Salta, Argentina. Felpus nació en Salta pero sirve en cualquier ciudad: nunca supongas que la persona está en Salta. Hablás en español rioplatense, con voseo, cálido y concreto. Mucha gente te escribe desde el celular, angustiada, con faltas de ortografía o mensajes incompletos: entendé la intención, respondé corto (1 a 4 oraciones) y priorizá acciones concretas. Empatía sí, dramatismo no. Nunca prometas que la mascota va a aparecer. Sin títulos ni tablas; como mucho una lista corta.
 
 QUÉ HACÉS
 
 1. Armar el reporte conversando (lo más importante). Cuando alguien perdió o encontró una mascota:
    - Llamá a guardar_borrador con todo lo que ya dijo, en cuanto lo diga.
-   - Después preguntá UNA sola cosa por mensaje, la más útil de lo que falta (te lo dice el resultado de la herramienta). Orden sugerido: perro o gato, zona, color, sexo, nombre (si la perdió), tamaño, señas o collar, fecha. Si algo no lo sabe, seguí: los campos pueden quedar vacíos.
+   - Después preguntá UNA sola cosa por mensaje, la más útil de lo que falta (te lo dice el resultado de la herramienta). Orden sugerido: perro o gato, zona (barrio y ciudad; preguntá "¿en qué barrio y ciudad?", sin nombrar ninguna ciudad en particular), color, sexo, nombre (si la perdió), tamaño, señas o collar, fecha. Si algo no lo sabe, seguí: los campos pueden quedar vacíos.
    - Pedí una foto (botón 📷 del chat) cuando ya tengas lo básico: es lo que más ayuda a reconocerla.
+   - Contale que en la vista previa puede tocar "📍 Marcar en el mapa" para fijar el punto exacto donde se perdió o se encontró: mejora mucho las coincidencias por distancia.
    - Cuando estén zona, color y sexo, decile que abajo tiene la vista previa del reporte, que puede corregir cualquier dato ahí, y que con "Revisar y publicar" pasa al formulario de Felpus, donde agrega su contacto y lo publica con el botón "Publicar". Vos no publicás nada: nunca digas que el reporte está publicado.
    - Si la persona corrige algo, guardalo de nuevo.
 
@@ -193,7 +194,7 @@ QUÉ HACÉS
 5. Qué hacer:
    - Si la perdió: publicar cuanto antes (las primeras 48 horas son clave) con fotos donde se vean sus rasgos; recorrer el barrio a pie llamándola en horarios tranquilos; avisar a veterinarias, negocios y vecinos de la zona; compartir el link en grupos vecinales de Facebook y WhatsApp; revisar las coincidencias seguido.
    - Si la encontró: solo si es seguro, retenerla y darle agua; fijarse si tiene chapita; en una veterinaria pueden ver si tiene microchip; publicarla como "Encontrada" con foto y zona. Si no puede retenerla, igual sacarle una foto y publicar dónde la vio.
-   - En Salta: en verano el mediodía es muy caluroso y a la siesta las calles quedan vacías; conviene buscar temprano o al atardecer. Los grupos vecinales de cada barrio (Tres Cerritos, Grand Bourg, Castañares, Limache, Villa Las Rosas…) suelen ser muy activos.
+   - Si está en Salta: en verano el mediodía es muy caluroso y a la siesta las calles quedan vacías; conviene buscar temprano o al atardecer. Los grupos vecinales de cada barrio (Tres Cerritos, Grand Bourg, Castañares, Limache, Villa Las Rosas…) suelen ser muy activos.
    - Si el animal está herido, muy débil o es agresivo: veterinaria lo antes posible; no des diagnósticos ni tratamientos. Si una persona corre peligro: emergencias.
    No inventes teléfonos, direcciones ni nombres de refugios o veterinarias.
 
@@ -312,7 +313,16 @@ export function emptyDraft() {
     manchaUbicacion: "",
     manchaColor: "",
     detalleLibre: "",
+    // Punto marcado en el mapa de la vista previa (MapPicker). Nunca lo
+    // completa el modelo: no está en el schema de guardar_borrador.
+    lat: null,
+    lng: null,
   };
+}
+
+function cleanCoord(value, max) {
+  const n = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
+  return Number.isFinite(n) && Math.abs(n) <= max ? n : null;
 }
 
 // Acepta tanto el formato de la herramienta (snake_case) como el del
@@ -344,7 +354,14 @@ export function normalizeDraft(input) {
     manchaUbicacion: tieneMancha ? pickEnum(get("manchaUbicacion", "mancha_ubicacion"), MANCHA_UBICACION_IDS) : "",
     manchaColor: tieneMancha ? pickEnum(get("manchaColor", "mancha_color"), MANCHA_COLOR_CHAT) : "",
     detalleLibre: cleanText(get("detalleLibre", "detalle_libre"), 400),
+    ...coordsOf(i),
   };
+}
+
+function coordsOf(i) {
+  const lat = cleanCoord(i.lat, 90);
+  const lng = cleanCoord(i.lng, 180);
+  return lat != null && lng != null ? { lat, lng } : { lat: null, lng: null };
 }
 
 // Lo que manda el modelo pisa lo guardado solo donde trae un valor: un ""
@@ -355,7 +372,7 @@ export function mergeDraft(current, update) {
   const next = normalizeDraft(update);
   const out = { ...base };
   for (const [k, v] of Object.entries(next)) {
-    if (Array.isArray(v) ? v.length > 0 : v !== "") out[k] = v;
+    if (Array.isArray(v) ? v.length > 0 : v !== "" && v != null) out[k] = v;
   }
   if (!out.marcas.includes("mancha")) {
     out.manchaUbicacion = "";
@@ -366,7 +383,7 @@ export function mergeDraft(current, update) {
 
 export function isDraftEmpty(draft) {
   const d = normalizeDraft(draft);
-  return Object.values(d).every((v) => (Array.isArray(v) ? v.length === 0 : v === ""));
+  return Object.values(d).every((v) => (Array.isArray(v) ? v.length === 0 : v === "" || v == null));
 }
 
 // Lo mínimo para buscar coincidencias con sentido: saber qué buscar (tipo +
@@ -424,6 +441,8 @@ export function draftToFormFields(draft) {
       edad: d.edad,
       zona: d.zona,
       provincia: d.provincia,
+      lat: d.lat,
+      lng: d.lng,
       ...(d.fecha ? { fecha: d.fecha } : {}),
     },
     accesorioChips: d.accesorios,
@@ -480,8 +499,10 @@ export function draftToMatchable(draft) {
     peso: "",
     zona: d.zona,
     provincia: d.provincia,
-    lat: null,
-    lng: null,
+    // Con punto en el mapa, scoreMatch usa la distancia real (y su propio
+    // filtro duro de distancia); sin él, compara la zona por nombre.
+    lat: d.lat,
+    lng: d.lng,
     // Sin fecha dicha no se asume "hoy": eso descartaría por cronología
     // reportes viejos que pueden ser la misma mascota.
     fecha: d.fecha || null,
@@ -616,7 +637,8 @@ export function probabilidad(score) {
 // que dibuja la UI (tarjetas).
 export function runMatching(draft, rows) {
   const probe = draftToMatchable(draft);
-  const region = detectRegion(probe.zona, probe.provincia);
+  // Con coordenadas no hace falta: scoreMatch ya descarta lo que está lejos.
+  const region = probe.lat != null ? null : detectRegion(probe.zona, probe.provincia);
   const candidates = (rows || [])
     .filter((r) => r && r.id)
     .map(rowToMatchable)
@@ -735,7 +757,11 @@ export function buildContextNote({ section, draft, hasPhoto, openReport }) {
     );
   }
   if (draft && !isDraftEmpty(draft)) {
-    lineas.push(`Borrador actual del reporte (ya guardado): ${JSON.stringify(draft)}.`);
+    // Las coordenadas exactas no viajan al modelo: le alcanza saber si hay
+    // un punto marcado.
+    const { lat, lng, ...sinCoords } = draft;
+    lineas.push(`Borrador actual del reporte (ya guardado): ${JSON.stringify(sinCoords)}.`);
+    lineas.push(lat != null && lng != null ? "Ya marcó el punto en el mapa." : "Todavía no marcó el punto en el mapa (puede hacerlo desde la vista previa).");
     lineas.push(hasPhoto ? "Ya adjuntó foto." : "Todavía no adjuntó foto.");
   }
   return lineas.join("\n");
