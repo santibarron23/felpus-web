@@ -144,9 +144,18 @@ function reportListColumns(excluded) {
 
 // Detecta si un error de PostgREST es por una columna puntual que no existe
 // todavía (42703 undefined_column), y de ser así, cuál de las opcionales es.
-function missingOptionalColumn(error, candidates) {
+//
+// También 42501 (permission denied): reports tiene permisos de lectura POR
+// COLUMNA (schema.sql), así que una columna nueva sin su "grant select"
+// rompe la consulta entera, y el mensaje no dice cuál es. Caso real
+// (2026-10-20): "inactivo" sin grant dejó el sitio en 0 mascotas. Se
+// descarta la opcional más nueva que todavía se esté pidiendo.
+function missingOptionalColumn(error, candidates, excluded = new Set()) {
   if (!error) return null;
   const text = `${error.message || ""} ${error.code || ""}`;
+  if (text.includes("42501") || /permission denied/i.test(text)) {
+    return [...candidates].reverse().find((c) => !excluded.has(c)) || null;
+  }
   if (!text.includes("42703") && !/does not exist/i.test(text)) return null;
   return candidates.find((c) => new RegExp(`\\b${c}\\b`, "i").test(text)) || null;
 }
@@ -161,7 +170,7 @@ export async function fetchReports({ includeHidden = false } = {}) {
   for (let attempt = 0; attempt <= REPORT_LIST_OPTIONAL_COLUMNS.length; attempt++) {
     const columns = reportListColumns(excluded);
     const result = await supabase.from(REPORTS_TABLE).select(columns).order("creado_en", { ascending: false });
-    const missing = missingOptionalColumn(result.error, REPORT_LIST_OPTIONAL_COLUMNS);
+    const missing = missingOptionalColumn(result.error, REPORT_LIST_OPTIONAL_COLUMNS, excluded);
     if (!missing || excluded.has(missing)) {
       if (result.error) throw result.error;
       // Publicaciones denunciadas por 3+ IPs distintas (ver flag_report en
