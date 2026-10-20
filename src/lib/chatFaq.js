@@ -13,9 +13,12 @@ export const GREETING =
 // asistente como si la persona lo hubiera escrito; `faq` = abre el menú de
 // ayuda local (sin IA).
 export const QUICK_ACTIONS = [
-  { id: "perdi", label: "🐶 Perdí a mi mascota", send: "Perdí a mi mascota" },
-  { id: "encontre", label: "🐱 Encontré una mascota", send: "Encontré una mascota" },
-  { id: "buscar", label: "🔎 Quiero buscar una mascota", send: "Quiero buscar una mascota" },
+  // draftPatch: se anota en el borrador al instante, así la siguiente
+  // pregunta del asistente ya trae sus botones (perro/gato…).
+  { id: "perdi", label: "🐶 Perdí a mi mascota", send: "Perdí a mi mascota", draftPatch: { tipo: "perdida" } },
+  { id: "encontre", label: "🐱 Encontré una mascota", send: "Encontré una mascota", draftPatch: { tipo: "encontrada" } },
+  // search: abre opciones de búsqueda para tocar, sin llamar a la IA.
+  { id: "buscar", label: "🔎 Quiero buscar una mascota", search: true },
   { id: "ayuda", label: "💬 Necesito ayuda", faq: true },
 ];
 
@@ -149,6 +152,14 @@ export const QUICK_REPLIES = {
     { label: "Mancha particular", send: "Tiene una mancha particular" },
     { label: "Cicatriz", send: "Tiene una cicatriz" },
     { label: "Nada en especial", send: "No tiene collar ni señas particulares", skip: "senas" },
+  ],
+  // Búsqueda: cada botón ya es una consulta completa para buscar_reportes.
+  buscar: [
+    { label: "🐶 Perros encontrados", send: "Mostrame los perros encontrados de los últimos 30 días" },
+    { label: "🐱 Gatos encontrados", send: "Mostrame los gatos encontrados de los últimos 30 días" },
+    { label: "🐶 Perros perdidos", send: "Mostrame los perros perdidos de los últimos 30 días" },
+    { label: "🐱 Gatos perdidos", send: "Mostrame los gatos perdidos de los últimos 30 días" },
+    { label: "📅 Todo lo de esta semana", send: "Mostrame todos los reportes de esta semana" },
   ],
   fecha: [
     { label: "Hoy", send: "Fue hoy" },

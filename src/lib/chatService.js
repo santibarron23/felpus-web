@@ -96,7 +96,13 @@ function addUsage(total, usage) {
   }
 }
 
-// runChat -> { reply, draft?, matches?, results?, refused? }
+export function pendingFor({ draft, draftChanged, reply, context, image }) {
+  if (isDraftEmpty(draft)) return null;
+  if (!draftChanged && !/\?\s*$/.test(reply || "")) return null;
+  return missingFields(draft, { hasPhoto: context.hasPhoto || !!image, skipped: context.skipped })[0]?.clave || null;
+}
+
+// runChat -> { reply, draft?, pending?, matches?, results?, refused? }
 export async function runChat({
   client,
   model = DEFAULT_CHAT_MODEL,
@@ -238,12 +244,14 @@ export async function runChat({
 
   return {
     reply: reply || EMPTY_REPLY,
+    ...(draftChanged ? { draft } : {}),
     // Qué está preguntando el asistente, para que la app muestre los botones
-    // de respuesta rápida de ESE dato (solo si en esta vuelta se trabajó el
-    // borrador: si no, la pregunta puede ser de otra cosa).
-    ...(draftChanged
-      ? { draft, pending: missingFields(draft, { hasPhoto: context.hasPhoto || !!image, skipped: context.skipped })[0]?.clave || null }
-      : {}),
+    // de respuesta rápida de ESE dato. Antes solo salía si el modelo había
+    // guardado el borrador en esta vuelta — visto en producción: con "Perdí a
+    // mi mascota" el modelo preguntaba "¿perro o gato?" sin guardar nada y no
+    // aparecían botones. Ahora alcanza con que haya un reporte en curso y la
+    // respuesta termine en pregunta.
+    ...(pendingFor({ draft, draftChanged, reply, context, image }) ? { pending: pendingFor({ draft, draftChanged, reply, context, image }) } : {}),
     ...(matches ? { matches } : {}),
     ...(results ? { results, searchFilters } : {}),
     ...(refused ? { refused: true } : {}),

@@ -194,3 +194,20 @@ describe("pending (botones de respuesta rápida)", () => {
     expect(r.pending).toBeUndefined();
   });
 });
+
+describe("pending sin que el modelo guarde (visto en producción)", () => {
+  it("si ya hay reporte en curso y la respuesta es una pregunta, manda los botones del dato que falta", async () => {
+    const r = await runChat({
+      ...base,
+      draft: { ...emptyDraft(), tipo: "perdida" },
+      client: fakeClient([text("Lamento mucho. ¿Es perro o gato?")]),
+      readReports: vi.fn(),
+    });
+    expect(r.pending).toBe("especie");
+    expect(r.draft).toBeUndefined();
+  });
+  it("si no es una pregunta, no muestra botones", async () => {
+    const r = await runChat({ ...base, draft: { ...emptyDraft(), tipo: "perdida" }, client: fakeClient([text("Listo.")]), readReports: vi.fn() });
+    expect(r.pending).toBeUndefined();
+  });
+});
