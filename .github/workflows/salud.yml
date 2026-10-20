@@ -1,0 +1,34 @@
+name: Salud de felpus.com
+
+# Cada 30 minutos pide https://felpus.com/api/health, que hace la misma
+# consulta del listado público que un visitante. Si falla (por ejemplo una
+# columna nueva sin permiso de lectura, como el 2026-10-20, que dejó el sitio
+# en 0 mascotas), este workflow queda en rojo y GitHub te manda un email.
+# También corre unos minutos después de cada merge a main, para detectarlo
+# apenas termina el deploy de Vercel. Gratis (GitHub Actions), sin secretos.
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Esperar el deploy de Vercel (solo después de un merge)
+        if: github.event_name == 'push'
+        run: sleep 240
+
+      - name: Consultar /api/health (3 intentos)
+        run: |
+          for i in 1 2 3; do
+            body=$(curl -sS --max-time 20 -w '\n%{http_code}' https://felpus.com/api/health) || true
+            code=$(echo "$body" | tail -n1)
+            echo "Intento $i: HTTP $code — $(echo "$body" | head -n -1)"
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 30
+          done
+          echo "::error::felpus.com no puede cargar los reportes. Revisá /api/health y los permisos de Supabase."
+          exit 1
