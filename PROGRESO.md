@@ -274,3 +274,22 @@ en el navegador.
    `report_id` text en vez de uuid; tipos `perdida`/`encontrada`; especie
    también `otro`; "inactivo" con una columna nueva; manifest en
    `manifest.js` (el proyecto es JavaScript).
+
+## Decisiones (2026-10-20)
+
+- **Invitados:** se mantiene el push por reporte (funciona sin cuenta) para
+  la alerta de match. Zonas, `push_subscriptions` por usuario y
+  `/configuracion/alertas` son para usuarios logueados.
+- **Email:** se mantiene como está hoy (Resend, `score ≥ 0.4`, máximo 3 por
+  reporte). El push se suma.
+- **Colores del manifest:** paleta nueva (`#D71925` / `#F8F1E8`).
+- **Umbrales:** los del plan, `MATCH_THRESHOLD_HIGH=0.80` y
+  `MATCH_THRESHOLD_MID=0.65`, configurables por variable de entorno.
+- **Webhook:** se reutiliza el trigger existente (`trg_notify_new_report` →
+  `/api/notify-match`), que ahora hace el despacho completo (match + zona).
+  `/api/alerts/dispatch` es la ruta nueva del plan, con la misma lógica y el
+  secreto `x-alerts-secret`.
+- **Adaptaciones:** `report_id` text; tipos `perdida`/`encontrada`; especie
+  `otro` incluida; `notifications_log` identifica al destinatario con
+  `recipient` (`user:<uuid>` o `report:<id>` para invitados), porque un
+  invitado no tiene `user_id`.
