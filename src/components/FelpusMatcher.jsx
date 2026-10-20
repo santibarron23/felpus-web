@@ -30,8 +30,6 @@ import {
   Heart,
   Bell,
   Flame,
-  Sun,
-  Moon,
   Mic,
   Square,
   Images,
@@ -310,7 +308,7 @@ function AdminBreakdownCard({ title, items }) {
 
 export default function FelpusMatcher() {
   const C = useTheme();
-  const { mode: themeMode, toggle: toggleTheme } = useThemeToggle();
+  const { mode: themeMode } = useThemeToggle();
   const [activeTab, setActiveTab] = useState("inicio");
   const [reportKind, setReportKind] = useState("perdida");
   const [form, setForm] = useState(emptyForm());
@@ -2059,35 +2057,8 @@ export default function FelpusMatcher() {
                 <ShieldCheck className="w-4 h-4" style={{ color: activeTab === "admin" ? "#fff" : C.orangeInk }} />
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => {
-                playTap();
-                toggleTheme();
-              }}
-              // aria-label/title elegidos según themeMode: el texto en sí
-              // también puede diferir entre lo que renderizó el server (sin
-              // forma de conocer el tema real de quien visita) y lo que
-              // corrige el cliente al hidratar — a diferencia del ícono o el
-              // logo, acá no hay un equivalente "CSS puro" razonable para un
-              // atributo de texto, así que se avisa explícitamente a React
-              // que esta discrepancia es esperada y no debe advertir por
-              // ella (mismo patrón recomendado por React para valores que
-              // legítimamente solo se conocen en el cliente).
-              suppressHydrationWarning
-              aria-label={themeMode === "dark" ? "Cambiar a tema claro" : "Cambiar a tema oscuro"}
-              title={themeMode === "dark" ? "Tema claro" : "Tema oscuro"}
-              className="w-8 h-8 rounded-full flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 bg-[#F6EFE4] dark:bg-[#12100F]"
-            >
-              {/* Mismo motivo que el logo del header: dos íconos siempre
-                  presentes, alternados por CSS "dark:" en vez de elegir uno
-                  en JS según themeMode, para no repetir el mismatch de
-                  hidratación acá también — y por eso el color de cada uno
-                  (antes style={{color: C.x}}) también pasa a ser un par
-                  claro/oscuro fijo en clases, no un valor calculado en JS. */}
-              <Sun className="w-4 h-4 hidden dark:block text-[#E8934A]" />
-              <Moon className="w-4 h-4 dark:hidden text-[#6B5643]" />
-            </button>
+            {/* Modo noche quitado a pedido (2026-10-19): la web queda
+                siempre en claro (ver ThemeProvider.jsx). */}
             {user && (
               <div className="relative">
                 <button
