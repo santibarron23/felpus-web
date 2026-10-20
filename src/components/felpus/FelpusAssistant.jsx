@@ -17,6 +17,7 @@ import {
   QUICK_ACTIONS,
   FAQ_TOPICS,
   FALLBACK_ACTIONS,
+  QUICK_REPLIES,
   contextualSuggestions,
   faqById,
   fallbackReply,
@@ -25,6 +26,7 @@ import { emptyDraft, normalizeDraft, isDraftEmpty, composeDraftDescription, draf
 import { COLOR_OPTIONS, TAMANO_OPTIONS, EDAD_OPTIONS, MAX_FOTOS, resizeImageFile, computeHistogram, formatFechaAR } from "../../lib/matching";
 import { logError } from "../../lib/log";
 import { loadGoogleMaps, reverseGeocodeLatLng } from "../../lib/googleMaps";
+import { requestLocation, geolocationErrorMessage, MAP_GEOLOCATION_OPTIONS } from "../../lib/geolocation";
 
 // El mapa (y el script de Google Maps) recién se carga cuando la persona
 // toca "Marcar en el mapa": mismo criterio que el formulario (showMapPicker),
@@ -59,6 +61,7 @@ function loadStored() {
       messages: Array.isArray(data.messages) ? data.messages.filter((m) => m && typeof m.content === "string").slice(-MAX_STORED_MESSAGES) : [],
       draft: normalizeDraft(data.draft),
       draftStartedAt: typeof data.draftStartedAt === "number" ? data.draftStartedAt : null,
+      skipped: Array.isArray(data.skipped) ? data.skipped.filter((k) => typeof k === "string") : [],
     };
   } catch {
     return null;
@@ -100,6 +103,10 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
   const [messages, setMessages] = useState(() => [greetingMessage()]);
   const [draft, setDraft] = useState(emptyDraft);
   const [draftStartedAt, setDraftStartedAt] = useState(null);
+  // Datos que la persona salteó con "No sé"/"Ahora no" en los botones de
+  // respuesta rápida: el servidor no los vuelve a pedir.
+  const [skipped, setSkipped] = useState([]);
+  const [locating, setLocating] = useState(false);
   const [photos, setPhotos] = useState([]); // [{ dataUrl, hist }] — solo en memoria
   const [pendingImage, setPendingImage] = useState(null); // versión chica, se manda UNA vez
   const [processingPhoto, setProcessingPhoto] = useState(false);
@@ -120,6 +127,7 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
       if (stored.messages.length) setMessages([greetingMessage(), ...stored.messages.filter((m) => m.id !== "greeting")]);
       setDraft(stored.draft);
       setDraftStartedAt(stored.draftStartedAt);
+      setSkipped(stored.skipped);
     }
     setHydrated(true);
   }, []);
@@ -131,8 +139,9 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
       messages: messages.filter((m) => m.id !== "greeting").map(({ id, role, content, local }) => ({ id, role, content, local })),
       draft,
       draftStartedAt,
+      skipped,
     });
-  }, [messages, draft, draftStartedAt, hydrated]);
+  }, [messages, draft, draftStartedAt, skipped, hydrated]);
 
   // Se publicó (en el formulario) un reporte que salió de este chat: el
   // borrador ya cumplió su función.
@@ -140,6 +149,7 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
     if (!publishedToken) return;
     setDraft(emptyDraft());
     setDraftStartedAt(null);
+    setSkipped([]);
     setPhotos([]);
     setPendingImage(null);
     setMessages((prev) => [
@@ -188,10 +198,13 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
   const pushLocal = useCallback((msg) => setMessages((prev) => [...prev, { id: newId(), role: "assistant", local: true, ...msg }]), []);
 
   const send = useCallback(
-    async (rawText) => {
+    async (rawText, { draftOverride = null, skipKey = null } = {}) => {
       const text = (rawText || "").trim() || (pendingImage ? "Te mando una foto de la mascota." : "");
       if (!text || busy) return;
       const image = pendingImage;
+      const currentDraft = draftOverride || draft;
+      const nextSkipped = skipKey && !skipped.includes(skipKey) ? [...skipped, skipKey] : skipped;
+      if (nextSkipped !== skipped) setSkipped(nextSkipped);
       const userMsg = { id: newId(), role: "user", content: image ? `📷 ${text}` : text, thumb: image ? photos[photos.length - 1]?.dataUrl : null };
       const nextMessages = [...messages, userMsg];
       setMessages(nextMessages);
@@ -209,8 +222,8 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             messages: history,
-            draft,
-            context: { section, reportId: openReport?.id || null, hasPhoto: photos.length > 0 },
+            draft: currentDraft,
+            context: { section, reportId: openReport?.id || null, hasPhoto: photos.length > 0, skipped: nextSkipped },
             image,
           }),
         });
@@ -231,6 +244,8 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
             content: data.reply,
             cards: data.matches?.length ? data.matches : data.results?.length ? data.results : null,
             cardsKind: data.matches?.length ? "matches" : data.results ? "results" : null,
+            // Dato que está preguntando: la UI muestra sus botones de respuesta.
+            pending: typeof data.pending === "string" && QUICK_REPLIES[data.pending] ? data.pending : null,
           },
         ]);
         if (data.results) track("asistente_busqueda", { resultados: data.results.length });
@@ -251,8 +266,54 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
         setBusy(false);
       }
     },
-    [busy, messages, draft, draftStartedAt, section, openReport, photos, pendingImage, pushLocal]
+    [busy, messages, draft, draftStartedAt, skipped, section, openReport, photos, pendingImage, pushLocal]
   );
+
+  // Botón de respuesta rápida (perro/gato, color, sexo, ubicación, foto…).
+  function handleQuickReply(reply) {
+    track("asistente_boton_respuesta", { dato: reply.label });
+    if (reply.action === "foto") {
+      fileRef.current?.click();
+      return;
+    }
+    if (reply.action === "ubicacion") {
+      shareMyLocation();
+      return;
+    }
+    send(reply.send, { skipKey: reply.skip || null });
+  }
+
+  // "📍 Usar mi ubicación actual": marca el punto en el borrador (igual que
+  // el mapa de la vista previa) y le cuenta al asistente el barrio/ciudad —
+  // nunca la dirección exacta (ver reverseGeocodeLatLng).
+  function shareMyLocation() {
+    if (locating) return;
+    setLocating(true);
+    requestLocation(
+      async ({ lat, lng }) => {
+        let zona = "";
+        try {
+          const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+          if (apiKey) {
+            const place = await reverseGeocodeLatLng(await loadGoogleMaps(apiKey), lat, lng);
+            if (place) zona = [place.zona, place.ciudad && place.ciudad !== place.zona ? place.ciudad : ""].filter(Boolean).join(", ");
+          }
+        } catch (e) {
+          logError("No se pudo geocodificar la ubicación del asistente", e);
+        }
+        const nextDraft = normalizeDraft({ ...draft, lat, lng, zona: draft.zona?.trim() ? draft.zona : zona });
+        setDraft(nextDraft);
+        setLocating(false);
+        track("asistente_ubicacion_actual");
+        send(zona ? `Fue por ${zona}` : "Ya marqué el lugar en el mapa", { draftOverride: nextDraft });
+      },
+      (err) => {
+        setLocating(false);
+        pushLocal({ content: `${geolocationErrorMessage(err)} También podés escribir el barrio o marcar el punto en el mapa de la vista previa.` });
+      },
+      MAP_GEOLOCATION_OPTIONS
+    );
+  }
 
   function handleQuick(action) {
     track("asistente_acceso_rapido", { id: action.id });
@@ -360,6 +421,7 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
 
   function handleDiscard() {
     track("asistente_borrador_descartado");
+    setSkipped([]);
     setDraft(emptyDraft());
     setDraftStartedAt(null);
     setPhotos([]);
@@ -368,6 +430,7 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
   }
 
   function handleReset() {
+    setSkipped([]);
     setMessages([greetingMessage()]);
     setDraft(emptyDraft());
     setDraftStartedAt(null);
@@ -379,6 +442,7 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
   const suggestions = useMemo(() => contextualSuggestions(section, { hasOpenReport: !!openReport }), [section, openReport]);
   const showDraft = !isDraftEmpty(draft);
   const onlyGreeting = messages.length === 1;
+  const lastAssistantId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
 
   return (
     <>
@@ -446,6 +510,9 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
                 onQuick={handleQuick}
                 onFaq={handleFaq}
                 onAction={handleAction}
+                quickReplies={!busy && m.pending && m.id === lastAssistantId ? QUICK_REPLIES[m.pending] : null}
+                onQuickReply={handleQuickReply}
+                locating={locating}
                 onOpenReport={(id) => {
                   track("asistente_ficha_abierta", { desde: m.cardsKind || "" });
                   // La ficha se abre debajo del panel: se cierra el chat (la
@@ -582,7 +649,7 @@ function Chip({ C, children, onClick, disabled }) {
   );
 }
 
-function MessageBubble({ m, C, onQuick, onFaq, onAction, onOpenReport, disabled }) {
+function MessageBubble({ m, C, onQuick, onFaq, onAction, onOpenReport, disabled, quickReplies, onQuickReply, locating }) {
   const isUser = m.role === "user";
   return (
     <div className={`felpus-fadein flex flex-col ${isUser ? "items-end" : "items-start"} gap-2`}>
@@ -602,6 +669,15 @@ function MessageBubble({ m, C, onQuick, onFaq, onAction, onOpenReport, disabled 
           {QUICK_ACTIONS.map((a) => (
             <Chip key={a.id} C={C} onClick={() => onQuick(a)} disabled={disabled}>
               {a.label}
+            </Chip>
+          ))}
+        </div>
+      )}
+      {quickReplies?.length > 0 && (
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Respuestas rápidas">
+          {quickReplies.map((r) => (
+            <Chip key={r.label} C={C} onClick={() => onQuickReply(r)} disabled={r.action === "ubicacion" && locating}>
+              {r.action === "ubicacion" && locating ? "Buscando tu ubicación…" : r.label}
             </Chip>
           ))}
         </div>
@@ -829,6 +905,7 @@ function DraftPreview({ C, draft, photos, onChange, onLocation, onPublish, onDis
                     <option value="">Sin dato</option>
                     <option value="Macho">Macho</option>
                     <option value="Hembra">Hembra</option>
+                    <option value="No sé">No sé</option>
                   </select>
                 </label>
                 <label className="space-y-0.5">

@@ -177,3 +177,20 @@ describe("lectura de reportes", () => {
     expect(await fetchOpenReport({ supabaseUrl: "u", anonKey: "k", fetchImpl }, null)).toBeNull();
   });
 });
+
+describe("pending (botones de respuesta rápida)", () => {
+  it("devuelve qué dato está preguntando cuando se trabajó el borrador", async () => {
+    const client = fakeClient([toolUse("guardar_borrador", { ...DRAFT_INPUT, sexo: "", tamano: "" }), text("¿Es macho o hembra?")]);
+    const r = await runChat({ ...base, client, readReports: vi.fn(async () => []) });
+    expect(r.pending).toBe("sexo");
+  });
+  it("respeta lo salteado", async () => {
+    const client = fakeClient([toolUse("guardar_borrador", { ...DRAFT_INPUT, sexo: "", tamano: "" }), text("ok")]);
+    const r = await runChat({ ...base, context: { ...base.context, skipped: ["sexo"] }, client, readReports: vi.fn(async () => []) });
+    expect(r.pending).toBe("nombre");
+  });
+  it("sin trabajar el borrador no manda botones", async () => {
+    const r = await runChat({ ...base, client: fakeClient([text("¡Hola!")]), readReports: vi.fn() });
+    expect(r.pending).toBeUndefined();
+  });
+});

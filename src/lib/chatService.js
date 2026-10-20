@@ -149,7 +149,7 @@ export async function runChat({
         guardado: true,
         // Sin coordenadas exactas (ver buildContextNote).
         borrador: { ...draft, lat: undefined, lng: undefined, punto_en_mapa: draft.lat != null },
-        faltan: missingFields(draft, { hasPhoto: context.hasPhoto || !!image }),
+        faltan: missingFields(draft, { hasPhoto: context.hasPhoto || !!image, skipped: context.skipped }),
         coincidencias,
       };
     }
@@ -238,7 +238,12 @@ export async function runChat({
 
   return {
     reply: reply || EMPTY_REPLY,
-    ...(draftChanged ? { draft } : {}),
+    // Qué está preguntando el asistente, para que la app muestre los botones
+    // de respuesta rápida de ESE dato (solo si en esta vuelta se trabajó el
+    // borrador: si no, la pregunta puede ser de otra cosa).
+    ...(draftChanged
+      ? { draft, pending: missingFields(draft, { hasPhoto: context.hasPhoto || !!image, skipped: context.skipped })[0]?.clave || null }
+      : {}),
     ...(matches ? { matches } : {}),
     ...(results ? { results, searchFilters } : {}),
     ...(refused ? { refused: true } : {}),

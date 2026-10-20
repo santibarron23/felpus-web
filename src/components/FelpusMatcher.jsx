@@ -115,6 +115,7 @@ import { usersReportToCsv } from "../lib/csv";
 import { playTap, playSuccess } from "../lib/sound";
 import { loadGoogleMaps, reverseGeocodeLatLng } from "../lib/googleMaps";
 import { requestLocation, geolocationErrorMessage } from "../lib/geolocation";
+import { dictationErrorMessage } from "../lib/dictation";
 import { subscribeReportPush, isPushSupported } from "../lib/push";
 import { logError } from "../lib/log";
 import { displayColor } from "../lib/theme";
@@ -1074,24 +1075,46 @@ export default function FelpusMatcher() {
   // nativa del navegador (Chrome/Edge/Safari en mobile), sin dependencias
   // ni costo. Se degrada con gracia: si el navegador no la soporta (ej.
   // Firefox), el botón de mic directamente no se muestra (ver JSX).
-  function startDictation() {
+  //
+  // Arreglo 2026-10-20 (no funcionaba en celulares): el header
+  // Permissions-Policy bloqueaba el micrófono (ver next.config.mjs); además
+  // el botón quedaba deshabilitado mientras escuchaba (no se podía frenar) y
+  // cualquier error mostraba el mismo mensaje genérico.
+  const recognitionRef = useRef(null);
+  function toggleDictation() {
+    if (dictating) {
+      try {
+        recognitionRef.current?.stop();
+      } catch {
+        // ya estaba detenido
+      }
+      return;
+    }
     const SpeechRecognition = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
     if (!SpeechRecognition) return;
     const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition;
     recognition.lang = "es-AR";
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
     recognition.onresult = (e) => {
-      const transcript = e.results?.[0]?.[0]?.transcript?.trim();
+      const transcript = [...(e.results || [])].map((r) => r?.[0]?.transcript || "").join(" ").trim();
       if (transcript) setDetalleLibre((prev) => (prev.trim() ? `${prev.trim()} ${transcript}` : transcript));
     };
-    recognition.onerror = () => {
+    recognition.onerror = (e) => {
       setDictating(false);
-      pushToast("error", "No pudimos escuchar bien — probá de nuevo o escribí a mano.");
+      const msg = dictationErrorMessage(e?.error);
+      if (msg) pushToast("error", msg);
     };
     recognition.onend = () => setDictating(false);
-    setDictating(true);
-    recognition.start();
+    try {
+      recognition.start();
+      setDictating(true);
+    } catch (err) {
+      logError("No se pudo iniciar el dictado", err);
+      setDictating(false);
+      pushToast("error", "No pudimos activar el dictado. Probá de nuevo o escribí a mano.");
+    }
   }
 
   // Checklist de campos clave del formulario de reporte, en el mismo orden
@@ -3236,14 +3259,14 @@ export default function FelpusMatcher() {
                         {typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition) && (
                           <button
                             type="button"
-                            onClick={startDictation}
-                            disabled={dictating}
-                            aria-label={dictating ? "Escuchando..." : "Dictar por voz"}
+                            onClick={toggleDictation}
+                            aria-pressed={dictating}
+                            aria-label={dictating ? "Dejar de dictar" : "Dictar por voz"}
                             className="shrink-0 flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full border disabled:opacity-70 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
                             style={dictating ? { background: C.redSolid, color: "#fff", borderColor: C.redSolid } : { color: C.text, borderColor: C.border, background: C.surface }}
                           >
                             {dictating ? <Square className="w-3 h-3" fill="currentColor" /> : <Mic className="w-3 h-3" />}
-                            {dictating ? "Escuchando..." : "Dictar"}
+                            {dictating ? "Escuchando… tocá para terminar" : "Dictar"}
                           </button>
                         )}
                       </div>
