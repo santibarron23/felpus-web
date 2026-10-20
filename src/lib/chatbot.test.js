@@ -126,11 +126,13 @@ describe("parseImageDataUrl / sanitizeContext", () => {
       section: "explorar",
       reportId: "abc-123",
       hasPhoto: true,
+      skipped: [],
     });
     expect(sanitizeContext({ section: "<script>", reportId: "1; drop table", hasPhoto: "si" })).toEqual({
       section: "inicio",
       reportId: null,
       hasPhoto: false,
+      skipped: [],
     });
   });
 });
@@ -429,5 +431,24 @@ describe("vista previa sin datos inventados", () => {
   it("si no se dijo el tamaño, la descripción no lo menciona", () => {
     const text = composeDraftDescription(normalizeDraft({ tipo: "encontrada", especie: "perro", color: "Negro" }));
     expect(text).toBe("Es un perro, color negro.");
+  });
+});
+
+describe("botones de respuesta rápida", () => {
+  it("cada dato faltante trae una clave estable y respeta lo salteado", () => {
+    const d = normalizeDraft({ tipo: "perdida", especie: "perro" });
+    expect(missingFields(d).map((f) => f.clave)).toEqual(["zona", "color", "sexo", "nombre", "tamano", "foto", "senas", "fecha"]);
+    expect(missingFields(d, { skipped: ["zona", "nombre"] }).map((f) => f.clave)[0]).toBe("color");
+  });
+  it("con punto en el mapa, la zona no falta", () => {
+    expect(missingFields(normalizeDraft({ lat: -24.7, lng: -65.4 })).map((f) => f.clave)).not.toContain("zona");
+  });
+  it("'No sé' es un sexo válido (cierra la pregunta)", () => {
+    expect(normalizeDraft({ sexo: "No sé" }).sexo).toBe("No sé");
+    expect(missingFields(normalizeDraft({ sexo: "No sé" })).map((f) => f.clave)).not.toContain("sexo");
+  });
+  it("sanitizeContext solo acepta claves conocidas en skipped", () => {
+    expect(sanitizeContext({ skipped: ["foto", "hackear", "foto"] }).skipped).toEqual(["foto"]);
+    expect(sanitizeContext({}).skipped).toEqual([]);
   });
 });

@@ -75,7 +75,9 @@ export const SEARCH_TOOL_NAME = "buscar_reportes";
 
 export const CHAT_SECTIONS = ["inicio", "explorar", "reportar", "resultado", "ranking", "mifelpus", "admin"];
 
-const SEXO_CHAT_OPTIONS = ["Macho", "Hembra"];
+// "No sé" es una respuesta válida del formulario (SEXO_OPTIONS) — sirve para
+// que el botón "No sé" del chat cierre la pregunta sin inventar el dato.
+const SEXO_CHAT_OPTIONS = ["Macho", "Hembra", "No sé"];
 const EDAD_CHAT_OPTIONS = EDAD_OPTIONS.filter((e) => e !== "No sé");
 const ACCESORIO_IDS = ACCESORIO_OPTIONS.map((o) => o.id);
 const REACCION_IDS = REACCION_OPTIONS.map((o) => o.id).filter((id) => id !== "no_se");
@@ -112,7 +114,7 @@ export const DRAFT_TOOL = {
       },
       color_detalle: { type: "string", description: "El color con las palabras de la persona (ej. \"negro con manchas blancas\")." },
       tamano: { type: "string", enum: [...TAMANO_OPTIONS, ""], description: "chiquito/a = chico." },
-      sexo: { type: "string", enum: [...SEXO_CHAT_OPTIONS, ""], description: "perrita/gatita = Hembra." },
+      sexo: { type: "string", enum: [...SEXO_CHAT_OPTIONS, ""], description: "perrita/gatita = Hembra. \"No sé\" si la persona dice que no sabe." },
       edad: { type: "string", enum: [...EDAD_CHAT_OPTIONS, ""] },
       zona: { type: "string", description: "Barrio, calle o lugar aproximado (ej. \"Tres Cerritos\"). Nunca una dirección exacta de una casa." },
       provincia: { type: "string", description: "Provincia, si se sabe (ej. \"Salta\")." },
@@ -153,7 +155,7 @@ export const SEARCH_TOOL = {
       color: { type: "string", enum: [...COLOR_OPTIONS, ""] },
       raza: { type: "string" },
       tamano: { type: "string", enum: [...TAMANO_OPTIONS, ""] },
-      sexo: { type: "string", enum: [...SEXO_CHAT_OPTIONS, ""] },
+      sexo: { type: "string", enum: ["Macho", "Hembra", ""] },
       zona: { type: "string", description: "Barrio o localidad. \"\" para todas." },
       dias: {
         type: "integer",
@@ -174,7 +176,7 @@ QUÉ HACÉS
 
 1. Armar el reporte conversando (lo más importante). Cuando alguien perdió o encontró una mascota:
    - Llamá a guardar_borrador con todo lo que ya dijo, en cuanto lo diga.
-   - Después preguntá UNA sola cosa por mensaje, la más útil de lo que falta (te lo dice el resultado de la herramienta). Orden sugerido: perro o gato, zona (barrio y ciudad; preguntá "¿en qué barrio y ciudad?", sin nombrar ninguna ciudad en particular), color, sexo, nombre (si la perdió), tamaño, señas o collar, fecha. Si algo no lo sabe, seguí: los campos pueden quedar vacíos.
+   - Después preguntá UNA sola cosa por mensaje: el PRIMER dato de "faltan" en el resultado de la herramienta. La app le muestra a la persona botones con las respuestas posibles para ese dato (perro/gato, colores, sexo, tamaño, ubicación, foto, fecha…), así que preguntalo en una frase corta, sin enumerar las opciones. Si la persona dice que no sabe, guardá lo que corresponda y seguí con el siguiente. Orden sugerido: perro o gato, zona (barrio y ciudad; preguntá "¿en qué barrio y ciudad?", sin nombrar ninguna ciudad en particular), color, sexo, nombre (si la perdió), tamaño, señas o collar, fecha. Si algo no lo sabe, seguí: los campos pueden quedar vacíos.
    - Pedí una foto (botón 📷 del chat) cuando ya tengas lo básico: es lo que más ayuda a reconocerla.
    - Contale que en la vista previa puede tocar "📍 Marcar en el mapa" para fijar el punto exacto donde se perdió o se encontró: mejora mucho las coincidencias por distancia.
    - Cuando estén zona, color y sexo, decile que abajo tiene la vista previa del reporte, que puede corregir cualquier dato ahí, y que con "Revisar y publicar" pasa al formulario de Felpus, donde agrega su contacto y lo publica con el botón "Publicar". Vos no publicás nada: nunca digas que el reporte está publicado.
@@ -267,6 +269,7 @@ export function sanitizeContext(raw) {
     section: CHAT_SECTIONS.includes(c.section) ? c.section : "inicio",
     reportId: typeof c.reportId === "string" && UUIDISH_RE.test(c.reportId) ? c.reportId : null,
     hasPhoto: c.hasPhoto === true,
+    skipped: Array.isArray(c.skipped) ? [...new Set(c.skipped.filter((k) => MISSING_KEYS.includes(k)))] : [],
   };
 }
 
@@ -394,19 +397,26 @@ export function draftReadyForMatching(draft) {
 
 // Qué falta, en el orden en que conviene preguntarlo. "requerido" = el
 // formulario no deja publicar sin eso (ver handleSubmit en FelpusMatcher).
-export function missingFields(draft, { hasPhoto = false } = {}) {
+// "clave" = id estable que usa la UI para mostrar botones de respuesta
+// rápida (ver QUICK_REPLIES); "skipped" = datos que la persona salteó con
+// "No sé"/"Ahora no", para no volver a preguntarlos.
+export const MISSING_KEYS = ["tipo", "especie", "zona", "color", "sexo", "nombre", "tamano", "foto", "senas", "fecha"];
+export function missingFields(draft, { hasPhoto = false, skipped = [] } = {}) {
+  const skip = new Set(skipped);
   const faltan = [];
-  const add = (campo, requerido) => faltan.push({ campo, requerido });
-  if (!draft.tipo) add("si la perdió o la encontró", true);
-  if (!draft.especie) add("si es perro o gato", true);
-  if (!draft.zona) add("zona", true);
-  if (!draft.color && !draft.colorDetalle) add("color", true);
-  if (!draft.sexo) add("sexo (puede ser \"no sé\")", true);
-  if (draft.tipo === "perdida" && !draft.nombre) add("nombre", false);
-  if (!draft.tamano) add("tamaño", false);
-  if (!hasPhoto) add("foto", true);
-  if (!draft.accesorios.length && !draft.marcas.length) add("señas particulares o collar", false);
-  if (!draft.fecha) add("fecha", false);
+  const add = (clave, campo, requerido) => {
+    if (!skip.has(clave)) faltan.push({ clave, campo, requerido });
+  };
+  if (!draft.tipo) add("tipo", "si la perdió o la encontró", true);
+  if (!draft.especie) add("especie", "si es perro o gato", true);
+  if (!draft.zona && draft.lat == null) add("zona", "zona", true);
+  if (!draft.color && !draft.colorDetalle) add("color", "color", true);
+  if (!draft.sexo) add("sexo", "sexo (puede ser \"No sé\")", true);
+  if (draft.tipo === "perdida" && !draft.nombre) add("nombre", "nombre", false);
+  if (!draft.tamano) add("tamano", "tamaño", false);
+  if (!hasPhoto) add("foto", "foto", true);
+  if (!draft.accesorios.length && !draft.marcas.length) add("senas", "señas particulares o collar", false);
+  if (!draft.fecha) add("fecha", "fecha", false);
   return faltan;
 }
 
@@ -675,7 +685,7 @@ export function normalizeSearchInput(input) {
     color: pickEnum(i.color, COLOR_OPTIONS),
     raza: cleanText(i.raza, 60),
     tamano: pickEnum(i.tamano, TAMANO_OPTIONS),
-    sexo: pickEnum(i.sexo, SEXO_CHAT_OPTIONS),
+    sexo: pickEnum(i.sexo, ["Macho", "Hembra"]),
     zona: cleanText(i.zona, 80),
     dias: SEARCH_DIAS_OPTIONS.includes(i.dias) ? i.dias : 0,
   };

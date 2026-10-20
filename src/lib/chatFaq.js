@@ -100,3 +100,59 @@ export const FALLBACK_ACTIONS = [
   { id: "ir-explorar", label: "Ir a Explorar" },
   { id: "abrir-faq", label: "Preguntas frecuentes" },
 ];
+
+// Botones de respuesta rápida: cuando el asistente pregunta un dato del
+// borrador (la "clave" que devuelve /api/chat como `pending`, ver
+// missingFields en chatbot.js), la app muestra estas opciones para tocar en
+// vez de escribir. `send` es el texto que se manda como si la persona lo
+// hubiera escrito; `skip` marca el dato como salteado (no se vuelve a
+// preguntar); `action` dispara algo del chat en vez de mandar texto.
+export const QUICK_REPLIES = {
+  tipo: [
+    { label: "😢 La perdí", send: "La perdí" },
+    { label: "🙌 La encontré", send: "La encontré" },
+  ],
+  especie: [
+    { label: "🐶 Perro", send: "Es un perro" },
+    { label: "🐱 Gato", send: "Es un gato" },
+  ],
+  zona: [{ label: "📍 Usar mi ubicación actual", action: "ubicacion" }],
+  color: [
+    { label: "Negro", send: "Es de color negro" },
+    { label: "Blanco", send: "Es de color blanco" },
+    { label: "Marrón", send: "Es de color marrón" },
+    { label: "Gris", send: "Es de color gris" },
+    { label: "Dorado / beige", send: "Es de color dorado o beige" },
+    { label: "Atigrado", send: "Es atigrado" },
+    { label: "Manchado / bicolor", send: "Es manchado, de dos colores" },
+  ],
+  sexo: [
+    { label: "Macho", send: "Es macho" },
+    { label: "Hembra", send: "Es hembra" },
+    { label: "No sé", send: "No sé si es macho o hembra" },
+  ],
+  nombre: [{ label: "No tiene nombre / no sé", send: "No sé el nombre", skip: "nombre" }],
+  tamano: [
+    { label: "Chico", send: "Es chico" },
+    { label: "Mediano", send: "Es mediano" },
+    { label: "Grande", send: "Es grande" },
+    { label: "No sé", send: "No sé el tamaño", skip: "tamano" },
+  ],
+  foto: [
+    { label: "📷 Adjuntar foto", action: "foto" },
+    { label: "Ahora no", send: "Ahora no tengo foto", skip: "foto" },
+  ],
+  senas: [
+    { label: "Collar", send: "Tiene collar" },
+    { label: "Arnés", send: "Tiene arnés" },
+    { label: "Chapita", send: "Tiene chapita identificatoria" },
+    { label: "Mancha particular", send: "Tiene una mancha particular" },
+    { label: "Cicatriz", send: "Tiene una cicatriz" },
+    { label: "Nada en especial", send: "No tiene collar ni señas particulares", skip: "senas" },
+  ],
+  fecha: [
+    { label: "Hoy", send: "Fue hoy" },
+    { label: "Ayer", send: "Fue ayer" },
+    { label: "No sé", send: "No sé la fecha exacta", skip: "fecha" },
+  ],
+};

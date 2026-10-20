@@ -88,7 +88,11 @@ const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  { key: "Permissions-Policy", value: "camera=(), microphone=(), payment=(), usb=()" },
+  // microphone=(self) (2026-10-20): con microphone=() el navegador bloqueaba
+  // el micrófono para el propio sitio y el botón "Dictar" de la descripción
+  // fallaba siempre (visto en celulares reales). (self) lo habilita solo para
+  // felpus.com — ningún iframe ni tercero puede usarlo.
+  { key: "Permissions-Policy", value: "camera=(), microphone=(self), payment=(), usb=()" },
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
 ];
 
