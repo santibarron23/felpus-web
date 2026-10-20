@@ -29,6 +29,7 @@ import {
   estimateCostUsd,
   isDraftEmpty,
   detectAskedField,
+  userMentionsSpecies,
 } from "./chatbot";
 
 const REFUSAL_REPLY =
@@ -99,7 +100,7 @@ function addUsage(total, usage) {
 
 export function pendingFor({ draft, draftChanged, reply, context, image }) {
   if (isDraftEmpty(draft)) return null;
-  if (!/\?\s*$/.test((reply || "").trim())) return null;
+  if (!(reply || "").includes("?")) return null;
   // Primero lo que de verdad pregunta el texto; si no se reconoce, el
   // primer dato que falta (que es lo que el prompt le pide preguntar).
   const asked = detectAskedField(reply);
@@ -148,7 +149,12 @@ export async function runChat({
   async function executeTool(block) {
     toolsUsed.push(block.name);
     if (block.name === DRAFT_TOOL_NAME) {
-      draft = mergeDraft(draft, block.input);
+      const input = { ...(block.input || {}) };
+      // Especie inventada (ver userMentionsSpecies): se descarta y se pregunta.
+      if (input.especie && !draft.especie && !image && !context.hasPhoto && !userMentionsSpecies(messages)) {
+        input.especie = "";
+      }
+      draft = mergeDraft(draft, input);
       draftChanged = true;
       let coincidencias = null;
       if (draftReadyForMatching(draft)) {

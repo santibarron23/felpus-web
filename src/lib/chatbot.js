@@ -420,6 +420,19 @@ export function missingFields(draft, { hasPhoto = false, skipped = [] } = {}) {
   return faltan;
 }
 
+// ¿La persona dijo de alguna forma si es perro o gato? Visto con Claude
+// Haiku en producción: con solo "Perdí a mi mascota" guardaba especie
+// "perro" por su cuenta. Si no hay ninguna pista en lo que escribió (ni
+// foto), la especie que proponga el modelo se descarta (ver chatService).
+const SPECIES_HINT_RE = /\b(perr|gat|mich|mish|minin|felin|canin|cachorr|pichich|caniche|labrador|golden|ovejero|pastor|pitbull|bulldog|chihuahua|salchicha|beagle|boxer|rottweiler|dogo|galgo|siames|persa|maine coon|tricolor)/;
+export function userMentionsSpecies(messages) {
+  return (messages || []).some(
+    (m) =>
+      m.role === "user" &&
+      SPECIES_HINT_RE.test((typeof m.content === "string" ? m.content : "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))
+  );
+}
+
 // Qué dato está preguntando el asistente, leído de su ÚLTIMA pregunta.
 // Visto en producción (con Claude Haiku): el modelo a veces completa un dato
 // por su cuenta y igual lo pregunta ("¿es perro o gato?" con especie ya

@@ -212,3 +212,20 @@ describe("pending sin que el modelo guarde (visto en producción)", () => {
     expect(r.pending).toBeUndefined();
   });
 });
+
+describe("especie inventada por el modelo (visto con Haiku)", () => {
+  it("si la persona no dijo perro/gato ni mandó foto, se descarta y se muestran los botones de especie", async () => {
+    const client = fakeClient([
+      toolUse("guardar_borrador", { ...DRAFT_INPUT, especie: "perro", color: "", tamano: "", sexo: "", zona: "", accesorios: [], detalle_libre: "" }),
+      text("Lamento lo de tu mascota. ¿Es perro o gato? Si querés también contame dónde."),
+    ]);
+    const r = await runChat({ ...base, messages: [{ role: "user", content: "Perdí a mi mascota" }], client, readReports: vi.fn(async () => []) });
+    expect(r.draft.especie).toBe("");
+    expect(r.pending).toBe("especie");
+  });
+  it("si la persona lo dijo (o nombró una raza), se respeta", async () => {
+    const client = fakeClient([toolUse("guardar_borrador", { ...DRAFT_INPUT, especie: "perro" }), text("¿Cómo se llama?")]);
+    const r = await runChat({ ...base, messages: [{ role: "user", content: "Perdí a mi caniche" }], client, readReports: vi.fn(async () => []) });
+    expect(r.draft.especie).toBe("perro");
+  });
+});
