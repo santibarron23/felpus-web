@@ -1095,7 +1095,10 @@ export function findMatches(report, candidates, { limit } = {}) {
 }
 
 export function scoreLabel(score, colors) {
-  if (score >= 0.7) return { text: "Alta probabilidad", color: colors.green };
+  // Rojo de "coincidencias" (no verde): una coincidencia es posible, no un
+  // reencuentro confirmado — el verde queda reservado para eso (paleta
+  // 2026-10-20, ver theme.js).
+  if (score >= 0.7) return { text: "Alta probabilidad", color: colors.matchText || colors.red };
   if (score >= 0.4) return { text: "Probabilidad media", color: colors.orangeInk };
   return { text: "Probabilidad baja", color: colors.muted };
 }

@@ -42,15 +42,20 @@ import { useFocusTrap } from "./useFocusTrap";
 import { displayColor } from "../../lib/theme";
 import { useTheme } from "./ThemeProvider";
 
-export function Badge({ tipo }) {
+// Los tres estados con el MISMO tamaño, formato y jerarquía, distinguidos
+// por color y por texto (nunca solo por color): PERDIDA rojo, ENCONTRADA
+// naranja, REENCONTRADA verde — el verde se reserva para reencuentros
+// confirmados (paleta 2026-10-20, ver theme.js).
+export function Badge({ tipo, resuelto = false }) {
   const C = useTheme();
   const isLost = tipo === "perdida";
+  const bg = resuelto ? C.greenSolid : isLost ? C.redSolid : C.orangeInkSolid;
   return (
     <span
       className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold tracking-wide uppercase text-white"
-      style={{ background: isLost ? C.redSolid : C.orangeInkSolid }}
+      style={{ background: bg }}
     >
-      {isLost ? "Perdida" : "Encontrada"}
+      {resuelto ? "Reencontrada" : isLost ? "Perdida" : "Encontrada"}
     </span>
   );
 }
@@ -132,7 +137,9 @@ export function ReportCard({ report, onOpenDetail, saved, onToggleSaved, childre
   return (
     <div
       className="felpus-card-hover group relative bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl border overflow-hidden shadow-sm"
-      style={{ borderColor: resuelto ? C.successBorder : C.border, opacity: resuelto ? 0.75 : 1 }}
+      // Sin la opacidad de antes (0.75): lavaba la etiqueta verde de
+      // REENCONTRADA por debajo del contraste mínimo.
+      style={{ borderColor: resuelto ? C.successBorder : C.border }}
     >
       {/* Guardar — HERMANO del <button> de abajo, no hijo: un <button>
           dentro de otro <button> es HTML inválido (el navegador lo repara
@@ -168,11 +175,16 @@ export function ReportCard({ report, onOpenDetail, saved, onToggleSaved, childre
               fill
               sizes="96px"
               loading="lazy"
-              className="felpus-photo-zoom object-cover bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)] transition-transform duration-300 group-hover:scale-110"
+              className="felpus-photo-zoom object-cover bg-[var(--felpus-surface-muted)] dark:bg-[var(--felpus-dark-muted-surface)] transition-transform duration-300 group-hover:scale-110"
             />
           </div>
           {!resuelto && isRecent(report) && (
-            <span className="absolute -top-1 -right-1 bg-[#D31C22] text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow">
+            // "nuevo" informa, no alarma: beige + marrón, para no competir
+            // con el rojo de PERDIDA (antes era rojo sólido).
+            <span
+              className="absolute -top-1 -right-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow"
+              style={{ background: C.newTagBg, color: C.newTagText }}
+            >
               nuevo
             </span>
           )}
@@ -180,12 +192,7 @@ export function ReportCard({ report, onOpenDetail, saved, onToggleSaved, childre
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap mb-1">
             {resuelto ? (
-              <span
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase"
-                style={{ background: C.successBg, color: C.successText }}
-              >
-                🎉 Reencontrada
-              </span>
+              <Badge tipo={report.tipo} resuelto />
             ) : (
               <Badge tipo={report.tipo} />
             )}
@@ -323,7 +330,7 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
         className="bg-white dark:bg-[var(--felpus-dark-card)] rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="relative h-56 overflow-hidden bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)]">
+        <div className="relative h-56 overflow-hidden bg-[var(--felpus-surface-muted)] dark:bg-[var(--felpus-dark-muted-surface)]">
           {/* Fondo desenfocado con la misma foto, recortado a propósito —
               rellena el marco sin dejar franjas vacías. Encima, la foto
               real entra completa (object-contain) para no cortarle la
@@ -346,12 +353,7 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
           </button>
           <div className="absolute top-3 left-3">
             {report.resuelto ? (
-              <span
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase"
-                style={{ background: C.successBg, color: C.successText }}
-              >
-                🎉 Reencontrada
-              </span>
+              <Badge tipo={report.tipo} resuelto />
             ) : (
               <Badge tipo={report.tipo} />
             )}
@@ -387,31 +389,31 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
               href={mapsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="felpus-input bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5 hover:bg-[#F0E7D8] dark:hover:bg-[var(--felpus-dark-muted-surface)] transition-colors focus:outline-none"
+              className="felpus-input bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5 hover:bg-[var(--felpus-surface-muted)] dark:hover:bg-[var(--felpus-dark-muted-surface)] transition-colors focus:outline-none"
             >
               <p className="text-[10px] uppercase font-bold flex items-center gap-1" style={{ color: C.muted }}>
                 <MapPin className="w-3 h-3" /> Zona
               </p>
               <p className="underline" style={{ color: C.text }}>{report.zona}</p>
             </a>
-            <div className="bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
+            <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
               <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Fecha</p>
               <p style={{ color: C.text }}>{formatFechaAR(report.fecha)}</p>
             </div>
             {report.sexo && (
-              <div className="bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
+              <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
                 <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Sexo</p>
                 <p style={{ color: C.text }}>{report.sexo}</p>
               </div>
             )}
             {report.edad && (
-              <div className="bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
+              <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
                 <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Edad</p>
                 <p style={{ color: C.text }}>{report.edad}</p>
               </div>
             )}
             {report.peso && (
-              <div className="bg-[#FBF7F0] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
+              <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
                 <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Peso</p>
                 <p style={{ color: C.text }}>{report.peso}</p>
               </div>
@@ -554,7 +556,7 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
           {!report.resuelto && (
             <div className="pt-1">
               {confirming ? (
-                <div className="flex items-center gap-2 bg-[#EAF3EC] dark:bg-[#1C2E22] rounded-xl p-2.5">
+                <div className="flex items-center gap-2 dark:bg-[#1C2E22] rounded-xl p-2.5" style={{ background: C.successBg }}>
                   <span className="text-xs flex-1" style={{ color: C.greenDark }}>¿Confirmás el reencuentro?</span>
                   <button
                     onClick={onConfirm}
@@ -840,7 +842,7 @@ export function ShareButton({ report, className, style, children, wrapperClassNa
             >
             <button
               onClick={() => openWindow(`https://wa.me/?text=${encodeURIComponent(`${shareText}\n${shareUrl}`)}`)}
-              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[#FBF7F0] dark:hover:bg-[var(--felpus-dark-hover)] font-semibold"
+              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[var(--felpus-surface-subtle)] dark:hover:bg-[var(--felpus-dark-hover)] font-semibold"
               style={{ color: C.text }}
             >
               <Share2 className="w-3.5 h-3.5" /> WhatsApp
@@ -849,7 +851,7 @@ export function ShareButton({ report, className, style, children, wrapperClassNa
               onClick={() =>
                 openWindow(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`)
               }
-              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[#FBF7F0] dark:hover:bg-[var(--felpus-dark-hover)] font-semibold"
+              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[var(--felpus-surface-subtle)] dark:hover:bg-[var(--felpus-dark-hover)] font-semibold"
               style={{ color: C.text }}
             >
               <Facebook className="w-3.5 h-3.5" /> Facebook
@@ -860,7 +862,7 @@ export function ShareButton({ report, className, style, children, wrapperClassNa
                   `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`
                 )
               }
-              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[#FBF7F0] dark:hover:bg-[var(--felpus-dark-hover)] font-semibold"
+              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[var(--felpus-surface-subtle)] dark:hover:bg-[var(--felpus-dark-hover)] font-semibold"
               style={{ color: C.text }}
             >
               <Twitter className="w-3.5 h-3.5" /> X / Twitter
@@ -868,14 +870,14 @@ export function ShareButton({ report, className, style, children, wrapperClassNa
             <button
               onClick={shareToInstagram}
               disabled={sharingInstagram}
-              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[#FBF7F0] dark:hover:bg-[var(--felpus-dark-hover)] font-semibold disabled:opacity-60"
+              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[var(--felpus-surface-subtle)] dark:hover:bg-[var(--felpus-dark-hover)] font-semibold disabled:opacity-60"
               style={{ color: C.text }}
             >
               {sharingInstagram ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Instagram className="w-3.5 h-3.5" />} Instagram
             </button>
             <button
               onClick={copyLink}
-              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[#FBF7F0] dark:hover:bg-[var(--felpus-dark-hover)] font-semibold"
+              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[var(--felpus-surface-subtle)] dark:hover:bg-[var(--felpus-dark-hover)] font-semibold"
               style={{ color: copied ? C.green : C.text }}
             >
               <Copy className="w-3.5 h-3.5" /> {copied ? "¡Copiado!" : "Copiar enlace"}
@@ -962,12 +964,12 @@ export function SkeletonCard() {
   const C = useTheme();
   return (
     <div className="bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl border p-3 flex gap-3 animate-pulse" style={{ borderColor: C.border }}>
-      <div className="w-20 h-20 rounded-xl bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)] shrink-0" />
+      <div className="w-20 h-20 rounded-xl bg-[var(--felpus-surface-muted)] dark:bg-[var(--felpus-dark-muted-surface)] shrink-0" />
       <div className="flex-1 space-y-2 py-1">
-        <div className="h-4 w-20 rounded-full bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)]" />
-        <div className="h-3 w-2/3 rounded bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)]" />
-        <div className="h-3 w-1/2 rounded bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)]" />
-        <div className="h-3 w-full rounded bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)]" />
+        <div className="h-4 w-20 rounded-full bg-[var(--felpus-surface-muted)] dark:bg-[var(--felpus-dark-muted-surface)]" />
+        <div className="h-3 w-2/3 rounded bg-[var(--felpus-surface-muted)] dark:bg-[var(--felpus-dark-muted-surface)]" />
+        <div className="h-3 w-1/2 rounded bg-[var(--felpus-surface-muted)] dark:bg-[var(--felpus-dark-muted-surface)]" />
+        <div className="h-3 w-full rounded bg-[var(--felpus-surface-muted)] dark:bg-[var(--felpus-dark-muted-surface)]" />
       </div>
     </div>
   );
@@ -977,13 +979,13 @@ export function SkeletonRankRow() {
   const C = useTheme();
   return (
     <div className="flex items-center gap-3 bg-white dark:bg-[var(--felpus-dark-card)] rounded-xl p-3 border animate-pulse" style={{ borderColor: C.border }}>
-      <div className="w-6 h-4 rounded bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)] shrink-0" />
-      <div className="w-9 h-9 rounded-full bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)] shrink-0" />
+      <div className="w-6 h-4 rounded bg-[var(--felpus-surface-muted)] dark:bg-[var(--felpus-dark-muted-surface)] shrink-0" />
+      <div className="w-9 h-9 rounded-full bg-[var(--felpus-surface-muted)] dark:bg-[var(--felpus-dark-muted-surface)] shrink-0" />
       <div className="flex-1 space-y-2 py-0.5">
-        <div className="h-3.5 w-1/3 rounded bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)]" />
-        <div className="h-2.5 w-1/2 rounded bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)]" />
+        <div className="h-3.5 w-1/3 rounded bg-[var(--felpus-surface-muted)] dark:bg-[var(--felpus-dark-muted-surface)]" />
+        <div className="h-2.5 w-1/2 rounded bg-[var(--felpus-surface-muted)] dark:bg-[var(--felpus-dark-muted-surface)]" />
       </div>
-      <div className="h-4 w-8 rounded bg-[#F0E7D8] dark:bg-[var(--felpus-dark-muted-surface)] shrink-0" />
+      <div className="h-4 w-8 rounded bg-[var(--felpus-surface-muted)] dark:bg-[var(--felpus-dark-muted-surface)] shrink-0" />
     </div>
   );
 }

@@ -11,7 +11,6 @@
 // necesitan que se cargue hasta que entran a "Reportar" y tocan el campo de
 // WhatsApp — cargarla en el bundle principal penalizaría a todo el mundo
 // por una función que la mayoría ni usa en esa visita.
-import { logError } from "./log";
 
 let phoneLibPromise = null;
 export function loadPhoneLib() {
@@ -43,21 +42,11 @@ export const DEFAULT_COUNTRY = "AR";
 // limítrofes/hispanohablantes con más chance de aparecer después.
 export const PRIORITY_COUNTRIES = ["AR", "UY", "CL", "PY", "BO", "BR", "MX", "ES", "US"];
 
+// Siempre Argentina (+54), a pedido (2026-10-20). Antes se adivinaba por el
+// idioma del navegador ("pt-BR" -> BR), pero muchos celulares argentinos
+// tienen el idioma en "en-US" o "es-ES" y el campo arrancaba en Estados
+// Unidos o España. La persona puede elegir otro país en el selector.
 export function getDefaultCountry() {
-  if (typeof navigator === "undefined") return DEFAULT_COUNTRY;
-  try {
-    const candidates = navigator.languages?.length ? navigator.languages : [navigator.language].filter(Boolean);
-    for (const lang of candidates) {
-      // "es-AR" -> "AR", "pt-BR" -> "BR". Un idioma sin región ("es", "en")
-      // no dice nada del país, se salta sin intentar adivinar.
-      const region = lang?.split("-")[1];
-      if (region && /^[A-Za-z]{2}$/.test(region)) return region.toUpperCase();
-    }
-  } catch (e) {
-    // No debería tirar nunca, pero si el entorno hace algo raro con
-    // navigator.languages, no vale la pena que rompa el formulario por esto.
-    logError("No se pudo detectar el país por defecto", e);
-  }
   return DEFAULT_COUNTRY;
 }
 

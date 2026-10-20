@@ -8,6 +8,7 @@
 // rompa también. Deliberadamente simple y con estilos inline, no clases de
 // Tailwind (si el problema fuera de build/CSS, esto igual debe verse bien).
 import { useEffect } from "react";
+import { C } from "../lib/theme";
 import { logError } from "../lib/log";
 import { reloadOnceForStaleDeploy } from "../lib/staleDeploy";
 
@@ -32,14 +33,14 @@ export default function GlobalError({ error, reset }) {
             gap: 16,
             padding: 24,
             textAlign: "center",
-            background: "#F6EFE4",
-            color: "#3A2A1C",
+            background: C.cream,
+            color: C.text,
             fontFamily: "system-ui, sans-serif",
           }}
         >
           <div>
             <h1 style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>Felpus no pudo cargar</h1>
-            <p style={{ fontSize: 14, color: "#6B5643", maxWidth: 360 }}>
+            <p style={{ fontSize: 14, color: C.muted, maxWidth: 360 }}>
               Algo se rompió de nuestro lado. Probá recargar la página.
             </p>
           </div>
@@ -52,7 +53,7 @@ export default function GlobalError({ error, reset }) {
               fontSize: 14,
               fontWeight: 700,
               color: "#fff",
-              background: "#D31C22",
+              background: C.redSolid,
               border: "none",
               cursor: "pointer",
             }}

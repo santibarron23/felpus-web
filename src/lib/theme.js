@@ -21,7 +21,7 @@
 //      de la de arriba.
 export const C = {
   // --- Marca / estado ---
-  red: "#D31C22",
+  red: "#D71925",
   redDark: "#AB1017",
   // OJO con el fondo antes de usar este tono para texto/ícono: da 3.38:1
   // sobre blanco y 2.96:1 sobre crema (falla AA, mínimo 4.5:1) — en esos
@@ -30,15 +30,15 @@ export const C = {
   // es "nunca para texto", es "el naranja correcto depende de si el fondo es
   // claro (orangeInk) u oscuro (orange)" — mismo patrón que usan Stripe/
   // GitHub con acentos que cambian de tono según la superficie.
-  orange: "#E4661E",
+  orange: "#D45516",
   // Antes #E36525 — medido con la fórmula real de contraste WCAG (no solo a
   // ojo): daba 3.41:1 sobre blanco, por debajo del mínimo de 4.5:1 para
   // texto normal (afecta el badge "Encontrada", el toggle Perdida/Encontrada
   // y el aro de % de coincidencia). Este tono da 5.24:1 sobre blanco y
   // 4.59:1 sobre el crema de fondo — mismo naranja, un poco más profundo.
-  orangeInk: "#B14F1D",
+  orangeInk: "#B4430F",
   orangeInkDark: "#8F3C0E",
-  green: "#2E7048",
+  green: "#2F7955",
   greenDark: "#235A38",
 
   // red/orangeInk/green de arriba están calibrados para texto/ícono LEGIBLE
@@ -51,20 +51,20 @@ export const C = {
   // lea bien encima, en los dos temas. Por eso estos 3 "Solid" son iguales
   // en C y en CD: son la marca en su tono "de verdad", no la variante de
   // texto. Ver theme.js CD para la contraparte con las mismas notas.
-  redSolid: "#D31C22",
+  redSolid: "#D71925",
   // Antes #B14F1D — a pedido, se reemplazó por un naranja más vivo (mismo
   // criterio de contraste real, no a ojo: 5.18:1 sobre blanco, en línea con
   // redSolid/greenSolid). El anterior pasaba AA pero leía como marrón/rust
   // más que naranja.
-  orangeInkSolid: "#C2410C",
-  greenSolid: "#2E7048",
+  orangeInkSolid: "#D45516",
+  greenSolid: "#2F7955",
 
   // --- Neutros cálidos ---
-  ink: "#2B1B12",
-  text: "#3A2A1C",
-  muted: "#6B5643",
-  cream: "#F6EFE4", // fondo de página
-  border: "#EFE3D2", // bordes y separadores
+  ink: "#382C25",
+  text: "#382C25",
+  muted: "#776C64",
+  cream: "#F8F1E8", // fondo de página
+  border: "#E9DED2", // bordes y separadores
   surface: "#FFFFFF", // tarjetas y paneles
   surfaceSubtle: "#FBF7F0", // inputs, hovers, paneles sutiles
   surfaceMuted: "#F0E7D8", // skeletons, tracks de progreso, placeholders de imagen
@@ -76,7 +76,7 @@ export const C = {
   dangerBg: "#FBEAEA",
   dangerText: "#AB1017", // = redDark, 6.41:1 sobre dangerBg
   brandTintBg: "#FBEAE2", // tarjetas CTA y chips activos con tinte de marca (antes también existía como "#FBE4DC", un rosado casi idéntico usado solo para el chip activo — se unificó en un solo valor)
-  redRing: "rgba(211, 28, 34, 0.2)", // anillo de pulso alrededor de avatares/CTAs — reemplaza el literal suelto "#D31C2233"
+  redRing: "rgba(215, 25, 37, 0.2)", // anillo de pulso alrededor de avatares/CTAs — reemplaza el literal suelto "#D31C2233"
 
   // Ícono de racha (flame): a propósito NO es tierGold ni orangeInk — esos
   // dos ya tienen trabajo asignado (nivel "Rescatista" y estado "Encontrada"
@@ -93,7 +93,7 @@ export const C = {
   // fondo, no para ser ELLOS MISMOS un fondo fijo) — funcionaba de casualidad
   // en modo claro, pero en modo oscuro C.ink pasa a ser casi blanco y el
   // toast de éxito se habría vuelto una chapita blanca casi invisible.
-  toastSuccessBg: "#2B1B12",
+  toastSuccessBg: "#382C25",
   toastErrorBg: "#AB1017",
   toastAccent: "#E4661E", // el "+10 puntos" dentro del toast — ya medido contra este fondo fijo (4.90:1)
   // Mismo valor que toastSuccessBg — token aparte porque se usa fuera de
@@ -101,7 +101,7 @@ export const C = {
   // colaboradores", "Ver N resultados"): botones de acento oscuro que deben
   // seguir leyéndose como "el botón oscuro distintivo" en los dos temas, no
   // invertirse a blanco-sobre-blanco en modo oscuro.
-  emphasisBg: "#2B1B12",
+  emphasisBg: "#382C25",
 
   // --- Nivel de colaborador (gamificación) ---
   // A propósito NO reutiliza red/orange/green de arriba: esos colores ya
@@ -114,6 +114,19 @@ export const C = {
   // universalmente reconocible (Duolingo, videojuegos) que no colisiona con
   // ningún otro estado de la app. Las 4 pasan AA como texto sobre blanco/
   // crema y como fondo con texto blanco encima.
+  // --- Paleta 2026-10-20 (pedido de diseño: "Optimización de colores y
+  // jerarquía visual"). Rojo #D71925 = PERDIDA, naranja #D45516 =
+  // ENCONTRADA, verde #2F7955 = SOLO reencuentros confirmados (y acciones
+  // positivas explícitas), marrón #382C25 = títulos y acciones neutras,
+  // gris cálido #776C64 = secundario. Contraste medido (WCAG): blanco sobre
+  // rojo 5.18:1, sobre verde 5.27:1, sobre naranja 4.11:1 (pasa solo para
+  // texto grande/negrita ≥14pt — ver orangeInk para texto naranja chico,
+  // 5.60:1 sobre blanco). muted sobre cream 4.56:1, sobre blanco 5.11:1.
+  newTagBg: "#F1E8DF", // etiqueta "nuevo": informa sin urgencia (11.16:1 con newTagText)
+  newTagText: "#382C25",
+  matchBg: "#FFF1F1", // "Posibles coincidencias" (función central, sin competir con PERDIDA)
+  matchText: "#B91C2B", // 5.85:1 sobre matchBg
+
   tierBronze: "#8C6239",
   tierSilver: "#5B6B80",
   // Antes #7A6306 — a pedido, se reemplazó: ese tono (hue muy amarillo, poca

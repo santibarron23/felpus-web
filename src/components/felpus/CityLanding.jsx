@@ -41,7 +41,8 @@ function ReportCard({ r, C }) {
         <div className="min-w-0">
           <span
             className="inline-block text-[10px] font-bold uppercase tracking-wide rounded px-1.5 py-0.5 text-white"
-            style={{ background: perdida ? C.red : C.green }}
+            // Mismos colores de estado que la app: verde es solo para reencuentros.
+            style={{ background: perdida ? C.redSolid : C.orangeInkSolid }}
           >
             {perdida ? "Perdida" : "Encontrada"}
           </span>
