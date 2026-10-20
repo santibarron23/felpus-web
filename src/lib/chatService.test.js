@@ -185,12 +185,47 @@ describe("pending (botones de respuesta rápida)", () => {
     expect(r.pending).toBe("sexo");
   });
   it("respeta lo salteado", async () => {
-    const client = fakeClient([toolUse("guardar_borrador", { ...DRAFT_INPUT, sexo: "", tamano: "" }), text("ok")]);
+    // Pregunta genérica (no nombra ningún dato): cae al primer dato que falta.
+    const client = fakeClient([toolUse("guardar_borrador", { ...DRAFT_INPUT, sexo: "", tamano: "" }), text("¿Me contás un poco más?")]);
     const r = await runChat({ ...base, context: { ...base.context, skipped: ["sexo"] }, client, readReports: vi.fn(async () => []) });
     expect(r.pending).toBe("nombre");
   });
   it("sin trabajar el borrador no manda botones", async () => {
     const r = await runChat({ ...base, client: fakeClient([text("¡Hola!")]), readReports: vi.fn() });
     expect(r.pending).toBeUndefined();
+  });
+});
+
+describe("pending sin que el modelo guarde (visto en producción)", () => {
+  it("si ya hay reporte en curso y la respuesta es una pregunta, manda los botones del dato que falta", async () => {
+    const r = await runChat({
+      ...base,
+      draft: { ...emptyDraft(), tipo: "perdida" },
+      client: fakeClient([text("Lamento mucho. ¿Es perro o gato?")]),
+      readReports: vi.fn(),
+    });
+    expect(r.pending).toBe("especie");
+    expect(r.draft).toBeUndefined();
+  });
+  it("si no es una pregunta, no muestra botones", async () => {
+    const r = await runChat({ ...base, draft: { ...emptyDraft(), tipo: "perdida" }, client: fakeClient([text("Listo.")]), readReports: vi.fn() });
+    expect(r.pending).toBeUndefined();
+  });
+});
+
+describe("especie inventada por el modelo (visto con Haiku)", () => {
+  it("si la persona no dijo perro/gato ni mandó foto, se descarta y se muestran los botones de especie", async () => {
+    const client = fakeClient([
+      toolUse("guardar_borrador", { ...DRAFT_INPUT, especie: "perro", color: "", tamano: "", sexo: "", zona: "", accesorios: [], detalle_libre: "" }),
+      text("Lamento lo de tu mascota. ¿Es perro o gato? Si querés también contame dónde."),
+    ]);
+    const r = await runChat({ ...base, messages: [{ role: "user", content: "Perdí a mi mascota" }], client, readReports: vi.fn(async () => []) });
+    expect(r.draft.especie).toBe("");
+    expect(r.pending).toBe("especie");
+  });
+  it("si la persona lo dijo (o nombró una raza), se respeta", async () => {
+    const client = fakeClient([toolUse("guardar_borrador", { ...DRAFT_INPUT, especie: "perro" }), text("¿Cómo se llama?")]);
+    const r = await runChat({ ...base, messages: [{ role: "user", content: "Perdí a mi caniche" }], client, readReports: vi.fn(async () => []) });
+    expect(r.draft.especie).toBe("perro");
   });
 });

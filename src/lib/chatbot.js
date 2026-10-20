@@ -175,7 +175,7 @@ const SYSTEM_PROMPT_BASE = `Sos el Asistente Felpus, de felpus.com: una app grat
 QUÉ HACÉS
 
 1. Armar el reporte conversando (lo más importante). Cuando alguien perdió o encontró una mascota:
-   - Llamá a guardar_borrador con todo lo que ya dijo, en cuanto lo diga.
+   - Llamá a guardar_borrador con todo lo que ya dijo, en cuanto lo diga (también si solo dijo que la perdió o la encontró).
    - Después preguntá UNA sola cosa por mensaje: el PRIMER dato de "faltan" en el resultado de la herramienta. La app le muestra a la persona botones con las respuestas posibles para ese dato (perro/gato, colores, sexo, tamaño, ubicación, foto, fecha…), así que preguntalo en una frase corta, sin enumerar las opciones. Si la persona dice que no sabe, guardá lo que corresponda y seguí con el siguiente. Orden sugerido: perro o gato, zona (barrio y ciudad; preguntá "¿en qué barrio y ciudad?", sin nombrar ninguna ciudad en particular), color, sexo, nombre (si la perdió), tamaño, señas o collar, fecha. Si algo no lo sabe, seguí: los campos pueden quedar vacíos.
    - Pedí una foto (botón 📷 del chat) cuando ya tengas lo básico: es lo que más ayuda a reconocerla.
    - Contale que en la vista previa puede tocar "📍 Marcar en el mapa" para fijar el punto exacto donde se perdió o se encontró: mejora mucho las coincidencias por distancia.
@@ -418,6 +418,48 @@ export function missingFields(draft, { hasPhoto = false, skipped = [] } = {}) {
   if (!draft.accesorios.length && !draft.marcas.length) add("senas", "señas particulares o collar", false);
   if (!draft.fecha) add("fecha", "fecha", false);
   return faltan;
+}
+
+// ¿La persona dijo de alguna forma si es perro o gato? Visto con Claude
+// Haiku en producción: con solo "Perdí a mi mascota" guardaba especie
+// "perro" por su cuenta. Si no hay ninguna pista en lo que escribió (ni
+// foto), la especie que proponga el modelo se descarta (ver chatService).
+const SPECIES_HINT_RE = /\b(perr|gat|mich|mish|minin|felin|canin|cachorr|pichich|caniche|labrador|golden|ovejero|pastor|pitbull|bulldog|chihuahua|salchicha|beagle|boxer|rottweiler|dogo|galgo|siames|persa|maine coon|tricolor)/;
+export function userMentionsSpecies(messages) {
+  return (messages || []).some(
+    (m) =>
+      m.role === "user" &&
+      SPECIES_HINT_RE.test((typeof m.content === "string" ? m.content : "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))
+  );
+}
+
+// Qué dato está preguntando el asistente, leído de su ÚLTIMA pregunta.
+// Visto en producción (con Claude Haiku): el modelo a veces completa un dato
+// por su cuenta y igual lo pregunta ("¿es perro o gato?" con especie ya
+// puesta) — si los botones salieran solo de missingFields, mostrarían otro
+// dato y no coincidirían con la pregunta. El orden importa: lo más
+// específico primero.
+const ASKED_FIELD_PATTERNS = [
+  ["especie", /\bperr[oa]s?\b.*\bgat[oa]s?\b|\bgat[oa]s?\b.*\bperr[oa]s?\b/],
+  ["tipo", /\b(perdiste|perdi[oó]|encontraste|encontr[oó])\b.*\b(perdiste|perdi[oó]|encontraste|encontr[oó])\b/],
+  ["sexo", /\b(macho|hembra|sexo|nene|nena)\b/],
+  ["tamano", /\btama[nñ]o\b|\b(chic[oa]|median[oa]|grande)\b/],
+  ["color", /\bcolor(es)?\b/],
+  ["foto", /\bfotos?\b/],
+  ["nombre", /\bnombre\b|\bc[oó]mo se llama\b/],
+  ["senas", /\bcollar\b|\bse[nñ]as?\b|\bmarcas?\b|\bchapita\b|\bmancha/],
+  ["fecha", /\bcu[aá]ndo\b|\bfecha\b|\bqu[eé] d[ií]a\b/],
+  ["zona", /\bbarrio\b|\bzona\b|\bciudad\b|\bd[oó]nde\b|\bubicaci[oó]n\b/],
+];
+export function detectAskedField(reply) {
+  // Minúsculas y sin tildes, pero CON signos (hace falta el "?" para
+  // encontrar la última pregunta; normalizeText los saca).
+  const text = (reply || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const qs = text.match(/[^.?!]*\?/g);
+  if (!qs) return null;
+  const last = qs[qs.length - 1];
+  for (const [key, re] of ASKED_FIELD_PATTERNS) if (re.test(last)) return key;
+  return null;
 }
 
 // "negro con manchas blancas" suma información a "Manchado / bicolor";

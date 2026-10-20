@@ -322,6 +322,19 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
       pushLocal({ content: "Elegí un tema o escribime tu pregunta:", faqMenu: true });
       return;
     }
+    if (action.search) {
+      // Sin IA: las opciones ya son consultas completas.
+      setMessages((prev) => [...prev, { id: newId(), role: "user", local: true, content: action.label }]);
+      pushLocal({ content: "¿Qué querés buscar? Tocá una opción o escribime, por ejemplo: \"caniche blanco por San Lorenzo\".", pending: "buscar" });
+      return;
+    }
+    if (action.draftPatch) {
+      const nextDraft = normalizeDraft({ ...draft, ...action.draftPatch });
+      setDraft(nextDraft);
+      if (!draftStartedAt) setDraftStartedAt(Date.now());
+      send(action.send, { draftOverride: nextDraft });
+      return;
+    }
     send(action.send);
   }
 

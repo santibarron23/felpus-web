@@ -28,6 +28,8 @@ import {
   supportsDefaultFallback,
   estimateCostUsd,
   isDraftEmpty,
+  detectAskedField,
+  userMentionsSpecies,
 } from "./chatbot";
 
 const REFUSAL_REPLY =
@@ -96,7 +98,18 @@ function addUsage(total, usage) {
   }
 }
 
-// runChat -> { reply, draft?, matches?, results?, refused? }
+export function pendingFor({ draft, draftChanged, reply, context, image }) {
+  if (isDraftEmpty(draft)) return null;
+  if (!(reply || "").includes("?")) return null;
+  // Primero lo que de verdad pregunta el texto; si no se reconoce, el
+  // primer dato que falta (que es lo que el prompt le pide preguntar).
+  const asked = detectAskedField(reply);
+  if (asked) return asked;
+  if (!draftChanged) return null;
+  return missingFields(draft, { hasPhoto: context.hasPhoto || !!image, skipped: context.skipped })[0]?.clave || null;
+}
+
+// runChat -> { reply, draft?, pending?, matches?, results?, refused? }
 export async function runChat({
   client,
   model = DEFAULT_CHAT_MODEL,
@@ -136,7 +149,14 @@ export async function runChat({
   async function executeTool(block) {
     toolsUsed.push(block.name);
     if (block.name === DRAFT_TOOL_NAME) {
-      draft = mergeDraft(draft, block.input);
+      const input = { ...(block.input || {}) };
+      // Especie inventada (ver userMentionsSpecies): se descarta y se pregunta.
+      let especieDescartada = false;
+      if (input.especie && !draft.especie && !image && !context.hasPhoto && !userMentionsSpecies(messages)) {
+        input.especie = "";
+        especieDescartada = true;
+      }
+      draft = mergeDraft(draft, input);
       draftChanged = true;
       let coincidencias = null;
       if (draftReadyForMatching(draft)) {
@@ -150,6 +170,8 @@ export async function runChat({
         // Sin coordenadas exactas (ver buildContextNote).
         borrador: { ...draft, lat: undefined, lng: undefined, punto_en_mapa: draft.lat != null },
         faltan: missingFields(draft, { hasPhoto: context.hasPhoto || !!image, skipped: context.skipped }),
+        // Sin esto el modelo se disculpaba ("el perro lo puse por error").
+        ...(especieDescartada ? { nota: "La persona todavía no dijo si es perro o gato: preguntalo sin mencionar el borrador ni disculparte." } : {}),
         coincidencias,
       };
     }
@@ -238,12 +260,14 @@ export async function runChat({
 
   return {
     reply: reply || EMPTY_REPLY,
+    ...(draftChanged ? { draft } : {}),
     // Qué está preguntando el asistente, para que la app muestre los botones
-    // de respuesta rápida de ESE dato (solo si en esta vuelta se trabajó el
-    // borrador: si no, la pregunta puede ser de otra cosa).
-    ...(draftChanged
-      ? { draft, pending: missingFields(draft, { hasPhoto: context.hasPhoto || !!image, skipped: context.skipped })[0]?.clave || null }
-      : {}),
+    // de respuesta rápida de ESE dato. Antes solo salía si el modelo había
+    // guardado el borrador en esta vuelta — visto en producción: con "Perdí a
+    // mi mascota" el modelo preguntaba "¿perro o gato?" sin guardar nada y no
+    // aparecían botones. Ahora alcanza con que haya un reporte en curso y la
+    // respuesta termine en pregunta.
+    ...(pendingFor({ draft, draftChanged, reply, context, image }) ? { pending: pendingFor({ draft, draftChanged, reply, context, image }) } : {}),
     ...(matches ? { matches } : {}),
     ...(results ? { results, searchFilters } : {}),
     ...(refused ? { refused: true } : {}),
