@@ -31,19 +31,11 @@ describe("getDefaultCountry", () => {
     expect(getDefaultCountry()).toBe(DEFAULT_COUNTRY);
   });
 
-  it("detecta el país desde navigator.language", () => {
+  it("es siempre Argentina, aunque el idioma del navegador diga otro país", () => {
+    vi.stubGlobal("navigator", { language: "en-US", languages: ["en-US", "es-ES"] });
+    expect(getDefaultCountry()).toBe("AR");
     vi.stubGlobal("navigator", { language: "pt-BR", languages: ["pt-BR"] });
-    expect(getDefaultCountry()).toBe("BR");
-  });
-
-  it("prueba navigator.languages en orden hasta encontrar una región", () => {
-    vi.stubGlobal("navigator", { language: "es", languages: ["es", "en-US"] });
-    expect(getDefaultCountry()).toBe("US");
-  });
-
-  it("cae a AR si ningún idioma trae región reconocible", () => {
-    vi.stubGlobal("navigator", { language: "es", languages: ["es", "fr"] });
-    expect(getDefaultCountry()).toBe(DEFAULT_COUNTRY);
+    expect(getDefaultCountry()).toBe("AR");
   });
 });
 
