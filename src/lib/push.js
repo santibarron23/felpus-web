@@ -71,3 +71,131 @@ export async function subscribeReportPush(reportId, pushToken) {
   }
   return true;
 }
+
+// ---------------------------------------------------------------------------
+// Alertas automáticas por CUENTA (zona + coincidencias de todos los reportes
+// propios) — ver PLAN-alertas.md. Conviven con el push por reporte de arriba,
+// que sigue siendo el camino para invitados.
+// ---------------------------------------------------------------------------
+
+// "granted" | "denied" | "default" | "unsupported"
+export function pushPermissionState() {
+  if (!isPushSupported() || typeof Notification === "undefined") return "unsupported";
+  return Notification.permission;
+}
+
+export function isIos() {
+  if (typeof navigator === "undefined") return false;
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+// ¿Abierta como app instalada (sin barra del navegador)?
+export function isStandalone() {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia?.("(display-mode: standalone)").matches || window.navigator.standalone === true;
+}
+
+// En iPhone, Safari solo permite notificaciones con la app instalada en el
+// inicio: ahí, en vez de pedir el permiso, se muestra la guía de instalación.
+export function needsIosInstallForPush() {
+  return isIos() && !isStandalone();
+}
+
+async function accessToken() {
+  const { data } = await supabase.auth.getSession();
+  return data?.session?.access_token || null;
+}
+
+async function currentSubscription({ create }) {
+  const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  if (!vapidPublicKey) throw new Error("Las notificaciones push no están configuradas todavía.");
+  const registration = await navigator.serviceWorker.ready;
+  let subscription = await registration.pushManager.getSubscription();
+  if (!subscription && create) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+    });
+  }
+  return subscription;
+}
+
+// Pide permiso (solo cuando la persona toca un botón, nunca al cargar) y
+// guarda la suscripción de ESTE dispositivo en su cuenta.
+export async function subscribeUserPush() {
+  if (!isPushSupported()) throw new Error("Este navegador no soporta notificaciones.");
+  const token = await accessToken();
+  if (!token) throw new Error("Iniciá sesión con Google para activar las alertas.");
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") throw new Error("No diste permiso para las notificaciones.");
+  const subscription = await currentSubscription({ create: true });
+  const res = await fetch("/api/push/subscribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ subscription: subscription.toJSON() }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error || "No pudimos activar las alertas. Probá de nuevo.");
+  }
+  return true;
+}
+
+// "Desactivar notificaciones en este dispositivo".
+export async function unsubscribeUserPush() {
+  if (!isPushSupported()) return false;
+  const subscription = await currentSubscription({ create: false }).catch(() => null);
+  if (!subscription) return false;
+  const token = await accessToken();
+  if (token) {
+    await fetch("/api/push/subscribe", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ endpoint: subscription.endpoint }),
+    }).catch(() => {});
+  }
+  await subscription.unsubscribe().catch(() => {});
+  return true;
+}
+
+export async function hasDeviceSubscription() {
+  if (!isPushSupported()) return false;
+  try {
+    const registration = await navigator.serviceWorker.getRegistration();
+    return !!(await registration?.pushManager.getSubscription());
+  } catch {
+    return false;
+  }
+}
+
+// Llamadas autenticadas a las rutas de alertas.
+export async function authedFetch(url, init = {}) {
+  const token = await accessToken();
+  return fetch(url, {
+    ...init,
+    headers: { ...(init.headers || {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+  });
+}
+
+// Token de cada reporte publicado como invitado en ESTE dispositivo, para
+// poder tocar "Seguir buscando" desde el aviso de inactividad sin sesión.
+const REPORT_TOKENS_KEY = "felpus_report_tokens";
+
+export function rememberReportToken(reportId, token) {
+  if (!reportId || !token) return;
+  try {
+    const all = JSON.parse(localStorage.getItem(REPORT_TOKENS_KEY) || "{}");
+    all[reportId] = token;
+    localStorage.setItem(REPORT_TOKENS_KEY, JSON.stringify(all));
+  } catch {
+    // sin localStorage: el dueño puede renovar con sesión iniciada
+  }
+}
+
+export function reportToken(reportId) {
+  try {
+    return JSON.parse(localStorage.getItem(REPORT_TOKENS_KEY) || "{}")[reportId] || null;
+  } catch {
+    return null;
+  }
+}

@@ -116,7 +116,17 @@ import { playTap, playSuccess } from "../lib/sound";
 import { loadGoogleMaps, reverseGeocodeLatLng } from "../lib/googleMaps";
 import { requestLocation, geolocationErrorMessage } from "../lib/geolocation";
 import { dictationErrorMessage } from "../lib/dictation";
-import { subscribeReportPush, isPushSupported } from "../lib/push";
+import {
+  subscribeReportPush,
+  isPushSupported,
+  pushPermissionState,
+  needsIosInstallForPush,
+  subscribeUserPush,
+  authedFetch,
+  rememberReportToken,
+  reportToken,
+} from "../lib/push";
+import AlertOptInModal from "./felpus/AlertOptInModal";
 import { logError } from "../lib/log";
 import { displayColor } from "../lib/theme";
 import { useTheme, useThemeToggle } from "./felpus/ThemeProvider";
@@ -324,6 +334,9 @@ export default function FelpusMatcher() {
   const [scanStep, setScanStep] = useState(0);
   const [matchResult, setMatchResult] = useState(null);
   const [pushSubState, setPushSubState] = useState("idle"); // idle | loading | active | error
+  // Modal "¿Te avisamos?" después de publicar (una vez por reporte). Nunca
+  // se muestra si la persona ya bloqueó las notificaciones.
+  const [alertOptIn, setAlertOptIn] = useState(null); // null | { reportId, pushToken, tipo }
   // Estado del rediseño de "Detalles para reconocerlo" — ver comentario
   // junto a CHIP_BTN_CLASS más arriba. form.descripcion sigue siendo el
   // único campo de texto que se manda a la base (nada cambia ahí); estas
@@ -1319,6 +1332,48 @@ export default function FelpusMatcher() {
     }
   }, [reports, goToTab, pushToast]);
 
+  // "¿Seguís buscando?" (aviso a los 53 días sin actividad) lleva a
+  // /?renovar=<id>. Se espera a saber si hay sesión: el dueño se valida con
+  // la cuenta o, para invitados, con el token guardado en este dispositivo.
+  const renewHandled = useRef(false);
+  useEffect(() => {
+    if (renewHandled.current || authLoading) return;
+    const rid = new URLSearchParams(window.location.search).get("renovar");
+    if (!rid) return;
+    renewHandled.current = true;
+    renewReport(rid);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading]);
+
+  async function renewReport(reportId) {
+    try {
+      const res = await authedFetch("/api/reports/renew", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reportId, pushToken: reportToken(reportId) || undefined }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error || "No se pudo renovar.");
+      setReports((prev) => prev.map((r) => (r.id === reportId ? { ...r, inactivo: false } : r)));
+      pushToast("success", "Listo, seguimos buscando. Te avisamos si aparece algo.");
+    } catch (e) {
+      pushToast("error", e?.message || "No pudimos renovar el reporte.");
+    }
+  }
+
+  // Lo que la persona decide sobre una coincidencia ("Es mi mascota" / "No
+  // es") se guarda en la tabla matches para no volver a avisar de ese par.
+  // Sin sesión no hay dónde guardarlo: queda solo en esta pantalla.
+  function recordMatchDecision(ownReport, otherReport, estado) {
+    if (!user || !ownReport || !otherReport) return;
+    const lost = ownReport.tipo === "perdida" ? ownReport : otherReport;
+    const found = ownReport.tipo === "perdida" ? otherReport : ownReport;
+    authedFetch("/api/matches", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lostId: lost.id, foundId: found.id, estado }),
+    }).catch((e) => logError("No se pudo guardar la decisión sobre la coincidencia", e));
+  }
+
   // Confirmar un reencuentro requiere sesión con Google (evita que cualquiera
   // se autoasigne puntos con un apodo de texto libre) Y ser quien publicó ese
   // reporte específico (evita que un tercero resuelva el reporte de otra
@@ -1511,6 +1566,8 @@ export default function FelpusMatcher() {
   // la trae de vuelta) — es la acción de menor fricción posible para una
   // decisión de bajo riesgo.
   function dismissMatch(reportId) {
+    const other = matchResult?.results.find((m) => m.report.id === reportId)?.report;
+    recordMatchDecision(matchResult?.source, other, "descartado");
     setMatchResult((prev) => (prev ? { ...prev, results: prev.results.filter((m) => m.report.id !== reportId) } : prev));
     pushToast("success", "Coincidencia descartada de esta lista.");
   }
@@ -1579,6 +1636,10 @@ export default function FelpusMatcher() {
     setPushSubState("loading");
     try {
       await subscribeReportPush(reportId, pushToken);
+      // Con sesión iniciada, el dispositivo también queda en la cuenta (alertas
+      // de zona y de matches en todos los reportes). Si falla, el del reporte
+      // ya quedó activo.
+      if (user) await subscribeUserPush().catch((e) => logError("No se pudo guardar el dispositivo en la cuenta", e));
       setPushSubState("active");
       pushToast("success", "🔔 Listo — te avisamos acá si aparece una coincidencia.");
     } catch (e) {
@@ -1830,8 +1891,12 @@ export default function FelpusMatcher() {
       const scored = findMatches(savedReport, candidates, { limit: 6 });
 
       setMatchResult({ source: savedReport, results: scored, hadCandidates: candidates.length > 0 });
+      rememberReportToken(savedReport.id, savedReport.pushToken);
       setReports((prev) => [savedReport, ...prev]);
       playSuccess();
+      if ((isPushSupported() || needsIosInstallForPush()) && pushPermissionState() !== "denied") {
+        setAlertOptIn({ reportId: savedReport.id, pushToken: savedReport.pushToken, tipo: savedReport.tipo });
+      }
       if (chatOriginRef.current) {
         try {
           window.gtag?.("event", "asistente_reporte_publicado", {
@@ -1902,8 +1967,25 @@ export default function FelpusMatcher() {
     if (cardMatches[report.id]) return;
     const opposite = report.tipo === "perdida" ? "encontrada" : "perdida";
     const candidates = reports.filter((r) => r.id !== report.id && r.tipo === opposite && !r.resuelto);
-    const scored = findMatches(report, candidates, { limit: 4 });
-    setCardMatches((prev) => ({ ...prev, [report.id]: scored }));
+    const scored = findMatches(report, candidates, { limit: 6 });
+    let descartados = new Set();
+    try {
+      const res = await authedFetch(`/api/matches?reportId=${encodeURIComponent(report.id)}`);
+      const data = await res.json().catch(() => ({}));
+      descartados = new Set(
+        (data?.matches || [])
+          .filter((m) => m.estado === "descartado")
+          .map((m) => (m.report_lost_id === report.id ? m.report_found_id : m.report_lost_id))
+      );
+    } catch {
+      // sin la tabla matches todavía: se muestran todas
+    }
+    setCardMatches((prev) => ({ ...prev, [report.id]: scored.filter((m) => !descartados.has(m.report.id)).slice(0, 4) }));
+  }
+
+  function discardCardMatch(ownReport, otherReport) {
+    recordMatchDecision(ownReport, otherReport, "descartado");
+    setCardMatches((prev) => ({ ...prev, [ownReport.id]: (prev[ownReport.id] || []).filter((m) => m.report.id !== otherReport.id) }));
   }
 
   const FECHA_LIMITES_MS = { "24h": 24 * 3600 * 1000, "7d": 7 * 24 * 3600 * 1000, "30d": 30 * 24 * 3600 * 1000 };
@@ -4535,6 +4617,21 @@ export default function FelpusMatcher() {
                   <div className="space-y-3">
                     {myReportsFiltered.map((r) => (
                       <ReportCard key={r.id} report={r} onOpenDetail={openReportDetail}>
+                        {r.inactivo && !r.resuelto && (
+                          <div className="px-3 py-2.5 border-t flex items-center justify-between gap-2 flex-wrap" style={{ borderColor: C.border }}>
+                            <span className="text-[11px]" style={{ color: C.muted }}>
+                              Pausamos las alertas de este reporte por inactividad.
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => renewReport(r.id)}
+                              className="text-[11px] font-bold text-white rounded-lg px-2.5 py-1"
+                              style={{ background: C.redSolid }}
+                            >
+                              Seguir buscando
+                            </button>
+                          </div>
+                        )}
                         {!r.resuelto && (
                           <button
                             type="button"
@@ -4562,8 +4659,8 @@ export default function FelpusMatcher() {
                               </p>
                             )}
                             {cardMatches[r.id]?.map((m) => (
+                              <div key={m.report.id} className="space-y-1">
                               <button
-                                key={m.report.id}
                                 type="button"
                                 onClick={() => openReportDetail(m.report)}
                                 className="w-full text-left bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-xl p-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
@@ -4590,6 +4687,28 @@ export default function FelpusMatcher() {
                                 </div>
                                 <MatchBreakdownChips items={matchBreakdown(r, m.report)} />
                               </button>
+                              <div className="flex items-center gap-3 px-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    recordMatchDecision(r, m.report, "confirmado");
+                                    handleConfirmTrigger(r);
+                                  }}
+                                  className="text-[11px] font-bold flex items-center gap-1"
+                                  style={{ color: C.successText }}
+                                >
+                                  <Check className="w-3 h-3" /> {r.tipo === "perdida" ? "Es mi mascota" : "Es el dueño"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => discardCardMatch(r, m.report)}
+                                  className="text-[11px] font-semibold flex items-center gap-1"
+                                  style={{ color: C.muted }}
+                                >
+                                  <X className="w-3 h-3" /> No es
+                                </button>
+                              </div>
+                              </div>
                             ))}
                           </div>
                         )}
@@ -4857,6 +4976,18 @@ export default function FelpusMatcher() {
 
       <ToastStack toasts={toasts} />
 
+      {alertOptIn && (
+        <AlertOptInModal
+          tipo={alertOptIn.tipo}
+          iosNeedsInstall={needsIosInstallForPush()}
+          busy={pushSubState === "loading"}
+          onClose={() => setAlertOptIn(null)}
+          onAccept={async () => {
+            await handleActivatePush(alertOptIn.reportId, alertOptIn.pushToken);
+            setAlertOptIn(null);
+          }}
+        />
+      )}
       <FelpusAssistant
         section={activeTab}
         openReport={detailReport ? { id: detailReport.id } : null}

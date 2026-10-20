@@ -293,3 +293,79 @@ en el navegador.
   `otro` incluida; `notifications_log` identifica al destinatario con
   `recipient` (`user:<uuid>` o `report:<id>` para invitados), porque un
   invitado no tiene `user_id`.
+
+## Estado final (en palabras simples)
+
+### Qué funciona ya (en el código, rama `alertas-automaticas`)
+
+- **Instalar Felpus como app:** a los 8 segundos aparece un cartelito
+  "Tené Felpus a mano". En Android/compu tiene el botón "Instalar Felpus"; en
+  iPhone explica cómo agregarla al inicio. Si lo cerrás, no vuelve por 7 días.
+- **Aviso después de publicar:** al publicar un reporte aparece una ventanita:
+  perdida → "¿Querés que te avisemos al instante si alguien reporta un animal
+  parecido?"; encontrada → "Te avisamos si aparece el dueño.". El permiso del
+  celular se pide recién al tocar "Sí, avisame". Si alguna vez lo bloqueaste,
+  no aparece más (no insistimos). En iPhone sin la app instalada, muestra los
+  pasos para instalarla.
+- **/configuracion/alertas** (con sesión de Google): mapa con el círculo del
+  radio, radio de 1/3/5/10 km, especies, perdidas/encontradas, "Pausar todas
+  las alertas" y "Desactivar notificaciones en este dispositivo".
+- **"Vigilar esta zona"** arriba a la izquierda del mapa de Explorar: abre la
+  configuración con el centro del mapa ya marcado.
+- **Alertas automáticas** cada vez que se publica un reporte (lo dispara el
+  mismo trigger que ya mandaba el email):
+  - parecido ≥ 80% → push "🐾 Puede ser tu mascota" al dueño del reporte;
+  - entre 65% y 80% → se guarda en la tabla `matches`, sin push;
+  - reporte dentro de tu zona → push "Se perdió un perro cerca tuyo" /
+    "Encontraron un gato cerca tuyo";
+  - máximo 5 alertas de zona por día por persona; nunca te avisamos de tu
+    propio reporte ni dos veces del mismo;
+  - de 23 a 8 (hora de Argentina) las alertas de zona esperan y salen a las 8.
+- **Mi Felpus:** en cada coincidencia, "Es mi mascota" (abre el reencuentro) y
+  "No es" (la oculta y no vuelve a aparecer). Si un reporte pasó a inactivo,
+  aparece "Seguir buscando".
+- **Ciclo de vida:** a los 53 días sin actividad llega "¿Seguís buscando?";
+  a los 60 el reporte deja de generar alertas hasta que lo renueves.
+- **El email sigue igual que antes.**
+
+### Pruebas que pasaron
+
+- `npm test`: 404 pruebas (21 nuevas de alertas: umbrales, horario nocturno,
+  textos, zona, tope diario, inactividad).
+- `npm run test:e2e` (Playwright, compu y celular, todo simulado, sin tocar
+  datos reales): 16 pruebas, incluye aceptar el permiso, guardar la zona,
+  pausar, permiso bloqueado y accesibilidad (axe) de la página y los modales.
+- `npm run lint` y `npm run build`: sin errores.
+
+### Lo que tenés que hacer vos (en este orden)
+
+1. **Supabase → SQL Editor:** correr `supabase/migrations/20261020_01_alertas.sql`
+   y después `supabase/migrations/20261020_02_alertas_cron.sql` (activan PostGIS
+   y pg_cron solos; los dos son gratis). Lo hago yo con tu OK.
+2. **Vercel → Settings → Environment Variables** (Production y Preview):
+   `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`
+   (`https://felpus.com`), `ALERTS_WEBHOOK_SECRET`, `MATCH_THRESHOLD_HIGH`
+   (`0.80`) y `MATCH_THRESHOLD_MID` (`0.65`). Los valores están en tu
+   `.env.local` (generados en tu compu, no están en el repo). Copialos de ahí.
+3. **Redeploy** en Vercel para que tome las variables.
+
+### Cómo probarlo desde el celular
+
+1. Abrí felpus.com en Chrome (Android) o, en iPhone, instalala primero
+   (Compartir → Agregar a inicio) y abrila desde el ícono.
+2. Iniciá sesión y entrá a felpus.com/configuracion/alertas: marcá tu barrio,
+   tocá "Activar notificaciones en este dispositivo" y "Guardar mi zona".
+3. Desde otra cuenta (o la compu), publicá un reporte de prueba dentro de esa
+   zona: tiene que llegarte "Se perdió un perro cerca tuyo" (si es de noche,
+   llega a las 8). Después borrá el reporte de prueba.
+4. En la compu, con `npm run dev`, está `localhost:3000/dev/test-push` para
+   mandarte un push de prueba sin publicar nada (en producción no existe).
+
+### Pendiente / a mejorar
+
+- El parecido se calcula sin reconocimiento de imagen real (el servicio de
+  Hugging Face dejó de funcionar), así que con 80% van a salir pocas alertas
+  de match. Si ves que no llega ninguna, conviene bajar
+  `MATCH_THRESHOLD_HIGH` a 0.70 en Vercel (no hace falta tocar código).
+- Los invitados reciben la alerta de match por reporte, pero no tienen zonas
+  (hace falta cuenta).

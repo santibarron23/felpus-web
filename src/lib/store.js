@@ -44,6 +44,7 @@ function rowToReport(row) {
     nickname: row.nickname,
     userId: row.user_id || null,
     resuelto: row.resuelto,
+    inactivo: row.inactivo === true,
     resueltoPor: row.resuelto_por,
     resueltoPorUserId: row.resuelto_por_user_id || null,
     resueltoEn: row.resuelto_en ? new Date(row.resuelto_en).getTime() : null,
@@ -129,7 +130,9 @@ const REPORT_LIST_BASE_FIELDS = [
 // select— así que fetchReports/createReport reintentan automáticamente sin
 // la columna puntual que falte, en vez de dejar la app entera sin poder
 // cargar/publicar reportes hasta que se corra la migración.
-const REPORT_LIST_OPTIONAL_COLUMNS = ["raza", "detalles", "oculto", "ciudad", "provincia"];
+// "inactivo" llega con la migración de alertas (20261020_01): sin ella, la
+// lista sigue funcionando y ningún reporte se ve como inactivo.
+const REPORT_LIST_OPTIONAL_COLUMNS = ["raza", "detalles", "oculto", "ciudad", "provincia", "inactivo"];
 
 function reportListColumns(excluded) {
   const fields = [...REPORT_LIST_BASE_FIELDS];

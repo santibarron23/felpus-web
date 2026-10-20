@@ -3,6 +3,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { GoogleAnalytics } from "@next/third-parties/google";
 import "./globals.css";
 import ServiceWorkerRegister from "../components/felpus/ServiceWorkerRegister";
+import InstallBanner from "../components/felpus/InstallBanner";
 import { ThemeProvider } from "../components/felpus/ThemeProvider";
 import { C } from "../lib/theme";
 import { safeJsonLdString } from "../lib/jsonLd";
@@ -115,6 +116,7 @@ export default function RootLayout({ children }) {
         />
         <ThemeProvider>
           <ServiceWorkerRegister />
+          <InstallBanner />
           {children}
         </ThemeProvider>
         {/* Vercel Web Analytics (2026-08-10, a pedido del usuario para poder
