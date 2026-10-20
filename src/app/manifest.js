@@ -2,7 +2,7 @@ import { C } from "../lib/theme";
 
 export default function manifest() {
   return {
-    name: "Felpus — Buscador de mascotas perdidas y encontradas",
+    name: "Felpus",
     short_name: "Felpus",
     description: "Reportá y buscá mascotas perdidas o encontradas cerca tuyo.",
     start_url: "/",

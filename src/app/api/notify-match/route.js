@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
-import webpush from "web-push";
 import { findMatches } from "../../../lib/matching";
+import { rowToMatchable, makeDb, makePusher, dispatchNewReport } from "../../../lib/alertsServer";
 import { logError } from "../../../lib/log";
 import { SITE_URL } from "../../../lib/site";
 import { C } from "../../../lib/theme";
@@ -34,40 +34,6 @@ export const runtime = "nodejs";
 const EMAIL_SCORE_THRESHOLD = 0.4;
 const MAX_EMAILS_PER_REPORT = 3;
 
-function rowToMatchable(row) {
-  const fotos =
-    Array.isArray(row.foto_urls) && row.foto_urls.length
-      ? row.foto_urls.map((url, i) => ({ url, hist: row.hists?.[i] ?? null, embedding: row.embeddings?.[i] ?? null }))
-      : [{ url: row.foto_url, hist: row.hist, embedding: row.embedding || null }];
-  return {
-    id: row.id,
-    tipo: row.tipo,
-    especie: row.especie,
-    raza: row.raza || "",
-    // detalles/fecha/provincia: los usa scoreMatch (bono de detalles, filtro
-    // de cronología y de provincia). Sin estas columnas el webhook puntuaba
-    // distinto que la app para el mismo par de reportes.
-    detalles: row.detalles || {},
-    nombre: row.nombre || "",
-    color: row.color,
-    colorOtro: row.color_otro || "",
-    tamano: row.tamano,
-    sexo: row.sexo || "",
-    edad: row.edad || "",
-    peso: row.peso || "",
-    zona: row.zona,
-    provincia: row.provincia || "",
-    lat: row.lat,
-    lng: row.lng,
-    fecha: row.fecha || null,
-    descripcion: row.descripcion,
-    pushSubscription: row.push_subscription || null,
-    fotos,
-    hist: fotos[0]?.hist,
-    embedding: fotos[0]?.embedding,
-    creadoEn: row.creado_en ? new Date(row.creado_en).getTime() : Date.now(),
-  };
-}
 
 // Columnas explícitas, SIN contacto_whatsapp/contacto_email: esas dos
 // tienen el SELECT revocado a nivel de Postgres incluso para service_role
@@ -172,28 +138,6 @@ async function sendMatchEmail({ resendKey, toEmail, matchedReport, newReport, sc
   });
 }
 
-async function sendMatchPush({ subscription, matchedReport, newReport, score }) {
-  const nombre = newReport.nombre || (newReport.especie === "gato" ? "un gato" : "un perro");
-  const pct = Math.round(score * 100);
-  const payload = JSON.stringify({
-    title: "🐾 Posible coincidencia en Felpus",
-    body: `${nombre} (${newReport.color}, zona ${newReport.zona}) se parece a tu publicación de ${matchedReport.nombre || matchedReport.especie} — ${pct}% de compatibilidad.`,
-    url: `${SITE_URL}/r/${newReport.id}`,
-    tag: `felpus-match-${matchedReport.id}`,
-  });
-  await webpush.sendNotification(subscription, payload);
-}
-
-// Push es opcional: si no están las claves VAPID configuradas (ver
-// PENDIENTE_DECISION.md), simplemente no se manda nada por ese canal — el
-// email sigue funcionando igual, no hace que todo el webhook falle.
-const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
-const pushConfigured = !!(vapidPublicKey && vapidPrivateKey);
-if (pushConfigured) {
-  webpush.setVapidDetails(process.env.VAPID_SUBJECT || "mailto:contacto@felpus.app", vapidPublicKey, vapidPrivateKey);
-}
-
 export async function POST(request) {
   const secret = request.headers.get("x-webhook-secret");
   if (!secretsMatch(secret, process.env.NOTIFY_WEBHOOK_SECRET)) {
@@ -202,12 +146,8 @@ export async function POST(request) {
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const resendKey = process.env.RESEND_API_KEY;
-  // SUPABASE_SERVICE_ROLE_KEY pasa a ser obligatoria acá (antes solo lo era
-  // para pedir el contacto de la coincidencia puntual): fetchCandidates
-  // también la necesita ahora para poder leer push_subscription, que ya no
-  // es legible con la anon key (auditoría integral, 2026-08-09).
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceKey || !resendKey) {
+  if (!supabaseUrl || !serviceKey) {
     return Response.json({ error: "Faltan variables de entorno en el servidor." }, { status: 501 });
   }
 
@@ -223,53 +163,50 @@ export async function POST(request) {
     return Response.json({ notified: 0 });
   }
 
-  const newReport = rowToMatchable(row);
-  const candidateRows = await fetchCandidates(supabaseUrl, serviceKey, row);
-  const candidates = candidateRows.map(rowToMatchable);
-
-  // Mismo umbral para los dos canales — un push es tan intrusivo como un
-  // email (o más, en el momento), así que no tiene sentido ser más
-  // permisivo con uno que con otro. limit:10 acota cuántos candidatos se
-  // van a considerar (y, por lo tanto, cuántas veces como máximo se llama a
-  // fetchReportContactServer) sin depender de que ya traigan el email —eso
-  // ahora se pide aparte, ver más abajo.
-  const matches = findMatches(newReport, candidates, { limit: 10 }).filter((m) => m.score >= EMAIL_SCORE_THRESHOLD);
-
+  // 1) Email al dueño del otro reporte (igual que siempre; se mantiene a
+  // pedido del usuario, 2026-10-20). El push ya no sale de acá: lo manda el
+  // despacho de alertas de abajo, con umbrales propios y sin repetir.
   let notified = 0;
-  for (const m of matches) {
-    if (notified >= MAX_EMAILS_PER_REPORT) break;
-    let sentSomething = false;
-
-    let contactoEmail = "";
+  if (resendKey) {
     try {
-      if (serviceKey) contactoEmail = await fetchReportContactServer(supabaseUrl, serviceKey, m.report.id);
+      const newReport = rowToMatchable(row);
+      const candidateRows = await fetchCandidates(supabaseUrl, serviceKey, row);
+      const candidates = candidateRows.map(rowToMatchable);
+      const matches = findMatches(newReport, candidates, { limit: 10 }).filter((m) => m.score >= EMAIL_SCORE_THRESHOLD);
+      for (const m of matches) {
+        if (notified >= MAX_EMAILS_PER_REPORT) break;
+        let contactoEmail = "";
+        try {
+          contactoEmail = await fetchReportContactServer(supabaseUrl, serviceKey, m.report.id);
+        } catch (e) {
+          logError("No se pudo obtener el email de contacto para la coincidencia", e);
+        }
+        if (!contactoEmail) continue;
+        try {
+          await sendMatchEmail({ resendKey, toEmail: contactoEmail, matchedReport: m.report, newReport, score: m.score });
+          notified++;
+        } catch (e) {
+          logError("No se pudo mandar el email de coincidencia", e);
+        }
+      }
     } catch (e) {
-      logError("No se pudo obtener el email de contacto para la coincidencia", e);
+      logError("Fallo el envío de emails de coincidencia", e);
     }
-
-    if (contactoEmail) {
-      try {
-        await sendMatchEmail({ resendKey, toEmail: contactoEmail, matchedReport: m.report, newReport, score: m.score });
-        sentSomething = true;
-      } catch (e) {
-        logError("No se pudo mandar el email de coincidencia", e);
-      }
-    }
-    if (pushConfigured && m.report.pushSubscription) {
-      try {
-        await sendMatchPush({ subscription: m.report.pushSubscription, matchedReport: m.report, newReport, score: m.score });
-        sentSomething = true;
-      } catch (e) {
-        // Código 404/410 = la suscripción ya no es válida (el usuario
-        // desinstaló, borró datos del navegador, etc.) — no hay forma de
-        // limpiarla desde acá sin otra función security definer aparte, así
-        // que por ahora solo se loguea distinto para diferenciarlo de un
-        // error real.
-        logError(e?.statusCode === 404 || e?.statusCode === 410 ? "Suscripción push vencida" : "No se pudo mandar la notificación push", e);
-      }
-    }
-    if (sentSomething) notified++;
   }
 
-  return Response.json({ notified });
+  // 2) Alertas automáticas (push): coincidencias guardadas + zonas. Un error
+  // acá nunca tumba los emails de arriba (ver alertsServer.js).
+  let alerts = null;
+  try {
+    alerts = await dispatchNewReport(row, {
+      db: makeDb({ supabaseUrl, serviceKey }),
+      push: await makePusher(),
+      siteUrl: SITE_URL,
+      log: (event, data) => console.info(JSON.stringify({ event, ...data })),
+    });
+  } catch (e) {
+    logError("Fallo el despacho de alertas", e);
+  }
+
+  return Response.json({ notified, alerts });
 }

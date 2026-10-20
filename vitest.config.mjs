@@ -1,4 +1,5 @@
 import { defineConfig, loadEnv } from "vite";
+import { configDefaults } from "vitest/config";
 
 // Vitest (a diferencia de "next dev"/"next build") no carga .env.local
 // solo — matching.js importa log.js, que ahora importa supabaseClient.js
@@ -12,5 +13,6 @@ export default defineConfig(({ mode }) => {
   for (const [key, value] of Object.entries(env)) {
     if (process.env[key] === undefined) process.env[key] = value;
   }
-  return { test: { environment: "node" } };
+  // e2e/ son las pruebas de Playwright (npm run test:e2e), no de Vitest.
+  return { test: { environment: "node", exclude: [...configDefaults.exclude, "e2e/**"] } };
 });

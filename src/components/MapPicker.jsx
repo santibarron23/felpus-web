@@ -13,12 +13,15 @@ import { useTheme } from "./felpus/ThemeProvider";
 // Mapa con un pin arrastrable/tocable para marcar la ubicación exacta de un
 // reporte. Si no hay API key configurada, muestra un aviso y la app sigue
 // funcionando igual con el botón "Ubicación" (geolocalización del navegador).
-export default function MapPicker({ lat, lng, onChange, defaultCenter }) {
+// radiusM (opcional): dibuja un círculo con ese radio alrededor del punto
+// confirmado — lo usa /configuracion/alertas para mostrar la zona.
+export default function MapPicker({ lat, lng, onChange, defaultCenter, radiusM = null }) {
   const C = useTheme();
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const containerRef = useRef(null);
   const mapObjRef = useRef(null);
   const markerObjRef = useRef(null);
+  const circleObjRef = useRef(null);
   const onChangeRef = useRef(onChange);
   const [status, setStatus] = useState(apiKey ? "loading" : "no-key");
   // Tocar el mapa o arrastrar el pin no mueve la ubicación del reporte todavía
@@ -120,6 +123,35 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter }) {
       setPending(null);
     }
   }, [lat, lng, status]);
+
+  useEffect(() => {
+    const map = mapObjRef.current;
+    if (status !== "ready" || !map || !window.google?.maps) return;
+    if (!radiusM || lat == null || lng == null) {
+      circleObjRef.current?.setMap(null);
+      return;
+    }
+    const center = { lat, lng };
+    if (!circleObjRef.current) {
+      circleObjRef.current = new window.google.maps.Circle({
+        map,
+        center,
+        radius: radiusM,
+        strokeColor: C.red,
+        strokeOpacity: 0.8,
+        strokeWeight: 2,
+        fillColor: C.red,
+        fillOpacity: 0.08,
+        clickable: false,
+      });
+    } else {
+      circleObjRef.current.setMap(map);
+      circleObjRef.current.setCenter(center);
+      circleObjRef.current.setRadius(radiusM);
+    }
+    const bounds = circleObjRef.current.getBounds();
+    if (bounds) map.fitBounds(bounds, 24);
+  }, [status, lat, lng, radiusM, C.red]);
 
   function confirmPending() {
     if (!pending) return;

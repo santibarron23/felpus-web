@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { Bell } from "lucide-react";
 import { loadGoogleMaps, observeMapResize } from "../lib/googleMaps";
 import { logError } from "../lib/log";
 import { requestLocation, MAP_GEOLOCATION_OPTIONS } from "../lib/geolocation";
@@ -183,14 +185,35 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
     );
   }
 
+  // "Vigilar esta zona" (PLAN-alertas.md, Fase 4): lleva a la configuración
+  // de alertas con el centro actual del mapa ya marcado.
+  const watchZone = (e) => {
+    const c = mapObjRef.current?.getCenter();
+    if (!c) return;
+    e.preventDefault();
+    window.location.href = `/configuracion/alertas?lat=${c.lat().toFixed(5)}&lng=${c.lng().toFixed(5)}`;
+  };
+
   return (
-    <div
-      ref={containerRef}
-      role="region"
-      aria-label="Mapa de mascotas reportadas cerca tuyo"
-      className="w-full rounded-xl overflow-hidden border"
-      style={{ height: 340, borderColor: C.border, background: C.surfaceMuted }}
-    />
+    <div className="relative">
+      <div
+        ref={containerRef}
+        role="region"
+        aria-label="Mapa de mascotas reportadas cerca tuyo"
+        className="w-full rounded-xl overflow-hidden border"
+        style={{ height: 340, borderColor: C.border, background: C.surfaceMuted }}
+      />
+      {status === "ready" && (
+        <Link
+          href="/configuracion/alertas"
+          onClick={watchZone}
+          className="absolute top-2 left-2 inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-bold shadow-md border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+          style={{ background: C.surface, borderColor: C.border, color: C.text }}
+        >
+          <Bell className="w-3.5 h-3.5" aria-hidden="true" style={{ color: C.red }} /> Vigilar esta zona
+        </Link>
+      )}
+    </div>
   );
 }
 
