@@ -339,9 +339,9 @@ en el navegador.
 
 ### Lo que tenés que hacer vos (en este orden)
 
-1. **Supabase → SQL Editor:** correr `supabase/migrations/20261020_01_alertas.sql`
-   y después `supabase/migrations/20261020_02_alertas_cron.sql` (activan PostGIS
-   y pg_cron solos; los dos son gratis). Lo hago yo con tu OK.
+1. ~~Correr las migraciones en Supabase~~ **Hecho (2026-10-20)**: las dos
+   corrieron bien; 4 tablas nuevas, los 47 reportes intactos y el job
+   `felpus-alertas-8am` programado.
 2. **Vercel → Settings → Environment Variables** (Production y Preview):
    `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`
    (`https://felpus.com`), `ALERTS_WEBHOOK_SECRET`, `MATCH_THRESHOLD_HIGH`
