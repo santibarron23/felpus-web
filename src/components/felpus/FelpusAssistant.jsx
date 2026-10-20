@@ -645,7 +645,7 @@ const PROB_LABEL = { alta: "Probabilidad alta", media: "Probabilidad media", baj
 function ResultCard({ C, card, kind, onOpen }) {
   const titulo = [card.nombre || (card.especie === "gato" ? "Gato" : "Perro"), card.tipo === "perdida" ? "perdido/a" : "encontrado/a"].join(" · ");
   const rasgos = [card.color, card.tamano, card.raza].filter(Boolean).join(", ");
-  const probColor = card.probabilidad === "alta" ? C.green : card.probabilidad === "media" ? C.orangeInk : C.muted;
+  const probColor = card.probabilidad === "alta" ? C.matchText : card.probabilidad === "media" ? C.orangeInk : C.muted;
   return (
     <div role="listitem">
       <button

@@ -3,6 +3,7 @@ import webpush from "web-push";
 import { findMatches } from "../../../lib/matching";
 import { logError } from "../../../lib/log";
 import { SITE_URL } from "../../../lib/site";
+import { C } from "../../../lib/theme";
 
 // Comparación de tiempo constante para el secreto del webhook: `!==` sobre
 // strings corta apenas encuentra el primer carácter distinto, lo que en
@@ -152,12 +153,12 @@ async function sendMatchEmail({ resendKey, toEmail, matchedReport, newReport, sc
   const pct = Math.round(score * 100);
   const html = `
     <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">
-      <h2 style="color:#D31C22;">🐾 Posible coincidencia en Felpus</h2>
+      <h2 style="color:${C.red};">🐾 Posible coincidencia en Felpus</h2>
       <p>Alguien publicó ${newReport.tipo === "perdida" ? "una mascota perdida" : "una mascota encontrada"}
         (<strong>${nombre}</strong>, ${color}, zona ${zona}) que se parece a tu publicación
         de <strong>${matchedNombre}</strong> — ${pct}% de compatibilidad.</p>
-      <p><a href="${link}" style="display:inline-block;background:#D31C22;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold;">Ver la publicación</a></p>
-      <p style="color:#6B5643;font-size:12px;">Entrá a Felpus para ver el detalle completo y confirmar si es tu mascota.</p>
+      <p><a href="${link}" style="display:inline-block;background:${C.redSolid};color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold;">Ver la publicación</a></p>
+      <p style="color:${C.muted};font-size:12px;">Entrá a Felpus para ver el detalle completo y confirmar si es tu mascota.</p>
     </div>`;
   await fetch("https://api.resend.com/emails", {
     method: "POST",

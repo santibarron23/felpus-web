@@ -5,6 +5,7 @@
 // más citado de PawBoost en la comparativa).
 
 import QRCode from "qrcode";
+import { C } from "./theme";
 
 const LOGO_ICON_SRC = "/assets/icon_c.png";
 const FONT_FAMILY = "'Montserrat', Arial, sans-serif";
@@ -474,11 +475,13 @@ export async function buildFlyerBlob(report, colorText) {
   const MARGIN = 48;
   const CONTENT_W = W - MARGIN * 2;
   const isLost = report.tipo === "perdida";
-  const accent = isLost ? "#D31C22" : "#E36525";
-  const cream = "#FBF7F0";
-  const ink = "#2B1B12";
-  const muted = "#6B5643";
-  const line = "#EFE3D2";
+  // Mismos tokens que la app (paleta 2026-10-20) — antes el flyer tenía su
+  // propia copia de los colores, incluido un naranja ya descartado.
+  const accent = isLost ? C.redSolid : C.orangeInkSolid;
+  const cream = C.surfaceSubtle;
+  const ink = C.ink;
+  const muted = C.muted;
+  const line = C.border;
   await ensureFontsLoaded();
   const REG = `24px ${FONT_FAMILY}`;
   const BOLD = `700 24px ${FONT_FAMILY}`;
@@ -628,7 +631,7 @@ export async function buildFlyerBlob(report, colorText) {
     drawImageCover(ctx, img, px, y, photoSize);
     ctx.restore();
   } catch {
-    ctx.fillStyle = "#F0E7D8";
+    ctx.fillStyle = C.surfaceMuted;
     roundRectPath(ctx, px, y, photoSize, photoSize, 24);
     ctx.fill();
   }

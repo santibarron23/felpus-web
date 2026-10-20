@@ -16,13 +16,19 @@
      (una todavía apuntaba a "#E36525", un naranja descartado en una
      auditoría de contraste anterior). Si el rojo de marca cambia, hay que
      actualizar acá Y en theme.js — son los dos únicos lugares. */
-  --felpus-focus: #D31C22;
-  --felpus-focus-tint: rgba(211, 28, 34, 0.15); /* mismo rojo al 15% — evita color-mix() por soporte de navegador */
+  --felpus-focus: #D71925;
+  --felpus-focus-tint: rgba(215, 25, 37, 0.15); /* mismo rojo al 15% — evita color-mix() por soporte de navegador */
   /* Espejo mínimo de C.cream/C.ink solo para el fondo de <html>/<body> — ver
      abajo. El resto de la paleta vive únicamente en theme.js/ThemeProvider;
      no se duplicó todo acá para no tener dos fuentes de verdad. */
-  --felpus-bg: #F6EFE4;
-  --felpus-fg: #2B1B12;
+  --felpus-bg: #F8F1E8;
+  --felpus-fg: #382C25;
+  /* Espejo de C.surfaceSubtle/C.surfaceMuted/C.muted para las clases
+     arbitrarias de Tailwind (bg-[var(--felpus-surface-subtle)]) que antes
+     repetían el hex a mano en ~45 lugares. */
+  --felpus-surface-subtle: #FBF7F0;
+  --felpus-surface-muted: #F0E7D8;
+  --felpus-muted: #776C64;
   /* Fondo de .felpus-input (todos los campos de texto/select/textarea del
      formulario de reportar) — antes cada campo repetía "bg-[#FBF7F0]" en su
      className, SIN ningún equivalente "dark:", así que en modo oscuro los
