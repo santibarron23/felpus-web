@@ -420,6 +420,35 @@ export function missingFields(draft, { hasPhoto = false, skipped = [] } = {}) {
   return faltan;
 }
 
+// Qué dato está preguntando el asistente, leído de su ÚLTIMA pregunta.
+// Visto en producción (con Claude Haiku): el modelo a veces completa un dato
+// por su cuenta y igual lo pregunta ("¿es perro o gato?" con especie ya
+// puesta) — si los botones salieran solo de missingFields, mostrarían otro
+// dato y no coincidirían con la pregunta. El orden importa: lo más
+// específico primero.
+const ASKED_FIELD_PATTERNS = [
+  ["especie", /\bperr[oa]s?\b.*\bgat[oa]s?\b|\bgat[oa]s?\b.*\bperr[oa]s?\b/],
+  ["tipo", /\b(perdiste|perdi[oó]|encontraste|encontr[oó])\b.*\b(perdiste|perdi[oó]|encontraste|encontr[oó])\b/],
+  ["sexo", /\b(macho|hembra|sexo|nene|nena)\b/],
+  ["tamano", /\btama[nñ]o\b|\b(chic[oa]|median[oa]|grande)\b/],
+  ["color", /\bcolor(es)?\b/],
+  ["foto", /\bfotos?\b/],
+  ["nombre", /\bnombre\b|\bc[oó]mo se llama\b/],
+  ["senas", /\bcollar\b|\bse[nñ]as?\b|\bmarcas?\b|\bchapita\b|\bmancha/],
+  ["fecha", /\bcu[aá]ndo\b|\bfecha\b|\bqu[eé] d[ií]a\b/],
+  ["zona", /\bbarrio\b|\bzona\b|\bciudad\b|\bd[oó]nde\b|\bubicaci[oó]n\b/],
+];
+export function detectAskedField(reply) {
+  // Minúsculas y sin tildes, pero CON signos (hace falta el "?" para
+  // encontrar la última pregunta; normalizeText los saca).
+  const text = (reply || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const qs = text.match(/[^.?!]*\?/g);
+  if (!qs) return null;
+  const last = qs[qs.length - 1];
+  for (const [key, re] of ASKED_FIELD_PATTERNS) if (re.test(last)) return key;
+  return null;
+}
+
 // "negro con manchas blancas" suma información a "Manchado / bicolor";
 // "marrón" no le agrega nada a "Marrón" (visto en la prueba real: la
 // descripción quedaba "color marrón… Color: marrón.").

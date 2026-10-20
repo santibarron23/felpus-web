@@ -2347,8 +2347,8 @@ export default function FelpusMatcher() {
                   Cada mascota merece volver a casa
                 </h2>
                 <p className="text-sm leading-relaxed max-w-sm mx-auto" style={{ color: C.muted }}>
-                  Subí una foto y Felpus la compara automáticamente con toda la comunidad para encontrar
-                  coincidencias cerca tuyo.
+                  {/* Corto a propósito: entra en 2 renglones aun en celulares de 320 px. */}
+                  Subí una foto y Felpus busca coincidencias en toda la comunidad.
                 </p>
                 <div className="flex gap-2 mt-4">
                   <button

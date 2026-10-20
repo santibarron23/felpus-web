@@ -26,6 +26,7 @@ import {
   supportsDefaultFallback,
   estimateCostUsd,
   buildSystemPrompt,
+  detectAskedField,
   detectRegion,
   inRegion,
   MAX_HISTORY_MESSAGES,
@@ -450,5 +451,27 @@ describe("botones de respuesta rápida", () => {
   it("sanitizeContext solo acepta claves conocidas en skipped", () => {
     expect(sanitizeContext({ skipped: ["foto", "hackear", "foto"] }).skipped).toEqual(["foto"]);
     expect(sanitizeContext({}).skipped).toEqual([]);
+  });
+});
+
+describe("detectAskedField (botones según la pregunta real)", () => {
+  it.each([
+    ["Lamento mucho. ¿Es perro o gato?", "especie"],
+    ["Perdiste a tu mascota, qué difícil. Te pregunto primero: ¿es perro o gato? Perdón por el error.", "especie"],
+    ["¿Es macho o hembra?", "sexo"],
+    ["¿De qué color es?", "color"],
+    ["¿Qué tamaño tiene?", "tamano"],
+    ["¿En qué barrio y ciudad la viste por última vez?", "zona"],
+    ["¿Cómo se llama?", "nombre"],
+    ["¿Tenés una foto?", "foto"],
+    ["¿Tenía collar o alguna seña particular?", "senas"],
+    ["¿Cuándo se perdió?", "fecha"],
+    ["¿La perdiste o la encontraste?", "tipo"],
+  ])("%s → %s", (reply, key) => {
+    expect(detectAskedField(reply)).toBe(key);
+  });
+  it("sin pregunta o con una pregunta de otra cosa, null", () => {
+    expect(detectAskedField("Listo, guardé el reporte.")).toBeNull();
+    expect(detectAskedField("¿Querés que te ayude con algo más?")).toBeNull();
   });
 });

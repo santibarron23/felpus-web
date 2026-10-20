@@ -185,7 +185,8 @@ describe("pending (botones de respuesta rápida)", () => {
     expect(r.pending).toBe("sexo");
   });
   it("respeta lo salteado", async () => {
-    const client = fakeClient([toolUse("guardar_borrador", { ...DRAFT_INPUT, sexo: "", tamano: "" }), text("ok")]);
+    // Pregunta genérica (no nombra ningún dato): cae al primer dato que falta.
+    const client = fakeClient([toolUse("guardar_borrador", { ...DRAFT_INPUT, sexo: "", tamano: "" }), text("¿Me contás un poco más?")]);
     const r = await runChat({ ...base, context: { ...base.context, skipped: ["sexo"] }, client, readReports: vi.fn(async () => []) });
     expect(r.pending).toBe("nombre");
   });

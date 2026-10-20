@@ -28,6 +28,7 @@ import {
   supportsDefaultFallback,
   estimateCostUsd,
   isDraftEmpty,
+  detectAskedField,
 } from "./chatbot";
 
 const REFUSAL_REPLY =
@@ -98,7 +99,12 @@ function addUsage(total, usage) {
 
 export function pendingFor({ draft, draftChanged, reply, context, image }) {
   if (isDraftEmpty(draft)) return null;
-  if (!draftChanged && !/\?\s*$/.test(reply || "")) return null;
+  if (!/\?\s*$/.test((reply || "").trim())) return null;
+  // Primero lo que de verdad pregunta el texto; si no se reconoce, el
+  // primer dato que falta (que es lo que el prompt le pide preguntar).
+  const asked = detectAskedField(reply);
+  if (asked) return asked;
+  if (!draftChanged) return null;
   return missingFields(draft, { hasPhoto: context.hasPhoto || !!image, skipped: context.skipped })[0]?.clave || null;
 }
 
