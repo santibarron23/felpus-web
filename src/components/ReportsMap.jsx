@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { loadGoogleMaps, observeMapResize } from "../lib/googleMaps";
 import { logError } from "../lib/log";
-import { requestLocation } from "../lib/geolocation";
+import { requestLocation, MAP_GEOLOCATION_OPTIONS } from "../lib/geolocation";
+import { CITIES } from "../lib/cities";
 import { useTheme } from "./felpus/ThemeProvider";
 
 // Mapa de sólo lectura que pinta un marcador por cada reporte que tenga
@@ -37,7 +38,8 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
       .then((maps) => {
         if (cancelled || !containerRef.current) return;
         const map = new maps.Map(containerRef.current, {
-          center: center || { lat: -34.6037, lng: -58.3816 },
+          // Mientras llega la ubicación: Salta (antes, Buenos Aires).
+          center: center || CITIES.salta.geo,
           zoom: center ? 13 : 12,
           streetViewControl: false,
           mapTypeControl: false,
@@ -67,7 +69,8 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
             () => {
               if (cancelled || userMovedRef.current) return;
               fitToReports(maps, map, reportsRef.current);
-            }
+            },
+            MAP_GEOLOCATION_OPTIONS
           );
         }
       })

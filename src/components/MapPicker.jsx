@@ -2,7 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { loadGoogleMaps, observeMapResize } from "../lib/googleMaps";
-import { requestLocation } from "../lib/geolocation";
+import { requestLocation, geolocationErrorMessage, MAP_GEOLOCATION_OPTIONS } from "../lib/geolocation";
+import { CITIES } from "../lib/cities";
+
+// Sin ubicación de la persona ni defaultCenter: Salta, donde está la
+// comunidad de Felpus (antes, Buenos Aires).
+const FALLBACK_CENTER = CITIES.salta.geo;
 import { useTheme } from "./felpus/ThemeProvider";
 
 // Mapa con un pin arrastrable/tocable para marcar la ubicación exacta de un
@@ -28,6 +33,8 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter }) {
   // reporte (eso sigue requiriendo tocar y confirmar).
   const startCenterRef = useRef(null);
   const userMovedRef = useRef(false);
+  // Botón "Ir a mi ubicación" dentro del mapa: "idle" | "locating" | mensaje de error.
+  const [geoState, setGeoState] = useState("idle");
 
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -42,8 +49,8 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter }) {
       .then((maps) => {
         if (cancelled || !containerRef.current) return;
         const center = {
-          lat: lat ?? defaultCenter?.lat ?? -34.6037,
-          lng: lng ?? defaultCenter?.lng ?? -58.3816,
+          lat: lat ?? defaultCenter?.lat ?? FALLBACK_CENTER.lat,
+          lng: lng ?? defaultCenter?.lng ?? FALLBACK_CENTER.lng,
         };
         const map = new maps.Map(containerRef.current, {
           center,
@@ -85,7 +92,8 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter }) {
               map.setZoom(15);
               marker.setPosition(pos);
             },
-            () => {}
+            () => {},
+            MAP_GEOLOCATION_OPTIONS
           );
         }
       })
@@ -120,13 +128,34 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter }) {
     setPending(null);
   }
 
+  // A pedido explícito (toque): si el permiso está bloqueado, explica cómo
+  // habilitarlo en vez de no hacer nada. El punto queda como propuesta a
+  // confirmar, igual que tocar el mapa.
+  function goToMyLocation() {
+    setGeoState("locating");
+    requestLocation(
+      (pos) => {
+        setGeoState("idle");
+        userMovedRef.current = true;
+        startCenterRef.current = pos;
+        mapObjRef.current?.setCenter(pos);
+        mapObjRef.current?.setZoom(16);
+        markerObjRef.current?.setPosition(pos);
+        markerObjRef.current?.setOpacity(0.55);
+        setPending(pos);
+      },
+      (err) => setGeoState(geolocationErrorMessage(err)),
+      MAP_GEOLOCATION_OPTIONS
+    );
+  }
+
   function cancelPending() {
     setPending(null);
     if (markerObjRef.current) {
       const start = startCenterRef.current;
       const fallback = {
-        lat: lat ?? start?.lat ?? defaultCenter?.lat ?? -34.6037,
-        lng: lng ?? start?.lng ?? defaultCenter?.lng ?? -58.3816,
+        lat: lat ?? start?.lat ?? defaultCenter?.lat ?? FALLBACK_CENTER.lat,
+        lng: lng ?? start?.lng ?? defaultCenter?.lng ?? FALLBACK_CENTER.lng,
       };
       markerObjRef.current.setPosition(fallback);
       markerObjRef.current.setOpacity(1);
@@ -161,6 +190,22 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter }) {
         className="w-full rounded-xl overflow-hidden border"
         style={{ height: 220, borderColor: C.border, background: C.surfaceMuted }}
       />
+      {status === "ready" && (
+        <button
+          type="button"
+          onClick={goToMyLocation}
+          disabled={geoState === "locating"}
+          className="mt-2 w-full text-[12px] font-bold rounded-lg py-2 border disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+          style={{ borderColor: C.border, color: C.text, background: C.surfaceSubtle }}
+        >
+          {geoState === "locating" ? "Buscando tu ubicación…" : "📍 Ir a mi ubicación"}
+        </button>
+      )}
+      {geoState !== "idle" && geoState !== "locating" && (
+        <p className="text-[11px] mt-1" style={{ color: C.redDark }} role="alert">
+          {geoState}
+        </p>
+      )}
       {pending ? (
         <div className="mt-2 flex items-center gap-2 rounded-lg p-2.5" style={{ background: C.surfaceSubtle, border: `1px solid ${C.border}` }}>
           <span className="text-[11px] flex-1" style={{ color: C.muted }}>¿Confirmás esta ubicación?</span>
