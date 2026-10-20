@@ -151,8 +151,10 @@ export async function runChat({
     if (block.name === DRAFT_TOOL_NAME) {
       const input = { ...(block.input || {}) };
       // Especie inventada (ver userMentionsSpecies): se descarta y se pregunta.
+      let especieDescartada = false;
       if (input.especie && !draft.especie && !image && !context.hasPhoto && !userMentionsSpecies(messages)) {
         input.especie = "";
+        especieDescartada = true;
       }
       draft = mergeDraft(draft, input);
       draftChanged = true;
@@ -168,6 +170,8 @@ export async function runChat({
         // Sin coordenadas exactas (ver buildContextNote).
         borrador: { ...draft, lat: undefined, lng: undefined, punto_en_mapa: draft.lat != null },
         faltan: missingFields(draft, { hasPhoto: context.hasPhoto || !!image, skipped: context.skipped }),
+        // Sin esto el modelo se disculpaba ("el perro lo puse por error").
+        ...(especieDescartada ? { nota: "La persona todavía no dijo si es perro o gato: preguntalo sin mencionar el borrador ni disculparte." } : {}),
         coincidencias,
       };
     }
