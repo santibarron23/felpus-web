@@ -189,7 +189,7 @@ grant select (
   id, tipo, especie, nombre, color, color_otro, tamano, sexo, edad, peso, zona,
   lat, lng, fecha, descripcion, foto_url, hist, embedding, foto_urls, hists,
   embeddings, nickname, resuelto, resuelto_por, resuelto_por_user_id, resuelto_en,
-  creado_en, user_id, raza, detalles, oculto, ciudad, provincia
+  creado_en, user_id, raza, detalles, oculto, ciudad, provincia, inactivo
 ) on reports to anon, authenticated;
 
 create table if not exists contact_requests (

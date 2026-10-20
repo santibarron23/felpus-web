@@ -1,5 +1,6 @@
 import { supabase } from "./supabaseClient";
 import { logError } from "./log";
+import { REPORT_LIST_BASE_FIELDS, REPORT_LIST_OPTIONAL_COLUMNS } from "./reportColumns";
 
 const REPORTS_TABLE = "reports";
 const CONTRIBUTORS_TABLE = "contributors";
@@ -109,30 +110,8 @@ export async function deleteReport(reportId, ownerUserId, fotoUrls) {
   if (error) throw error;
 }
 
-// Todas las columnas MENOS contacto_whatsapp/contacto_email — el listado
-// general (Explorar, mapa, franja de actividad) no necesita esos datos.
-// Esto ya no es solo una convención del cliente: esas dos columnas tienen
-// el SELECT revocado a nivel de Postgres para anon/authenticated (ver
-// schema.sql), así que ni pidiéndolas acá ni con un SELECT directo a la API
-// se puede traer el contacto en bloque — el único camino es fetchReportContact
-// más abajo, que pasa por una función rate-limitada.
-const REPORT_LIST_BASE_FIELDS = [
-  "id", "tipo", "especie", "nombre", "color", "color_otro", "tamano", "sexo", "edad", "peso",
-  "zona", "lat", "lng", "fecha", "descripcion", "foto_url", "hist", "embedding", "foto_urls",
-  "hists", "embeddings", "nickname", "resuelto", "resuelto_por", "resuelto_por_user_id",
-  "resuelto_en", "creado_en", "user_id",
-];
-// Columnas agregadas en migraciones posteriores a la primera versión de
-// schema.sql (ver PENDIENTE_DECISION.md) que todavía pueden no existir en un
-// despliegue que no corrió la última migración. Pedir una columna que no
-// existe tira un error de PostgREST que tumba TODA la lista de reportes —a
-// diferencia de columnas como push_subscription, que no viven en este
-// select— así que fetchReports/createReport reintentan automáticamente sin
-// la columna puntual que falte, en vez de dejar la app entera sin poder
-// cargar/publicar reportes hasta que se corra la migración.
-// "inactivo" llega con la migración de alertas (20261020_01): sin ella, la
-// lista sigue funcionando y ningún reporte se ve como inactivo.
-const REPORT_LIST_OPTIONAL_COLUMNS = ["raza", "detalles", "oculto", "ciudad", "provincia", "inactivo"];
+// Las listas de columnas viven en reportColumns.js (ver ahí por qué cada
+// columna nueva necesita su grant select).
 
 function reportListColumns(excluded) {
   const fields = [...REPORT_LIST_BASE_FIELDS];
@@ -144,9 +123,18 @@ function reportListColumns(excluded) {
 
 // Detecta si un error de PostgREST es por una columna puntual que no existe
 // todavía (42703 undefined_column), y de ser así, cuál de las opcionales es.
-function missingOptionalColumn(error, candidates) {
+//
+// También 42501 (permission denied): reports tiene permisos de lectura POR
+// COLUMNA (schema.sql), así que una columna nueva sin su "grant select"
+// rompe la consulta entera, y el mensaje no dice cuál es. Caso real
+// (2026-10-20): "inactivo" sin grant dejó el sitio en 0 mascotas. Se
+// descarta la opcional más nueva que todavía se esté pidiendo.
+function missingOptionalColumn(error, candidates, excluded = new Set()) {
   if (!error) return null;
   const text = `${error.message || ""} ${error.code || ""}`;
+  if (text.includes("42501") || /permission denied/i.test(text)) {
+    return [...candidates].reverse().find((c) => !excluded.has(c)) || null;
+  }
   if (!text.includes("42703") && !/does not exist/i.test(text)) return null;
   return candidates.find((c) => new RegExp(`\\b${c}\\b`, "i").test(text)) || null;
 }
@@ -161,7 +149,7 @@ export async function fetchReports({ includeHidden = false } = {}) {
   for (let attempt = 0; attempt <= REPORT_LIST_OPTIONAL_COLUMNS.length; attempt++) {
     const columns = reportListColumns(excluded);
     const result = await supabase.from(REPORTS_TABLE).select(columns).order("creado_en", { ascending: false });
-    const missing = missingOptionalColumn(result.error, REPORT_LIST_OPTIONAL_COLUMNS);
+    const missing = missingOptionalColumn(result.error, REPORT_LIST_OPTIONAL_COLUMNS, excluded);
     if (!missing || excluded.has(missing)) {
       if (result.error) throw result.error;
       // Publicaciones denunciadas por 3+ IPs distintas (ver flag_report en

@@ -181,6 +181,17 @@ describe("fetchReports", () => {
     expect(result[0].detalles).toEqual({});
   });
 
+  it("sin permiso de lectura de una columna nueva (42501), reintenta sin la opcional más nueva", async () => {
+    const denied = { code: "42501", message: "permission denied for table reports" };
+    supabaseMock.from
+      .mockReturnValueOnce(makeBuilder({ data: null, error: denied }))
+      .mockReturnValueOnce(makeBuilder({ data: [baseRow()], error: null }));
+    const result = await fetchReports();
+    expect(supabaseMock.from).toHaveBeenCalledTimes(2);
+    expect(result).toHaveLength(1);
+    expect(result[0].inactivo).toBe(false);
+  });
+
   it("un error que NO es de columna faltante se propaga de inmediato, sin reintentar", async () => {
     const networkError = { code: "500", message: "Internal Server Error" };
     supabaseMock.from.mockReturnValueOnce(makeBuilder({ data: null, error: networkError }));
