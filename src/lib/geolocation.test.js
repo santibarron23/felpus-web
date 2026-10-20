@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { geolocationErrorMessage } from "./geolocation";
 
 // Auditoría integral (2026-08-09): función pura sin ningún test hasta
@@ -27,5 +27,20 @@ describe("geolocationErrorMessage", () => {
   it("los 4 mensajes son todos distintos entre sí (cada código dice algo propio)", () => {
     const mensajes = [1, 2, 3, 99].map((code) => geolocationErrorMessage({ code }));
     expect(new Set(mensajes).size).toBe(4);
+  });
+});
+
+describe("requestLocation con opciones de mapa", () => {
+  it("pasa timeout y maximumAge al navegador", async () => {
+    const { requestLocation, MAP_GEOLOCATION_OPTIONS } = await import("./geolocation");
+    let opts;
+    vi.stubGlobal("navigator", { geolocation: { getCurrentPosition: (ok, _err, o) => { opts = o; ok({ coords: { latitude: -24.8, longitude: -65.4 } }); } } });
+    let got;
+    requestLocation((p) => (got = p), () => {}, MAP_GEOLOCATION_OPTIONS);
+    expect(got).toEqual({ lat: -24.8, lng: -65.4 });
+    expect(opts).toEqual({ timeout: 15000, maximumAge: 600000 });
+    requestLocation(() => {}, () => {});
+    expect(opts).toEqual({ timeout: 8000, maximumAge: 0 });
+    vi.unstubAllGlobals();
   });
 });

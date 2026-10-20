@@ -3,7 +3,10 @@
 // llamador — se deja esa parte a cargo de quien llama.
 export const GEOLOCATION_TIMEOUT_MS = 8000;
 
-export function requestLocation(onSuccess, onError) {
+// options (opcional): { timeout, maximumAge } — los mapas usan más tiempo y
+// aceptan una posición reciente ya conocida por el celular, porque en
+// celulares reales el GPS a veces tarda más de 8 s en responder.
+export function requestLocation(onSuccess, onError, { timeout = GEOLOCATION_TIMEOUT_MS, maximumAge = 0 } = {}) {
   if (!navigator.geolocation) {
     onError(new Error("Geolocalización no soportada"));
     return;
@@ -11,9 +14,12 @@ export function requestLocation(onSuccess, onError) {
   navigator.geolocation.getCurrentPosition(
     (pos) => onSuccess({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
     (err) => onError(err),
-    { timeout: GEOLOCATION_TIMEOUT_MS }
+    { timeout, maximumAge }
   );
 }
+
+// Para los mapas: más paciencia y una posición de hasta 10 min de antigüedad.
+export const MAP_GEOLOCATION_OPTIONS = { timeout: 15000, maximumAge: 10 * 60 * 1000 };
 
 // Antes se mostraba siempre el mismo "No pudimos acceder a tu ubicación",
 // sin importar el motivo — el caso más confuso para quien lo sufre es

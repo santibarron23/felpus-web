@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { loadGoogleMaps, observeMapResize } from "../lib/googleMaps";
 import { logError } from "../lib/log";
-import { requestLocation } from "../lib/geolocation";
-import { getApproxLocation } from "../lib/approxLocation";
+import { requestLocation, MAP_GEOLOCATION_OPTIONS } from "../lib/geolocation";
+import { CITIES } from "../lib/cities";
 import { useTheme } from "./felpus/ThemeProvider";
 
 // Mapa de sólo lectura que pinta un marcador por cada reporte que tenga
@@ -38,7 +38,8 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
       .then((maps) => {
         if (cancelled || !containerRef.current) return;
         const map = new maps.Map(containerRef.current, {
-          center: center || { lat: -34.6037, lng: -58.3816 },
+          // Mientras llega la ubicación: Salta (antes, Buenos Aires).
+          center: center || CITIES.salta.geo,
           zoom: center ? 13 : 12,
           streetViewControl: false,
           mapTypeControl: false,
@@ -59,29 +60,17 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
         // Aires aunque los reportes estuvieran en Salta. Ahora: la ubicación
         // de la persona si la da; si no, el área donde están los reportes.
         if (!center) {
-          // Mismo criterio que MapPicker: ciudad aproximada por la conexión
-          // (sin permiso, rápida), refinada por el GPS si la persona lo da.
-          // Si no hay ninguna de las dos, se encuadran los reportes.
-          let gpsApplied = false;
-          const approx = getApproxLocation();
-          approx.then((pos) => {
-            if (cancelled || userMovedRef.current || gpsApplied || !pos) return;
-            map.setCenter(pos);
-            map.setZoom(12);
-          });
           requestLocation(
             (pos) => {
-              gpsApplied = true;
               if (cancelled || userMovedRef.current) return;
               map.setCenter(pos);
               map.setZoom(13);
             },
             () => {
-              approx.then((pos) => {
-                if (cancelled || userMovedRef.current || pos) return;
-                fitToReports(maps, map, reportsRef.current);
-              });
-            }
+              if (cancelled || userMovedRef.current) return;
+              fitToReports(maps, map, reportsRef.current);
+            },
+            MAP_GEOLOCATION_OPTIONS
           );
         }
       })
