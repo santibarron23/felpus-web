@@ -234,27 +234,27 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter, radiusM =
         </button>
       )}
       {geoState !== "idle" && geoState !== "locating" && (
-        <p className="text-[11px] mt-1" style={{ color: C.redDark }} role="alert">
+        <p className="text-[12px] mt-1" style={{ color: C.redDark }} role="alert">
           {geoState}
         </p>
       )}
       {pending ? (
         <div className="mt-2 flex items-center gap-2 rounded-lg p-2.5" style={{ background: C.surfaceSubtle, border: `1px solid ${C.border}` }}>
-          <span className="text-[11px] flex-1" style={{ color: C.muted }}>¿Confirmás esta ubicación?</span>
+          <span className="text-[12px] flex-1" style={{ color: C.muted }}>¿Confirmás esta ubicación?</span>
           <button
             type="button"
             onClick={confirmPending}
-            className="text-[11px] font-bold text-white rounded-lg px-2.5 py-1"
+            className="text-[12px] font-bold text-white rounded-lg px-2.5 py-1"
             style={{ background: C.greenSolid }}
           >
             Confirmar
           </button>
-          <button type="button" onClick={cancelPending} className="text-[11px] font-semibold" style={{ color: C.muted }}>
+          <button type="button" onClick={cancelPending} className="text-[12px] font-semibold" style={{ color: C.muted }}>
             Cancelar
           </button>
         </div>
       ) : (
-        <p className="text-[10px] mt-1" style={{ color: C.muted }}>
+        <p className="text-[11px] mt-1" style={{ color: C.muted }}>
           Tocá el mapa o arrastrá el pin para marcar el lugar exacto, y confirmá la ubicación — cuanto más cerca
           esté del pin de otro reporte, mayor el % de coincidencia.
         </p>

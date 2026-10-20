@@ -40,7 +40,7 @@ function ReportCard({ r, C }) {
         )}
         <div className="min-w-0">
           <span
-            className="inline-block text-[10px] font-bold uppercase tracking-wide rounded px-1.5 py-0.5 text-white"
+            className="inline-block text-[11px] font-bold uppercase tracking-wide rounded px-1.5 py-0.5 text-white"
             // Mismos colores de estado que la app: verde es solo para reencuentros.
             style={{ background: perdida ? C.redSolid : C.orangeInkSolid }}
           >
@@ -99,7 +99,7 @@ export default function CityLanding({ city, perdidas, encontradas, reencuentros,
           </Link>
           <Link
             href="/"
-            className="flex items-center gap-1.5 text-xs font-semibold shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded-lg px-1 py-0.5"
+            className="flex items-center gap-1.5 text-xs font-semibold shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded-lg px-2 py-2.5"
             style={{ color: C.muted }}
           >
             <ArrowLeft className="w-3.5 h-3.5" /> Ir a Felpus
@@ -108,8 +108,8 @@ export default function CityLanding({ city, perdidas, encontradas, reencuentros,
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-8 space-y-5">
-        <nav aria-label="Ruta" className="text-[11px]" style={{ color: C.muted }}>
-          <Link href="/" className="underline underline-offset-2">Felpus</Link> <span aria-hidden="true">›</span> Mascotas perdidas en {n}
+        <nav aria-label="Ruta" className="text-[12px]" style={{ color: C.muted }}>
+          <Link href="/" className="inline-block py-2.5 -my-2.5 underline underline-offset-2">Felpus</Link> <span aria-hidden="true">›</span> Mascotas perdidas en {n}
         </nav>
 
         <div className={card} style={{ borderColor: C.border }}>
@@ -147,7 +147,7 @@ export default function CityLanding({ city, perdidas, encontradas, reencuentros,
         <div className={card} style={{ borderColor: C.border }}>
           <Section id="perdidas" title={`Perros y gatos perdidos en ${n}`} C={C}>
             {perdidas.length ? (
-              <ul className="grid sm:grid-cols-2 gap-2.5">
+              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {perdidas.map((r) => <ReportCard key={r.id} r={r} C={C} />)}
               </ul>
             ) : (
@@ -160,7 +160,7 @@ export default function CityLanding({ city, perdidas, encontradas, reencuentros,
           <Section id="encontradas" title={`Mascotas encontradas en ${n}`} C={C}>
             <p>¿Reconocés a alguna? Tocala para ver la ficha completa y contactar a quien la encontró.</p>
             {encontradas.length ? (
-              <ul className="grid sm:grid-cols-2 gap-2.5">
+              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {encontradas.map((r) => <ReportCard key={r.id} r={r} C={C} />)}
               </ul>
             ) : (
@@ -171,7 +171,7 @@ export default function CityLanding({ city, perdidas, encontradas, reencuentros,
 
         <div className={card} style={{ borderColor: C.border }}>
           <Section title={`Qué hacer si perdiste tu mascota en ${n}`} C={C}>
-            <ol className="grid sm:grid-cols-2 gap-3">
+            <ol className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {pasos.map(({ icon: Icon, t, d }, i) => (
                 <li key={t} className="rounded-xl border p-3" style={{ borderColor: C.border }}>
                   <p className="font-semibold flex items-center gap-1.5">
@@ -205,7 +205,7 @@ export default function CityLanding({ city, perdidas, encontradas, reencuentros,
             <div className="space-y-2">
               {faqs.map((f) => (
                 <details key={f.q} className="rounded-xl border p-3 group" style={{ borderColor: C.border }}>
-                  <summary className="font-semibold cursor-pointer">{f.q}</summary>
+                  <summary className="font-semibold cursor-pointer py-2 -my-2">{f.q}</summary>
                   <p className="mt-2" style={{ color: C.text }}>{f.a}</p>
                 </details>
               ))}
@@ -216,10 +216,10 @@ export default function CityLanding({ city, perdidas, encontradas, reencuentros,
 
       <footer className="max-w-3xl mx-auto px-4 pb-10 pt-2 space-y-2">
         <SocialLinks />
-        <p className="text-[11px] text-center" style={{ color: C.muted }}>
+        <p className="text-[12px] text-center" style={{ color: C.muted }}>
           Felpus · Buscador de mascotas perdidas y encontradas en {n} ·{" "}
-          <Link href="/privacidad" className="underline underline-offset-2">Privacidad</Link> ·{" "}
-          <Link href="/terminos" className="underline underline-offset-2">Términos</Link>
+          <Link href="/privacidad" className="inline-block py-2 underline underline-offset-2">Privacidad</Link> ·{" "}
+          <Link href="/terminos" className="inline-block py-2 underline underline-offset-2">Términos</Link>
         </p>
       </footer>
     </div>

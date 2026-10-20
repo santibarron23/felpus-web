@@ -289,12 +289,12 @@ export default function PhoneInput({ id, country, onCountryChange, value, onChan
         )}
       </div>
       {showError && (
-        <p className="flex items-center gap-1 text-[11px] mt-1" style={{ color: C.red }}>
+        <p className="flex items-center gap-1 text-[12px] mt-1" style={{ color: C.red }}>
           <AlertCircle className="w-3 h-3 shrink-0" /> {errorMessage(status.reason, countryName)}
         </p>
       )}
       {showSuccess && (
-        <p className="flex items-center gap-1 text-[11px] mt-1" style={{ color: C.greenDark }}>
+        <p className="flex items-center gap-1 text-[12px] mt-1" style={{ color: C.greenDark }}>
           <Check className="w-3 h-3 shrink-0" /> WhatsApp listo
         </p>
       )}

@@ -36,7 +36,7 @@ export default function LegalPage({ title, updated, otherHref, otherLabel, child
           </Link>
           <Link
             href="/"
-            className="flex items-center gap-1.5 text-xs font-semibold shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded-lg px-1 py-0.5"
+            className="flex items-center gap-1.5 text-xs font-semibold shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded-lg px-2 py-2.5"
             style={{ color: C.muted }}
           >
             <ArrowLeft className="w-3.5 h-3.5" /> Volver a Felpus
@@ -67,7 +67,7 @@ export default function LegalPage({ title, updated, otherHref, otherLabel, child
             style={{ borderColor: C.border, color: C.muted }}
           >
             <span>¿Buscás {otherLabel}?</span>
-            <Link href={otherHref} className="font-semibold underline underline-offset-2" style={{ color: C.red }}>
+            <Link href={otherHref} className="inline-block py-2 font-semibold underline underline-offset-2" style={{ color: C.red }}>
               Ir a {otherLabel} →
             </Link>
           </div>
@@ -76,9 +76,9 @@ export default function LegalPage({ title, updated, otherHref, otherLabel, child
 
       <footer className="max-w-2xl mx-auto px-4 pb-10 pt-2 space-y-2">
         <SocialLinks />
-        <p className="text-[11px] text-center" style={{ color: C.muted }}>
+        <p className="text-[12px] text-center" style={{ color: C.muted }}>
           Felpus ·{" "}
-          <a href="mailto:contacto.felpus@gmail.com" className="underline underline-offset-2">
+          <a href="mailto:contacto.felpus@gmail.com" className="inline-block py-2 underline underline-offset-2">
             contacto.felpus@gmail.com
           </a>
         </p>

@@ -107,6 +107,18 @@ body {
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
 }
 
+/* Celulares: Safari de iPhone hace zoom a toda la página al tocar un campo
+   con letra menor a 16px (y no vuelve solo), lo que desarma el formulario
+   de Reportar, el buscador y el chat del asistente. En pantallas chicas
+   todos los campos van a 16px; en compu siguen con su tamaño de diseño. */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
 @keyframes felpus-pulse {
   0% {
     transform: scale(1);

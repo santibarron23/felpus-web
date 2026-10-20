@@ -100,6 +100,34 @@ const greetingMessage = () => ({ id: "greeting", role: "assistant", content: GRE
 export default function FelpusAssistant({ section = "inicio", openReport = null, onApplyDraft, onOpenReport, onNavigate, publishedToken = 0, openToken = 0 }) {
   const C = useTheme();
   const [open, setOpen] = useState(false);
+  // En celular el botón flotante tapaba los botones del costado derecho de
+  // las tarjetas (Compartir, corazones, "Ubicación") mientras se scrollea.
+  // Se esconde al bajar y vuelve al subir o al quedarse quieto un momento.
+  const [fabHidden, setFabHidden] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    let lastY = window.scrollY;
+    let idle = null;
+    const onScroll = () => {
+      const y = window.scrollY;
+      if (window.innerWidth < 640) {
+        if (y > lastY + 4 && y > 120) setFabHidden(true);
+        else if (y < lastY - 4) setFabHidden(false);
+      }
+      lastY = y;
+      clearTimeout(idle);
+      // Al llegar al pie (redes y enlaces legales) se queda escondido para no
+      // tapar los links.
+      const atBottom = window.innerWidth < 640 && window.innerHeight + y >= document.documentElement.scrollHeight - 140;
+      if (atBottom) setFabHidden(true);
+      else idle = setTimeout(() => setFabHidden(false), 1200);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      clearTimeout(idle);
+    };
+  }, []);
   const [messages, setMessages] = useState(() => [greetingMessage()]);
   const [draft, setDraft] = useState(emptyDraft);
   const [draftStartedAt, setDraftStartedAt] = useState(null);
@@ -466,7 +494,7 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
           onClick={() => setOpen(true)}
           aria-label={`Abrir ${ASSISTANT_NAME}`}
           aria-expanded={false}
-          className="felpus-assistant-fab fixed right-4 z-40 flex items-center gap-2 rounded-full pl-3 pr-4 h-12 text-white text-sm font-bold shadow-lg transition-transform duration-200 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-4 focus-visible:ring-[var(--felpus-focus)]/40"
+          className={`felpus-assistant-fab fixed right-4 z-40 flex items-center gap-2 rounded-full pl-3 pr-4 h-12 text-white text-sm font-bold shadow-lg transition-all duration-200 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-4 focus-visible:ring-[var(--felpus-focus)]/40 ${fabHidden ? "translate-x-24 opacity-0 pointer-events-none" : ""}`}
           style={{ background: C.redSolid, bottom: "calc(96px + env(safe-area-inset-bottom, 0px))" }}
         >
           <PawPrint className="w-5 h-5" aria-hidden="true" />
@@ -491,7 +519,7 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
               <h2 id="felpus-assistant-title" className="text-white font-extrabold text-sm leading-tight">
                 {ASSISTANT_NAME}
               </h2>
-              <p className="text-white/80 text-[11px] leading-tight">Te ayuda a buscar y a reportar</p>
+              <p className="text-white/80 text-[12px] leading-tight">Te ayuda a buscar y a reportar</p>
             </div>
             {!onlyGreeting && (
               <button
@@ -638,7 +666,7 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
                 {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
               </button>
             </div>
-            <p className="text-[10px] mt-1.5 text-center" style={{ color: C.muted }}>
+            <p className="text-[11px] mt-1.5 text-center" style={{ color: C.muted }}>
               Asistente con IA: puede equivocarse. No compartas teléfonos ni direcciones en el chat.
             </p>
           </form>
@@ -716,7 +744,7 @@ function MessageBubble({ m, C, onQuick, onFaq, onAction, onOpenReport, disabled,
       {m.cards?.length > 0 && (
         <div className="w-full space-y-2" role="list" aria-label={m.cardsKind === "matches" ? "Posibles coincidencias" : "Resultados de la búsqueda"}>
           {m.cardsKind === "matches" && (
-            <p className="text-[11px] font-semibold px-1" style={{ color: C.muted }}>
+            <p className="text-[12px] font-semibold px-1" style={{ color: C.muted }}>
               Posibles coincidencias — revisalas con calma, no son seguras.
             </p>
           )}
@@ -763,7 +791,7 @@ function ResultCard({ C, card, kind, onOpen }) {
           <span className="block text-xs truncate" style={{ color: C.muted }}>
             {[card.zona, card.fecha ? formatFechaAR(card.fecha) : null].filter(Boolean).join(" · ")}
           </span>
-          <span className="flex items-center gap-2 mt-0.5 text-[11px] font-bold">
+          <span className="flex items-center gap-2 mt-0.5 text-[12px] font-bold">
             {kind === "matches" && card.probabilidad && <span style={{ color: probColor }}>{PROB_LABEL[card.probabilidad]}</span>}
             <span style={{ color: card.resuelto ? C.green : C.red }}>{card.resuelto ? "Reencontrada" : "Activa"}</span>
             <span className="ml-auto flex items-center gap-0.5" style={{ color: C.red }}>
@@ -863,7 +891,7 @@ function DraftPreview({ C, draft, photos, onChange, onLocation, onPublish, onDis
                 ))}
               </dl>
               <div>
-                <p className="text-[11px] font-semibold mb-0.5" style={{ color: C.muted }}>
+                <p className="text-[12px] font-semibold mb-0.5" style={{ color: C.muted }}>
                   Descripción que se va a publicar
                 </p>
                 <p className="text-xs leading-relaxed" style={{ color: C.text }}>
@@ -947,7 +975,7 @@ function DraftPreview({ C, draft, photos, onChange, onLocation, onPublish, onDis
                 <span className="font-semibold" style={{ color: C.muted }}>Detalles (editable)</span>
                 <textarea className={fieldClass} style={fieldStyle} rows={3} value={shown.detalleLibre} maxLength={400} onChange={set("detalleLibre")} />
               </label>
-              <p className="text-[11px] leading-relaxed" style={{ color: C.muted }}>
+              <p className="text-[12px] leading-relaxed" style={{ color: C.muted }}>
                 Así queda: {descripcion}
               </p>
             </div>
@@ -1005,7 +1033,7 @@ function DraftPreview({ C, draft, photos, onChange, onLocation, onPublish, onDis
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
-          <p className="text-[11px]" style={{ color: C.muted }}>
+          <p className="text-[12px]" style={{ color: C.muted }}>
             {listo
               ? "Todavía no está publicado. En el formulario agregás tu contacto y lo publicás con el botón \"Publicar\"."
               : "Para seguir faltan: si la perdiste o encontraste, perro o gato, zona y color."}
