@@ -181,3 +181,96 @@ plan, pero sí eran parte de las dimensiones que pedía auditar el prompt):
 
 Ninguna tarea quedó "bloqueada a medias" con el build roto — cada commit de
 esta sesión deja el repositorio en un estado consistente y verificado.
+
+---
+
+# Alertas automáticas (2026-10-20) — ver `PLAN-alertas.md`
+
+Estado: **Fase 0 terminada (mapa del código). Frené antes de programar porque
+el plan choca con lo que ya existe en varios puntos (abajo). Esperando tus
+decisiones.**
+
+## Mapa del código
+
+**Tabla de reportes: `public.reports`** (`supabase/schema.sql`, y migraciones
+sueltas al final del mismo archivo; no hay carpeta `supabase/migrations/`).
+- `id` **text** (no uuid; ej. `1786006832226-dtj5xc`).
+- Tipo: `tipo` text, valores **`'perdida'` / `'encontrada'`** (no
+  perdido/encontrado).
+- Especie: `especie` text, valores `perro`, `gato`, `otro`.
+- `color`, `color_otro`, `tamano` (`chico`/`mediano`/`grande`), `sexo`,
+  `edad`, `peso`, `raza`, `detalles` (jsonb), `nombre`, `descripcion`.
+- Ubicación: `zona` (texto), `ciudad`, `provincia`, `lat` / `lng` (double
+  precision, pueden ser null). **No hay columna geography ni PostGIS.**
+- Fecha: `fecha` (date, del evento) y `creado_en` (timestamptz, de la carga).
+- Estado: **no hay columna `estado`**: `resuelto` (bool, reencuentro
+  confirmado; al confirmarse se borra el contacto), `oculto` (bool, denunciado
+  o escondido por el admin). No existe "inactivo".
+- Dueño: `user_id` uuid **opcional**: se puede publicar como invitado, sin
+  cuenta (`nickname` + contacto).
+- Contacto: `contacto_whatsapp`, `contacto_email` (SELECT revocado al
+  público; solo vía RPC `get_report_contact` con service_role).
+- Push ya existente: `push_subscription` jsonb y `push_token` uuid, **por
+  reporte**, no por usuario.
+
+**Matcher: `src/lib/matching.js`**
+- `scoreMatch(a, b)` → `{ score, imgSim, textSim, locScore, fechaSim,
+  distanceLabel, descartado }`; `findMatches(report, candidates, {limit})` →
+  lista ordenada con `score ≥ 0.15`. **Score en escala 0–1.**
+- Señales: imagen (histograma de color; **CLIP no funciona hoy**: la API de
+  Hugging Face que usaba `/api/embed` ya no existe y ningún reporte tiene
+  embedding), campos estructurados (color con compatibilidades, raza, sexo,
+  tamaño, edad, peso, señas), texto libre, distancia (lat/lng o zona por
+  nombre) y fecha. Filtros duros: especie distinta, demasiado lejos,
+  cronología imposible.
+- Corre igual en el navegador y en el servidor (es cálculo puro).
+
+**Autenticación:** Supabase Auth con Google (`src/components/felpus/useAuth.js`:
+One Tap / `signInWithIdToken`, con `signInWithOAuth` como respaldo). Las rutas
+de servidor verifican el token `Authorization: Bearer` contra Supabase Auth
+(patrón en `api/create-report` y `api/subscribe-push`). Publicar **no** exige
+cuenta.
+
+**Tabla de matches: no existe.** Las coincidencias se calculan en el momento,
+en el navegador.
+
+**Lo que ya existe de notificaciones** (importante para el plan):
+- Trigger `trg_notify_new_report` (pg_net, `schema.sql`): en cada INSERT de
+  `reports` llama a `https://felpus.com/api/notify-match` con
+  `x-webhook-secret` (guardado en Supabase Vault).
+- `api/notify-match`: corre el matcher contra los reportes del tipo opuesto y,
+  con `score ≥ 0.4`, avisa al dueño del otro reporte por **email (Resend)** y
+  por **push** (si ese reporte tenía push activado).
+- Push por reporte: botón "Avisame acá si hay una coincidencia" al publicar
+  (`src/lib/push.js` → `api/subscribe-push`, autorizado por `push_token`, así
+  que **funciona para invitados**). `public/sw.js` ya tiene `push` y
+  `notificationclick`.
+- **En producción el push está apagado**: Vercel no tiene
+  `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`, así que ese botón
+  hoy no aparece.
+- PWA: ya existen `src/app/manifest.js` (JS, no TS), íconos 192/512 con
+  `maskable`, `share_target` y un componente que registra el service worker
+  (`ServiceWorkerRegister.jsx`). Falta el banner de instalación.
+
+## Choques con el plan (necesito tu decisión)
+
+1. **Invitados.** El plan guarda suscripciones y zonas por `user_id`
+   (obligatorio). Hoy se puede publicar sin cuenta y el push existente
+   funciona por reporte, también para invitados. Si sigo el plan al pie de la
+   letra, quien publica como invitado **nunca** recibiría la alerta de match.
+2. **Email.** El plan dice "sin email", pero hoy la alerta de match ya se
+   manda por email (Resend, plan gratis). Sacarlo es quitar algo que
+   funciona.
+3. **Colores del manifest.** El plan pide `#d31c22` / `#e2d2bd`, pero la
+   paleta nueva que pediste (2026-10-20) usa rojo `#D71925` y fondo
+   `#F8F1E8`, que es lo que tiene hoy el manifest.
+4. **Umbrales.** Sin CLIP, la parte de imagen casi no suma: con los datos
+   reales, los pares plausibles dan entre ~0.55 y ~0.86. Con 0.80 / 0.65 casi
+   no saldrían alertas. Propongo 0.70 (push) / 0.50 (guardar), configurables.
+5. **Webhook.** Ya hay un trigger que llama a `/api/notify-match`. Propongo
+   no crear un segundo webhook: que ese mismo trigger llame a la ruta nueva
+   `/api/alerts/dispatch`, que reemplaza a `notify-match` y hace match + zona.
+6. **Adaptaciones sin vuelta** (las hago así salvo que digas lo contrario):
+   `report_id` text en vez de uuid; tipos `perdida`/`encontrada`; especie
+   también `otro`; "inactivo" con una columna nueva; manifest en
+   `manifest.js` (el proyecto es JavaScript).
