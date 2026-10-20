@@ -2722,7 +2722,7 @@ export default function FelpusMatcher() {
                     }}
                     maxLength={100}
                     placeholder="Ej: Palermo, cerca de Plaza Serrano"
-                    className="felpus-input flex-1 border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
+                    className="felpus-input flex-1 min-w-0 border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
                     style={{ borderColor: fieldErrors.zona ? C.red : C.border, color: C.text }}
                   />
                   <button
@@ -3508,7 +3508,7 @@ export default function FelpusMatcher() {
               <select
                 value={filterTipo}
                 onChange={(e) => setFilterTipo(e.target.value)}
-                className="felpus-input flex-1 border rounded-lg px-3 py-2 text-sm bg-white dark:bg-[var(--felpus-dark-card)]"
+                className="felpus-input flex-1 min-w-0 border rounded-lg px-3 py-2 text-sm bg-white dark:bg-[var(--felpus-dark-card)]"
                 style={{ borderColor: C.border, color: C.text }}
               >
                 <option value="todos">Perdidas y encontradas</option>
@@ -3519,7 +3519,7 @@ export default function FelpusMatcher() {
               <select
                 value={filterEspecie}
                 onChange={(e) => setFilterEspecie(e.target.value)}
-                className="felpus-input flex-1 border rounded-lg px-3 py-2 text-sm bg-white dark:bg-[var(--felpus-dark-card)]"
+                className="felpus-input flex-1 min-w-0 border rounded-lg px-3 py-2 text-sm bg-white dark:bg-[var(--felpus-dark-card)]"
                 style={{ borderColor: C.border, color: C.text }}
               >
                 <option value="todos">Todas las especies</option>
