@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { loadGoogleMaps, observeMapResize } from "../lib/googleMaps";
 import { logError } from "../lib/log";
 import { requestLocation } from "../lib/geolocation";
+import { getApproxLocation } from "../lib/approxLocation";
 import { useTheme } from "./felpus/ThemeProvider";
 
 // Mapa de sólo lectura que pinta un marcador por cada reporte que tenga
@@ -58,15 +59,28 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
         // Aires aunque los reportes estuvieran en Salta. Ahora: la ubicación
         // de la persona si la da; si no, el área donde están los reportes.
         if (!center) {
+          // Mismo criterio que MapPicker: ciudad aproximada por la conexión
+          // (sin permiso, rápida), refinada por el GPS si la persona lo da.
+          // Si no hay ninguna de las dos, se encuadran los reportes.
+          let gpsApplied = false;
+          const approx = getApproxLocation();
+          approx.then((pos) => {
+            if (cancelled || userMovedRef.current || gpsApplied || !pos) return;
+            map.setCenter(pos);
+            map.setZoom(12);
+          });
           requestLocation(
             (pos) => {
+              gpsApplied = true;
               if (cancelled || userMovedRef.current) return;
               map.setCenter(pos);
               map.setZoom(13);
             },
             () => {
-              if (cancelled || userMovedRef.current) return;
-              fitToReports(maps, map, reportsRef.current);
+              approx.then((pos) => {
+                if (cancelled || userMovedRef.current || pos) return;
+                fitToReports(maps, map, reportsRef.current);
+              });
             }
           );
         }

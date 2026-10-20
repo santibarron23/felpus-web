@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { loadGoogleMaps, observeMapResize } from "../lib/googleMaps";
 import { requestLocation } from "../lib/geolocation";
+import { getApproxLocation } from "../lib/approxLocation";
 import { useTheme } from "./felpus/ThemeProvider";
 
 // Mapa con un pin arrastrable/tocable para marcar la ubicación exacta de un
@@ -76,14 +77,26 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter }) {
         setStatus("ready");
         startCenterRef.current = center;
         if (lat == null || lng == null) {
-          // Si la persona no da permiso (o tarda), el mapa queda donde estaba.
+          // Dos fuentes, la más precisa gana:
+          //  1. Ciudad aproximada por la conexión (/api/geo): llega rápido y
+          //     no pide permiso — visto en celulares reales: sin permiso de
+          //     GPS (o con el GPS tardando) el mapa caía en Buenos Aires.
+          //  2. GPS del navegador, si la persona da permiso: punto exacto.
+          let gpsApplied = false;
+          const centerOn = (pos, zoom) => {
+            if (cancelled || userMovedRef.current) return;
+            startCenterRef.current = pos;
+            map.setCenter(pos);
+            map.setZoom(zoom);
+            marker.setPosition(pos);
+          };
+          getApproxLocation().then((pos) => {
+            if (pos && !gpsApplied) centerOn(pos, 13);
+          });
           requestLocation(
             (pos) => {
-              if (cancelled || userMovedRef.current) return;
-              startCenterRef.current = pos;
-              map.setCenter(pos);
-              map.setZoom(15);
-              marker.setPosition(pos);
+              gpsApplied = true;
+              centerOn(pos, 15);
             },
             () => {}
           );
