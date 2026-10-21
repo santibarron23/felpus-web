@@ -141,11 +141,17 @@ describe("imageSimilarity", () => {
     expect(imageSimilarity(a, b)).toBeCloseTo(1);
   });
 
-  it("embeddings 'genéricamente parecidos' (coseno 0.6, dos fotos de perro cualquiera) dan poca similitud", () => {
-    // Antes: (0.6 + 1) / 2 = 0.8 — casi cualquier par de fotos parecía "muy parecido".
+  it("embeddings de mascotas distintas (coseno 0.3, percentil 90 real con DINOv2) dan poca similitud", () => {
+    // Con el viejo remapeo (cos + 1) / 2 daba 0.65 — casi "muy parecida".
+    const a = { embedding: [1, 0] };
+    const b = { embedding: [0.3, Math.sqrt(1 - 0.09)] }; // coseno exacto 0.3
+    expect(imageSimilarity(a, b)).toBeLessThan(0.3);
+  });
+
+  it("embeddings de la misma mascota en otra foto (coseno 0.6, mediana real con DINOv2) dan similitud alta", () => {
     const a = { embedding: [1, 0] };
     const b = { embedding: [0.6, 0.8] }; // coseno exacto 0.6
-    expect(imageSimilarity(a, b)).toBeLessThan(0.3);
+    expect(imageSimilarity(a, b)).toBeGreaterThanOrEqual(0.7);
   });
 
   it("cae al histograma si falta el embedding de un lado", () => {

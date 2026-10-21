@@ -114,30 +114,24 @@ Sin este paso, todo sigue funcionando exactamente igual que antes (es
 
 ---
 
-## 2.2 Activar reconocimiento visual real con IA (opcional)
+## 2.2 Reconocimiento visual con IA (no requiere configuración)
 
-Por defecto, la app compara fotos por color dominante (gratis, sin configuración extra).
-Para que compare de verdad forma, raza aparente y patrón visual (no solo
-color), se puede conectar un modelo de visión (CLIP) gratis vía Hugging Face:
+Cada foto que se sube pasa por `/api/embed`, que calcula en el propio
+servidor (función de Vercel) un embedding visual con **DINOv2 small**
+(transformers.js + ONNX Runtime, ver `src/lib/imageEmbedding.js`). No usa
+ninguna API externa ni token: el modelo (24 MB, público) se baja del Hub de
+Hugging Face la primera vez que arranca la función. Debajo del recuadro de
+foto se ve "Análisis visual con IA activado".
 
-1. Creá una cuenta gratis en [huggingface.co](https://huggingface.co).
-2. Andá a tu perfil → **Settings → Access Tokens → New token** (alcanza con permisos de lectura).
-3. Copiá ese token y pegalo en `.env.local`:
-   ```
-   HUGGINGFACE_API_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx
-   ```
-4. Reiniciá `npm run dev`.
-
-A partir de ahí, cada foto que se suba se analiza automáticamente (vas a ver
-"Análisis visual con IA activado" debajo del recuadro de foto). Si no
-configurás esto, la app simplemente sigue comparando por color — no se rompe
-nada, sólo es menos preciso.
+Si `/api/embed` falla por cualquier motivo, la app sigue comparando por
+color (histograma) — no se rompe nada, solo es menos preciso.
 
 **Cosas a tener en cuenta:**
-- El primer llamado al modelo puede tardar ~20 segundos (Hugging Face lo
-  "despierta" bajo demanda si nadie lo usó hace rato). Es normal.
-- El tier gratuito de Hugging Face tiene límites de uso — para un piloto
-  chico alcanza sin problema.
+- La primera foto después de un rato sin uso tarda unos segundos (arranque
+  en frío: bajar y cargar el modelo). Después, ~0,5-1 s por foto.
+- Todos los embeddings tienen que salir del mismo modelo y revisión (fijados
+  en `imageEmbedding.js`). Si se cambia de modelo, los embeddings guardados
+  dejan de ser comparables con los nuevos.
 - Los reportes de ejemplo (los 5 que se cargan solos) no usan IA, así que la
   comparación con ellos siempre cae al color. Es esperable.
 
@@ -220,7 +214,7 @@ felpus-web/
       layout.js            ← layout raíz + metadata
       page.js               ← renderiza el componente principal
       globals.css           ← Tailwind + fuentes + animaciones
-      api/embed/route.js    ← ruta de servidor: pide el embedding de IA a Hugging Face
+      api/embed/route.js    ← ruta de servidor: calcula el embedding de IA (DINOv2)
     components/
       FelpusMatcher.jsx     ← toda la UI y lógica de interacción
       MapPicker.jsx          ← mapa de Google con pin arrastrable/tocable
@@ -252,11 +246,9 @@ de mañana cambiás de proveedor, sólo tocás ese archivo.
   actualizar `reports` (resolver un reencuentro). Crear reportes nuevos sigue
   abierto a cualquiera con la `anon key`, a propósito, para no perder alcance
   con vecinos que reportan sin loguearse.
-- **Matching por color por defecto, con IA real opcional.** Sin configurar
-  `HUGGINGFACE_API_TOKEN`, el matching de imagen sigue siendo una aproximación
-  liviana (histograma de color). Configurándolo (sección 2.2), se usa un
-  modelo de visión real (CLIP) para comparar forma, raza aparente y patrón —
-  mucho más preciso que el color solo.
+- **Matching por IA visual, con color de respaldo.** Cada foto nueva lleva un
+  embedding de DINOv2 calculado en el servidor (sección 2.2). Los reportes
+  anteriores a 2026-10 no lo tienen y se comparan por histograma de color.
 - **Sin rate limiting.** Nada impide que alguien publique reportes en bucle.
   Para producción conviene agregar límites (por IP o por usuario autenticado).
 
@@ -264,10 +256,11 @@ de mañana cambiás de proveedor, sólo tocás ese archivo.
 
 ## 7. Costos esperados
 
-Felpus depende de 5 servicios con algún componente pago: Vercel (hosting),
+Felpus depende de 4 servicios con algún componente pago: Vercel (hosting,
+incluido el cálculo de embeddings de imagen para el matching por IA),
 Supabase (base de datos + storage + auth), Google Maps Platform (mapa,
-autocompletado de zona, geocodificación inversa), Hugging Face (embeddings de
-imagen para el matching por IA) y Resend (email de "posible coincidencia").
+autocompletado de zona, geocodificación inversa) y Resend (email de
+"posible coincidencia").
 El dominio (felpus.com) es aparte y se paga anual, no mensual.
 
 **Por lejos el que más pesa a escala es Google Maps Platform** — es el único
@@ -282,7 +275,7 @@ nada.
 | Vercel | Hosting del sitio | 100GB banda ancha, 1M invocaciones/mes (uso NO comercial) | Pro: $20/mes por asiento |
 | Supabase | DB + Storage de fotos + Auth | 500MB DB, 1GB storage, 5GB egreso, 50k usuarios activos/mes | Pro: $25/mes + excedentes |
 | Google Maps Platform | Mapa, autocompletado de zona, geocodificación al usar "Ubicación" | ~10.000 llamadas/mes por API (varía por SKU) | Pago por uso, sin tope automático |
-| Hugging Face | Embedding CLIP de cada foto subida (matching por IA) | Créditos mínimos ($0.10/mes gratis) | PRO: $9/mes (más límite de uso) |
+| (IA visual) | Embedding DINOv2 de cada foto subida: corre dentro de la función de Vercel, sin servicio aparte | Entra en el cómputo de Vercel (~1 s por foto) | — |
 | Resend | Email de "posible coincidencia" | 3.000 emails/mes (100/día) | Pro: $20/mes → 50.000 emails |
 
 ### Estimado por volumen
@@ -302,9 +295,8 @@ mobile) — ver nota al final, es el mayor "leak" de costo evitable.
 | **Vercel** | $0 (Hobby) | $0–20 | $20+ |
 | **Supabase** | $0 (Free) | ~$25 (Pro, storage de fotos ya no entra en el tier gratis) | ~$25–50 |
 | **Google Maps** | $0–5 | ~$15–50 | **~$250–350** |
-| **Hugging Face** | $0 | ~$9–20 | ~$50–150 |
 | **Resend** | $0 | $0 | $0–20 |
-| **Total aprox./mes** | **$0–10** | **$50–115** | **$400–570** |
+| **Total aprox./mes** | **$0–10** | **$40–95** | **$350–420** |
 
 *(Estimado en dólares, con precios públicos vigentes de cada proveedor al
 2026 — no una cotización real. Google Maps es la variable más incierta:
@@ -314,7 +306,7 @@ cuántas veces se use el botón "Ubicación".)*
 ### Cómo controlar el costo si el uso crece
 
 1. **Configurá una alerta de presupuesto en Google Cloud Console** para el
-   proyecto de Maps Platform — es el único de los cinco servicios sin techo
+   proyecto de Maps Platform — es el único de los cuatro servicios sin techo
    automático; un pico de tráfico (o abuso/scraping) ahí sí puede doler. Esto
    es un paso tuyo en la consola de Google, no algo que se resuelva en el
    código.
