@@ -25,14 +25,8 @@ export default function LegalPage({ title, updated, otherHref, otherLabel, child
             href="/"
             className="flex items-center gap-2.5 min-w-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded-lg"
           >
-            {/* Dos <img>, igual que el header principal: el src nunca cambia
-                según el tema (evita mismatch de hidratación), es el CSS
-                "dark:" el que decide cuál se ve — ver comentario homólogo en
-                FelpusMatcher.jsx. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/assets/logo_full_red.png" alt="Felpus" className="h-8 w-auto object-contain dark:hidden" />
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/assets/logo_full_white.png" alt="Felpus" className="hidden h-8 w-auto object-contain dark:block" />
+            <img src="/assets/logo_full_red.webp" alt="Felpus" width={185} height={108} className="h-8 w-auto object-contain" />
           </Link>
           <Link
             href="/"

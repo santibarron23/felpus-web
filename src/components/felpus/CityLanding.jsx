@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, MapPin, PawPrint, Search, Share2, Stethoscope, Camera } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
@@ -28,13 +29,17 @@ function ReportCard({ r, C }) {
         style={{ borderColor: C.border }}
       >
         {r.foto_url && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          // Antes <img> con la foto original (~100 KB, hasta 1000 px) para
+          // mostrarla a 80 px: unos 2 MB en celular para la lista de Salta.
+          // Con next/image pide 128/256 px, los mismos anchos que las
+          // miniaturas de la app, así que reutiliza su caché en Vercel en vez
+          // de sumar transformaciones nuevas.
+          <Image
             src={r.foto_url}
             alt={`${perdida ? "Perdido" : "Encontrado"}: ${titulo} en ${r.zona}`}
-            loading="lazy"
             width={80}
             height={80}
+            loading="lazy"
             className="w-20 h-20 rounded-lg object-cover shrink-0"
           />
         )}
@@ -93,9 +98,7 @@ export default function CityLanding({ city, perdidas, encontradas, reencuentros,
         <div className="max-w-3xl mx-auto px-4 pt-5 pb-4 flex items-center justify-between gap-3">
           <Link href="/" className="flex items-center gap-2.5 min-w-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded-lg">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/assets/logo_full_red.png" alt="Felpus" className="h-8 w-auto object-contain dark:hidden" />
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/assets/logo_full_white.png" alt="Felpus" className="hidden h-8 w-auto object-contain dark:block" />
+            <img src="/assets/logo_full_red.webp" alt="Felpus" width={185} height={108} className="h-8 w-auto object-contain" />
           </Link>
           <Link
             href="/"

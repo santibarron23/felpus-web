@@ -155,16 +155,11 @@ import {
 import { useToasts } from "./felpus/useToasts";
 import { useAuth } from "./felpus/useAuth";
 
-const LOGO_RED = "/assets/logo_full_red.png";
-// En dark mode el logo rojo compite con el resto de la interfaz por ser "el
-// rojo que llama la atención" — el mismo problema de fondo que el resto de
-// este rediseño (el rojo debe ganar importancia porque aparece poco, no
-// porque esté en todos lados). El logo blanco integra mejor con las
-// superficies oscuras y deja que el rojo real de la marca se lo lleven los
-// CTAs/alertas. Mismas dimensiones que LOGO_RED (2419x1409) — el swap no
-// mueve ni redimensiona nada.
-const LOGO_WHITE = "/assets/logo_full_white.png";
-const MASCOT_HERO = "/assets/mascot_hero.png";
+const LOGO_RED = "/assets/logo_full_red.webp";
+// Imágenes fijas de la interfaz: se sirven tal cual (unoptimized), sin
+// gastar transformaciones de Vercel (ver docs/IMAGENES.md). mascot_hero.webp
+// es el mismo dibujo que mascot_hero.png, convertido una vez (62 KB -> 12 KB).
+const MASCOT_HERO = "/assets/mascot_hero.webp";
 const PAW_MAGNIFIER = "/assets/paw_magnifier.png";
 const MAX_FOTO_MB = 15;
 // Link externo de donación (Mercado Pago) — la app no procesa pagos, solo
@@ -2128,10 +2123,12 @@ export default function FelpusMatcher() {
                   el src de cada <img> es siempre el mismo, y es el CSS
                   "dark:" (ligado a [data-theme], ya exento de esa advertencia
                   a nivel de <html>) el que decide cuál se ve. */}
+              {/* Sin modo noche (2026-10-19) el logo blanco nunca se veía,
+                  pero el navegador lo descargaba igual (46 KB). Ahora un solo
+                  logo, en WebP del tamaño justo (7 KB en vez de un PNG de
+                  2419 px y 51 KB). */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={LOGO_RED} alt="Felpus" className="h-9 w-auto object-contain dark:hidden" />
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={LOGO_WHITE} alt="Felpus" className="hidden h-9 w-auto object-contain dark:block" />
+              <img src={LOGO_RED} alt="Felpus" width={185} height={108} className="h-9 w-auto object-contain" />
               {/* text-[var(--felpus-muted)] dark:text-[#B9ADA5] en vez de style={{color: C.muted}}:
                   igual que con el logo, un color elegido en JS según themeMode
                   no coincide entre el render del server (siempre asume tema
@@ -2168,7 +2165,7 @@ export default function FelpusMatcher() {
                 style={{ background: activeTab === "mifelpus" ? C.redSolid : C.cream }}
               >
                 {googleAvatar ? (
-                  <Image src={googleAvatar} alt="" width={32} height={32} className="w-full h-full object-cover" />
+                  <Image src={googleAvatar} alt="" unoptimized width={32} height={32} className="w-full h-full object-cover" />
                 ) : (
                   <User className="w-4 h-4" style={{ color: activeTab === "mifelpus" ? "#fff" : C.text }} />
                 )}
@@ -2305,7 +2302,7 @@ export default function FelpusMatcher() {
             <>
               {googleAvatar ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <Image src={googleAvatar} alt="" width={32} height={32} className="w-8 h-8 rounded-full shrink-0" referrerPolicy="no-referrer" />
+                <Image src={googleAvatar} alt="" unoptimized width={32} height={32} className="w-8 h-8 rounded-full shrink-0" referrerPolicy="no-referrer" />
               ) : (
                 <span
                   className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-white text-xs font-bold"
@@ -2423,7 +2420,7 @@ export default function FelpusMatcher() {
                     src={MASCOT_HERO}
                     alt="Perro esperando volver a casa"
                     fill
-                    sizes="112px"
+                    unoptimized
                     className="object-cover"
                     style={{ objectPosition: "50% 35%" }}
                   />
@@ -3424,7 +3421,7 @@ export default function FelpusMatcher() {
                   <span className="absolute inset-0 rounded-full felpus-ring" style={{ background: C.redRing }} />
                   <span className="absolute inset-0 rounded-full felpus-ring [animation-delay:0.5s]" style={{ background: C.redRing }} />
                   <div className="relative w-12 h-12 rounded-full bg-white dark:bg-[var(--felpus-dark-card)] border-2 flex items-center justify-center p-2" style={{ borderColor: C.red }}>
-                    <Image src={PAW_MAGNIFIER} alt="" fill sizes="48px" className="object-contain" />
+                    <Image src={PAW_MAGNIFIER} alt="" fill unoptimized className="object-contain" />
                   </div>
                 </div>
                 <p key={scanStep} className="felpus-mono text-xs felpus-fadein" style={{ color: C.muted }}>
@@ -4530,7 +4527,7 @@ export default function FelpusMatcher() {
                   style={{ background: C.redSolid }}
                 >
                   {googleAvatar ? (
-                    <Image src={googleAvatar} alt="" width={56} height={56} className="w-full h-full object-cover" />
+                    <Image src={googleAvatar} alt="" unoptimized width={56} height={56} className="w-full h-full object-cover" />
                   ) : (
                     (profile?.nickname || googleDisplayName || user.email || "?")[0].toUpperCase()
                   )}
