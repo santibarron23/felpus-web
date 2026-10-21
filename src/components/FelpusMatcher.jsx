@@ -2785,11 +2785,9 @@ export default function FelpusMatcher() {
                     <Check className="w-3 h-3" /> Análisis visual con IA activado
                   </p>
                 )}
-                {visionStatus === "basic" && (
-                  <p className="text-[12px] mt-1.5" style={{ color: C.muted }}>
-                    Comparación visual básica por color (IA de visión no configurada)
-                  </p>
-                )}
+                {/* visionStatus "basic" (sin IA de imágenes, solo color) no
+                    muestra nada a propósito: era un mensaje técnico que
+                    no le servía a quien está reportando. */}
               </div>
 
               {/* Zona: movida acá, justo después de la foto (antes estaba
