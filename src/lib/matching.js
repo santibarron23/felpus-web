@@ -4,8 +4,8 @@ import { logError } from "./log";
 // Felpus — lógica de matching (corre 100% en el navegador)
 //
 // Combina, con pesos que se adaptan según qué tan confiable es cada señal:
-//  1) similitud de imagen: embedding real de IA (CLIP, vía Hugging Face) si
-//     está configurado, o histograma de color de 64 bins como respaldo.
+//  1) similitud de imagen: embedding real de IA (DINOv2, calculado en
+//     /api/embed) si está disponible, o histograma de color como respaldo.
 //  2) similitud "estructurada": color/tamaño (exacto) + edad/peso (por
 //     cercanía de categoría) — mucho más confiable que comparar la
 //     descripción libre, que cada persona redacta distinto.
@@ -288,7 +288,7 @@ export function cosineSimilarity(a, b) {
   }
   if (na === 0 || nb === 0) return null;
   const cos = dot / (Math.sqrt(na) * Math.sqrt(nb));
-  // CLIP embeddings normalizados suelen dar coseno en [-1,1]; lo llevamos a [0,1]
+  // El coseno de dos embeddings está en [-1,1]; lo llevamos a [0,1]
   return Math.max(0, Math.min(1, (cos + 1) / 2));
 }
 
@@ -327,12 +327,17 @@ export function histogramSimilarity(h1, h2) {
   return histIntersection(h1, h2);
 }
 
-// Embeddings de imagen de CLIP: entre dos fotos cualesquiera de mascotas el
-// coseno ya suele dar 0.5-0.75 (las dos son "foto de un perro"), así que el
-// viejo remapeo (cos+1)/2 dejaba casi todo apretado entre 0.75 y 1 — la
-// señal no discriminaba. Se reescala el rango útil [0.5, 0.95] a [0, 1].
-const EMB_COS_PISO = 0.5;
-const EMB_COS_TECHO = 0.95;
+// Embeddings de imagen (DINOv2 small, ver imageEmbedding.js): el coseno
+// crudo se reescala del rango útil [0.2, 0.7] a [0, 1]. Medido con las
+// fotos reales de producción (2026-10-21): fotos de la MISMA mascota dan
+// coseno 0.34-0.72 (percentiles 10-90, mediana 0.57); mascotas distintas
+// de la misma especie, mediana 0.09 y percentil 90 0.32. Con este rango,
+// el 80% de los pares de la misma mascota queda en "Algo parecida" o más
+// (>= 0.45) contra el 4.6% de los pares de mascotas distintas.
+// (Hasta 2026-10 era [0.5, 0.95], calibrado para CLIP — nunca llegó a
+// usarse: ningún reporte de producción tenía embedding.)
+const EMB_COS_PISO = 0.2;
+const EMB_COS_TECHO = 0.7;
 function embeddingEvidence(a, b) {
   const sim = cosineSimilarity(a, b);
   if (sim == null) return null;
@@ -340,9 +345,9 @@ function embeddingEvidence(a, b) {
   return Math.max(0, Math.min(1, (cos - EMB_COS_PISO) / (EMB_COS_TECHO - EMB_COS_PISO)));
 }
 
-// Similitud de imagen: usa el embedding real de IA (CLIP) cuando ambas fotos
-// lo tienen. Si a alguna le falta (por ejemplo, porque no se configuró
-// Hugging Face, o es un reporte de ejemplo), cae de nuevo al histograma de
+// Similitud de imagen: usa el embedding real de IA (DINOv2) cuando ambas
+// fotos lo tienen. Si a alguna le falta (por ejemplo, porque /api/embed
+// falló, o es un reporte anterior a 2026-10), cae de nuevo al histograma de
 // color, que siempre está disponible.
 function singlePhotoSimilarity(fa, fb) {
   const embSim = embeddingEvidence(fa.embedding, fb.embedding);
@@ -519,8 +524,8 @@ export function resizeImageFile(file) {
   });
 }
 
-// Pide el embedding visual real (IA) a nuestra propia API route, que a su
-// vez llama a Hugging Face. Si no está configurado o falla, devuelve null
+// Pide el embedding visual real (IA) a nuestra propia API route, que lo
+// calcula en el servidor (ver imageEmbedding.js). Si falla, devuelve null
 // y el matching sigue funcionando con el histograma de color como respaldo.
 export async function getImageEmbedding(dataUrl) {
   try {
@@ -791,7 +796,7 @@ function descripcionTokens(s) {
 }
 
 // Si ambos reportes tienen al menos una foto con embedding real de IA
-// (Hugging Face/CLIP), la imagen es una señal confiable. Si no, sólo
+// (DINOv2), la imagen es una señal confiable. Si no, sólo
 // tenemos el histograma de color de respaldo — mucho más débil (lo afectan
 // el fondo, la luz, el encuadre) — así que conviene pesarlo menos.
 function hasAiEmbedding(report) {

@@ -1,11 +1,14 @@
 import { logError } from "../../../lib/log";
 import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
+import { embedImage } from "../../../lib/imageEmbedding";
 
-// Esta ruta corre en el servidor (nunca en el navegador), así que el token
-// de Hugging Face nunca queda expuesto al público.
+// El modelo (DINOv2, ver imageEmbedding.js) corre acá mismo con ONNX
+// Runtime nativo: necesita Node, no Edge. maxDuration cubre el arranque en
+// frío (bajar ~24 MB del Hub + cargar el modelo, unos segundos); en caliente
+// cada foto tarda ~0,5 s.
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
-const HF_MODEL = "openai/clip-vit-base-patch32";
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8MB — de sobra para una foto ya redimensionada en el cliente.
 
 // Rate limit real (en la base, vía RPC) — el anterior vivía en un Map en
@@ -54,16 +57,6 @@ export async function POST(request) {
     return Response.json({ error: "Demasiadas solicitudes, probá de nuevo en un minuto." }, { status: 429 });
   }
 
-  const token = process.env.HUGGINGFACE_API_TOKEN;
-
-  if (!token) {
-    // No es un error grave: el cliente cae al histograma de color como respaldo.
-    return Response.json(
-      { error: "HUGGINGFACE_API_TOKEN no configurado en el servidor." },
-      { status: 501 }
-    );
-  }
-
   let imageDataUrl;
   try {
     const body = await request.json();
@@ -88,39 +81,15 @@ export async function POST(request) {
       return Response.json({ error: "La imagen es demasiado grande." }, { status: 413 });
     }
 
-    const hfRes = await fetch(`https://api-inference.huggingface.co/models/${HF_MODEL}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/octet-stream",
-      },
-      body: bytes,
-    });
-
-    if (!hfRes.ok) {
-      const text = await hfRes.text().catch(() => "");
-      // 503 típico = el modelo se está "despertando" (cold start). El cliente
-      // (getRemoteEmbedding en matching.js) ni siquiera lee este mensaje —
-      // ante cualquier !res.ok cae directo al histograma de color, así que
-      // el texto crudo de Hugging Face no le sirve a nadie del otro lado;
-      // se loguea acá server-side por si hace falta diagnosticar, y se
-      // devuelve solo el status, sin reenviar el cuerpo de la respuesta de
-      // un tercero tal cual (auditoría integral, 2026-08-09).
-      logError(`Hugging Face respondió ${hfRes.status}`, new Error(text.slice(0, 500)));
+    let embedding;
+    try {
+      embedding = await embedImage(bytes);
+    } catch (e) {
+      // Imagen ilegible o el modelo no pudo cargar (Hub caído, etc.). El
+      // cliente (getImageEmbedding en matching.js) ante cualquier !res.ok
+      // cae directo al histograma de color; el detalle queda en el log.
+      logError("No se pudo generar el embedding de la imagen", e);
       return Response.json({ error: "No se pudo generar el embedding de la imagen." }, { status: 502 });
-    }
-
-    const data = await hfRes.json();
-
-    // Distintos modelos devuelven el vector con distinto anidamiento;
-    // lo aplanamos hasta encontrar un array plano de números.
-    let embedding = data;
-    while (Array.isArray(embedding) && Array.isArray(embedding[0])) {
-      embedding = embedding[0];
-    }
-
-    if (!Array.isArray(embedding) || typeof embedding[0] !== "number") {
-      return Response.json({ error: "Formato de respuesta inesperado de Hugging Face." }, { status: 502 });
     }
 
     return Response.json({ embedding });

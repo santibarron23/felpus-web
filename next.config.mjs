@@ -137,6 +137,23 @@ const nextConfig = {
     formats: ["image/webp"],
     qualities: [75],
   },
+  // /api/embed corre DINOv2 con onnxruntime-node (ver imageEmbedding.js).
+  // transformers.js carga ese paquete con un createRequire() que el rastreo
+  // de archivos de Next no ve: sin este include la función se despliega sin
+  // él y falla. Se lista archivo por archivo a propósito: el paquete trae
+  // los binarios de TODAS las plataformas (~290 MB) y Vercel limita cada
+  // función a 250 MB — solo hace falta el de linux/x64, que es donde corre
+  // (con esto la función queda en ~70 MB). Los providers de CUDA/TensorRT
+  // no se bajan en el build (ver .npmrc).
+  outputFileTracingIncludes: {
+    "/api/embed": [
+      "node_modules/onnxruntime-node/package.json",
+      "node_modules/onnxruntime-node/dist/**",
+      "node_modules/onnxruntime-node/bin/napi-v6/linux/x64/onnxruntime_binding.node",
+      "node_modules/onnxruntime-node/bin/napi-v6/linux/x64/libonnxruntime.so*",
+      "node_modules/onnxruntime-common/**",
+    ],
+  },
   async headers() {
     return [
       {
