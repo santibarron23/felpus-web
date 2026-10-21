@@ -3,12 +3,30 @@
 import { useState } from "react";
 import { useAuth } from "../../../components/felpus/useAuth";
 import AlertOptInModal from "../../../components/felpus/AlertOptInModal";
+import AdminEditReport from "../../../components/felpus/AdminEditReport";
 import { authedFetch, needsIosInstallForPush, pushPermissionState, subscribeUserPush } from "../../../lib/push";
+
+// Publicación de ejemplo para ver el editor del admin sin tocar datos reales
+// (guardar desde acá falla con "No autorizado" salvo con la sesión del admin).
+const SAMPLE_REPORT = {
+  id: "ejemplo-dev",
+  tipo: "perdida",
+  especie: "perro",
+  nombre: "Ejemplo",
+  color: "Negro",
+  tamano: "mediano",
+  zona: "Tres Cerritos",
+  ciudad: "Salta",
+  fecha: "2026-10-20",
+  descripcion: "Publicación de prueba.",
+  fotos: [{ url: "/assets/mascot_hero.webp" }, { url: "/assets/icon-512.png" }, { url: "/assets/logo_square_red.png" }],
+};
 
 export default function TestPush() {
   const { user, authLoading, signInWithGoogle } = useAuth(() => {});
   const [log, setLog] = useState([]);
   const [modal, setModal] = useState(null);
+  const [editing, setEditing] = useState(false);
   const add = (line) => setLog((l) => [...l, line]);
 
   async function subscribe() {
@@ -53,6 +71,10 @@ export default function TestPush() {
           Ver aviso (encontrada)
         </button>
       </div>
+      <button type="button" onClick={() => setEditing(true)} className="rounded-lg border px-4 py-2 font-semibold">
+        Ver editor de admin
+      </button>
+      {editing && <AdminEditReport report={SAMPLE_REPORT} onClose={() => setEditing(false)} onSaved={() => setEditing(false)} />}
       {modal && (
         <AlertOptInModal
           tipo={modal}

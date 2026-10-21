@@ -114,6 +114,8 @@ import {
 import { usersReportToCsv } from "../lib/csv";
 import { petTitle } from "../lib/petTitle";
 import { zonaConCiudad } from "../lib/zona";
+import { ADMIN_EMAIL } from "../lib/adminEdit";
+import AdminEditReport from "./felpus/AdminEditReport";
 import { playTap, playSuccess } from "../lib/sound";
 import { loadGoogleMaps, reverseGeocodeLatLng } from "../lib/googleMaps";
 import { requestLocation, geolocationErrorMessage } from "../lib/geolocation";
@@ -175,7 +177,6 @@ const DONATION_URL = "https://link.mercadopago.com.ar/felpus";
 // la barrera real vive del lado del servidor (cada función admin_* vuelve a
 // chequear auth.email() ahí), esto es solo para no confundir a nadie más
 // mostrando un botón que de todos modos le va a fallar.
-const ADMIN_EMAIL = "santiagobarronlf@gmail.com";
 const SCAN_STEP_INTERVAL_MS = 900;
 // Delay artificial en el submit — sin esto la pantalla de "escaneo" (que
 // muestra los pasos del matching) parpadea y desaparece antes de que la
@@ -705,6 +706,8 @@ export default function FelpusMatcher() {
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState("");
   const [adminBusyId, setAdminBusyId] = useState(null);
+  // Publicación que el admin está editando (datos y orden de fotos).
+  const [adminEditing, setAdminEditing] = useState(null);
   const [adminDeleteConfirmId, setAdminDeleteConfirmId] = useState(null);
   const [usersReportLoading, setUsersReportLoading] = useState(false);
 
@@ -4487,6 +4490,16 @@ export default function FelpusMatcher() {
                         <>
                           <button
                             type="button"
+                            onClick={() => setAdminEditing(r)}
+                            aria-label="Editar publicación"
+                            title="Editar"
+                            className="w-8 h-8 rounded-full flex items-center justify-center border"
+                            style={{ borderColor: C.border }}
+                          >
+                            <Pencil className="w-3.5 h-3.5" style={{ color: C.text }} />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => handleAdminToggleOculto(r)}
                             disabled={adminBusyId === r.id}
                             aria-label={r.oculto ? "Mostrar publicación" : "Ocultar publicación"}
@@ -4982,6 +4995,19 @@ export default function FelpusMatcher() {
       </nav>
 
       <ToastStack toasts={toasts} />
+
+      {adminEditing && (
+        <AdminEditReport
+          report={adminEditing}
+          onClose={() => setAdminEditing(null)}
+          onSaved={() => {
+            setAdminEditing(null);
+            pushToast("success", "Publicación actualizada.");
+            loadAdminData(true);
+            loadAll();
+          }}
+        />
+      )}
 
       {alertOptIn && (
         <AlertOptInModal
