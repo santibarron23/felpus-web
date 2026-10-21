@@ -6,6 +6,7 @@
 
 import QRCode from "qrcode";
 import { C } from "./theme";
+import { petTitle } from "./petTitle";
 
 const LOGO_ICON_SRC = "/assets/icon_c.png";
 const FONT_FAMILY = "'Montserrat', Arial, sans-serif";
@@ -487,7 +488,7 @@ export async function buildFlyerBlob(report, colorText) {
   const BOLD = `700 24px ${FONT_FAMILY}`;
 
   const measure = document.createElement("canvas").getContext("2d");
-  const titulo = report.nombre || `${especieLabel(report.especie)} sin nombre`;
+  const titulo = petTitle(report);
   const tamanoCap = capitalize(report.tamano);
 
   // --- Filas de datos (íconos + oraciones cortas con la palabra clave resaltada) ---

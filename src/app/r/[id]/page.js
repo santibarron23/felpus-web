@@ -67,7 +67,9 @@ export async function generateMetadata({ params }) {
   const canonical = `${SITE_URL}/r/${id}`;
 
   return {
-    title,
+    // absolute: el título ya termina en "— Felpus"; sin esto el template del
+    // layout ("%s — Felpus") lo duplicaba en la pestaña ("— Felpus — Felpus").
+    title: { absolute: title },
     description,
     // La página redirige del lado del cliente a /?r=<id> (RedirectClient),
     // así que sin canonical explícito un crawler que ejecuta JS podía

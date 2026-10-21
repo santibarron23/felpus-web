@@ -156,7 +156,7 @@ export default function AlertSettings({ initialLat = null, initialLng = null }) 
   return (
     <main className="min-h-screen px-4 py-5" style={{ background: C.cream, color: C.text }}>
       <div className="max-w-xl mx-auto space-y-4">
-        <Link href="/" className="inline-flex items-center gap-1 text-sm font-semibold" style={{ color: C.muted }}>
+        <Link href="/" className="inline-flex items-center gap-1 text-sm font-semibold py-2.5 -my-2.5" style={{ color: C.muted }}>
           <ArrowLeft className="w-4 h-4" aria-hidden="true" /> Volver a Felpus
         </Link>
         <header>

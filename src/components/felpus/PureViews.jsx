@@ -10,6 +10,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
+import { petTitle } from "../../lib/petTitle";
 import {
   Cat,
   Dog,
@@ -52,7 +53,7 @@ export function Badge({ tipo, resuelto = false }) {
   const bg = resuelto ? C.greenSolid : isLost ? C.redSolid : C.orangeInkSolid;
   return (
     <span
-      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold tracking-wide uppercase text-white"
+      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-bold tracking-wide uppercase text-white"
       style={{ background: bg }}
     >
       {resuelto ? "Reencontrada" : isLost ? "Perdida" : "Encontrada"}
@@ -114,7 +115,7 @@ export function MatchBreakdownChips({ items }) {
         {items.map((i) => (
           <span
             key={i.key}
-            className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+            className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold"
             style={i.coincide ? { background: C.successBg, color: C.successText } : { background: C.surfaceSubtle, color: C.muted }}
           >
             {i.coincide ? <Check className="w-2.5 h-2.5 shrink-0" /> : <X className="w-2.5 h-2.5 shrink-0" />}
@@ -123,7 +124,7 @@ export function MatchBreakdownChips({ items }) {
         ))}
       </div>
       {diffs.length > 0 && (
-        <p className="text-[10px] mt-1" style={{ color: C.muted }}>
+        <p className="text-[11px] mt-1" style={{ color: C.muted }}>
           {diffs.map((d) => d.detail).join(" · ")}
         </p>
       )}
@@ -157,7 +158,7 @@ export function ReportCard({ report, onOpenDetail, saved, onToggleSaved, childre
           onClick={() => onToggleSaved(report)}
           aria-label={saved ? "Quitar de guardadas" : "Guardar"}
           aria-pressed={!!saved}
-          className="absolute top-2 left-2 z-10 w-8 h-8 rounded-full flex items-center justify-center bg-black/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+          className="absolute top-1.5 left-1.5 z-10 w-10 h-10 rounded-full flex items-center justify-center bg-black/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
         >
           <Bookmark className="w-4 h-4" fill={saved ? "#fff" : "none"} style={{ color: "#fff" }} />
         </button>
@@ -182,7 +183,7 @@ export function ReportCard({ report, onOpenDetail, saved, onToggleSaved, childre
             // "nuevo" informa, no alarma: beige + marrón, para no competir
             // con el rojo de PERDIDA (antes era rojo sólido).
             <span
-              className="absolute -top-1 -right-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow"
+              className="absolute -top-1 -right-1 text-[11px] font-bold px-1.5 py-0.5 rounded-full shadow"
               style={{ background: C.newTagBg, color: C.newTagText }}
             >
               nuevo
@@ -196,7 +197,7 @@ export function ReportCard({ report, onOpenDetail, saved, onToggleSaved, childre
             ) : (
               <Badge tipo={report.tipo} />
             )}
-            <span className="inline-flex items-center gap-1 text-[11px] font-medium" style={{ color: C.muted }}>
+            <span className="inline-flex items-center gap-1 text-[12px] font-medium" style={{ color: C.muted }}>
               <EspecieIcon especie={report.especie} className="w-3.5 h-3.5" />
               {report.especie}
             </span>
@@ -216,7 +217,7 @@ export function ReportCard({ report, onOpenDetail, saved, onToggleSaved, childre
             {report.descripcion}
           </p>
           {report.nickname && (
-            <p className="text-[10px] mt-1" style={{ color: C.muted }}>
+            <p className="text-[11px] mt-1" style={{ color: C.muted }}>
               reportado por {report.nickname}
             </p>
           )}
@@ -377,8 +378,7 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
         <div className="p-5 space-y-3">
           <div>
             <h3 className="felpus-display text-xl" style={{ color: C.text }}>
-              {report.nombre ||
-                (report.especie === "gato" ? "Gato sin nombre" : report.especie === "perro" ? "Perro sin nombre" : "Mascota sin nombre")}
+              {petTitle(report)}
             </h3>
             <p className="text-sm" style={{ color: C.muted }}>
               {displayColor(report)} · {report.tamano} · {report.especie}
@@ -391,36 +391,36 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
               rel="noopener noreferrer"
               className="felpus-input bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5 hover:bg-[var(--felpus-surface-muted)] dark:hover:bg-[var(--felpus-dark-muted-surface)] transition-colors focus:outline-none"
             >
-              <p className="text-[10px] uppercase font-bold flex items-center gap-1" style={{ color: C.muted }}>
+              <p className="text-[11px] uppercase font-bold flex items-center gap-1" style={{ color: C.muted }}>
                 <MapPin className="w-3 h-3" /> Zona
               </p>
               <p className="underline" style={{ color: C.text }}>{report.zona}</p>
             </a>
             <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
-              <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Fecha</p>
+              <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>Fecha</p>
               <p style={{ color: C.text }}>{formatFechaAR(report.fecha)}</p>
             </div>
             {report.sexo && (
               <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
-                <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Sexo</p>
+                <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>Sexo</p>
                 <p style={{ color: C.text }}>{report.sexo}</p>
               </div>
             )}
             {report.edad && (
               <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
-                <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Edad</p>
+                <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>Edad</p>
                 <p style={{ color: C.text }}>{report.edad}</p>
               </div>
             )}
             {report.peso && (
               <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
-                <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Peso</p>
+                <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>Peso</p>
                 <p style={{ color: C.text }}>{report.peso}</p>
               </div>
             )}
           </div>
           <div>
-            <p className="text-[10px] uppercase font-bold mb-1" style={{ color: C.muted }}>Descripción</p>
+            <p className="text-[11px] uppercase font-bold mb-1" style={{ color: C.muted }}>Descripción</p>
             <p className="text-sm" style={{ color: C.text }}>{report.descripcion}</p>
           </div>
           {report.nickname && <p className="text-xs" style={{ color: C.muted }}>Reportado por {report.nickname}</p>}
@@ -434,7 +434,7 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
               de entender por qué. Ahora se distinguen los tres estados. */}
           {!report.resuelto && (
             <div className="space-y-2">
-              <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Contactar</p>
+              <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>Contactar</p>
               {contactStatus === "loading" && (
                 <div
                   className="flex items-center gap-2 rounded-xl py-2.5 px-3 text-sm"
@@ -1073,7 +1073,7 @@ export function FilterSheet({
           </div>
 
           <div>
-            <p className="text-[11px] font-semibold mb-1.5" style={{ color: C.muted }}>Antigüedad</p>
+            <p className="text-[12px] font-semibold mb-1.5" style={{ color: C.muted }}>Antigüedad</p>
             <div className="flex gap-1.5 flex-wrap">
               {[
                 { id: "todos", label: "Cualquiera" },
@@ -1099,7 +1099,7 @@ export function FilterSheet({
           </div>
 
           <div>
-            <p className="text-[11px] font-semibold mb-1.5" style={{ color: C.muted }}>Radio de distancia</p>
+            <p className="text-[12px] font-semibold mb-1.5" style={{ color: C.muted }}>Radio de distancia</p>
             <select
               value={filterRadioKm ?? "todos"}
               onChange={(e) => {
@@ -1117,11 +1117,11 @@ export function FilterSheet({
               <option value="25">Hasta 25 km</option>
             </select>
             {filterRadioKm != null && !myLocation && (
-              <p className="text-[11px] mt-1" style={{ color: C.muted }}>
+              <p className="text-[12px] mt-1" style={{ color: C.muted }}>
                 {locatingMe ? "Buscando tu ubicación..." : "Necesitamos tu ubicación para poder filtrar por distancia."}
               </p>
             )}
-            <p className="text-[11px] mt-1" style={{ color: C.muted }}>
+            <p className="text-[12px] mt-1" style={{ color: C.muted }}>
               Esto solo filtra la lista — el % de coincidencia de cada reporte ya tolera más distancia
               cuanto más tiempo pasó, porque una mascota perdida hace días pudo alejarse más.
             </p>

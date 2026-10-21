@@ -112,6 +112,7 @@ import {
   unsaveReport,
 } from "../lib/store";
 import { usersReportToCsv } from "../lib/csv";
+import { petTitle } from "../lib/petTitle";
 import { playTap, playSuccess } from "../lib/sound";
 import { loadGoogleMaps, reverseGeocodeLatLng } from "../lib/googleMaps";
 import { requestLocation, geolocationErrorMessage } from "../lib/geolocation";
@@ -285,7 +286,7 @@ function AdminBreakdownCard({ title, items }) {
   const C = useTheme();
   return (
     <div className="rounded-xl p-3.5 border" style={{ borderColor: C.border, background: C.surface }}>
-      <p className="text-[11px] uppercase font-bold mb-2.5" style={{ color: C.muted }}>{title}</p>
+      <p className="text-[12px] uppercase font-bold mb-2.5" style={{ color: C.muted }}>{title}</p>
       {items.length === 0 ? (
         <p className="text-xs" style={{ color: C.muted }}>Todavía no hay datos.</p>
       ) : (
@@ -294,7 +295,7 @@ function AdminBreakdownCard({ title, items }) {
             <div key={item.label}>
               <div className="flex items-baseline justify-between gap-2 mb-0.5">
                 <span className="text-xs font-semibold truncate" style={{ color: C.text }}>{item.label}</span>
-                <span className="felpus-mono text-[11px] shrink-0" style={{ color: C.muted }}>
+                <span className="felpus-mono text-[12px] shrink-0" style={{ color: C.muted }}>
                   {item.count} · {item.pct}%
                 </span>
               </div>
@@ -2140,7 +2141,7 @@ export default function FelpusMatcher() {
                   el propósito de la app a un vistazo (sin depender de leer
                   todo el hero) desaparecía justamente en el viewport que
                   más tráfico recibe. Visible en todos los tamaños ahora. */}
-              <p className="text-[11px] mt-0.5 truncate text-[var(--felpus-muted)] dark:text-[#B9ADA5]">
+              <p className="text-[12px] leading-snug mt-0.5 text-[var(--felpus-muted)] dark:text-[#B9ADA5]">
                 Buscador inteligente de mascotas perdidas y encontradas
               </p>
             </div>
@@ -2160,7 +2161,7 @@ export default function FelpusMatcher() {
                 }}
                 aria-label="Mi Felpus"
                 title="Mi Felpus"
-                className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
                 style={{ background: activeTab === "mifelpus" ? C.redSolid : C.cream }}
               >
                 {googleAvatar ? (
@@ -2179,7 +2180,7 @@ export default function FelpusMatcher() {
                 }}
                 aria-label="Panel de administrador"
                 title="Panel de administrador"
-                className="w-8 h-8 rounded-full flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                className="w-10 h-10 rounded-full flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
                 style={{ background: activeTab === "admin" ? C.orangeInkSolid : C.cream }}
               >
                 <ShieldCheck className="w-4 h-4" style={{ color: activeTab === "admin" ? "#fff" : C.orangeInk }} />
@@ -2199,13 +2200,13 @@ export default function FelpusMatcher() {
                       ? `${newMatchesCount} coincidencias nuevas desde tu última visita`
                       : "Sin coincidencias nuevas"
                   }
-                  className="relative w-8 h-8 rounded-full flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                  className="relative w-10 h-10 rounded-full flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
                   style={{ background: C.cream }}
                 >
                   <Bell className="w-4 h-4" style={{ color: C.red }} />
                   {newMatchesCount > 0 && (
                     <span
-                      className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full text-white text-[10px] font-bold flex items-center justify-center"
+                      className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full text-white text-[11px] font-bold flex items-center justify-center"
                       style={{ background: C.orangeInkSolid }}
                     >
                       {newMatchesCount}
@@ -2253,7 +2254,7 @@ export default function FelpusMatcher() {
                                   Tu {mine.tipo === "perdida" ? "reporte de perdida" : "reporte de encontrada"}
                                   {mine.nombre ? ` (${mine.nombre})` : ""}
                                 </span>
-                                <span className="block text-[11px] truncate" style={{ color: C.muted }}>
+                                <span className="block text-[12px] truncate" style={{ color: C.muted }}>
                                   Coincide con {best.nombre || best.especie} · {Math.round(score * 100)}%
                                   {extraCount > 0 ? ` · +${extraCount} más` : ""}
                                 </span>
@@ -2283,7 +2284,7 @@ export default function FelpusMatcher() {
             )}
             <button
               onClick={() => goToTab("explorar")}
-              className="felpus-mono text-[11px] font-bold text-white rounded-full px-3 py-1.5 whitespace-nowrap shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+              className="felpus-mono text-[12px] font-bold text-white rounded-full px-3 min-h-[40px] whitespace-nowrap shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
               style={{ background: C.redSolid }}
             >
               {activeReports.length} mascotas
@@ -2311,7 +2312,7 @@ export default function FelpusMatcher() {
                 </span>
               )}
               <span className="flex-1 min-w-0">
-                <span className="block text-[10px] font-bold uppercase tracking-wide" style={{ color: C.muted }}>
+                <span className="block text-[11px] font-bold uppercase tracking-wide" style={{ color: C.muted }}>
                   Colaborador
                 </span>
                 <span className="block text-sm font-semibold truncate" style={{ color: C.text }}>
@@ -2330,7 +2331,7 @@ export default function FelpusMatcher() {
               <span className="flex-1 min-w-0">
                 <label
                   htmlFor="apodo-input"
-                  className="block text-[10px] font-bold uppercase tracking-wide"
+                  className="block text-[11px] font-bold uppercase tracking-wide"
                   style={{ color: C.muted }}
                 >
                   Elegí un apodo
@@ -2348,12 +2349,12 @@ export default function FelpusMatcher() {
                   // el texto daba a entender que era opcional/solo para
                   // gamificación. Mismo texto que ya usa el mensaje de
                   // error de más abajo, para no decir dos cosas distintas.
-                  placeholder="Así te reconocemos por ayudar"
-                  className="block w-full text-sm font-semibold outline-none bg-transparent min-w-0"
+                  placeholder="Así te reconocemos"
+                  className="block w-full text-sm font-semibold outline-none bg-transparent min-w-0 py-1"
                   style={{ color: fieldErrors.apodo ? C.red : C.text }}
                 />
                 {fieldErrors.apodo && (
-                  <span className="block text-[10px] font-semibold mt-0.5" style={{ color: C.red }}>{fieldErrors.apodo}</span>
+                  <span className="block text-[11px] font-semibold mt-0.5" style={{ color: C.red }}>{fieldErrors.apodo}</span>
                 )}
               </span>
             </>
@@ -2366,7 +2367,7 @@ export default function FelpusMatcher() {
               y discreto al lado, sin competir por atención. */}
           {!!myRank?.streak_days && (
             <span
-              className="felpus-mono text-[11px] font-bold shrink-0 flex items-center gap-0.5"
+              className="felpus-mono text-[12px] font-bold shrink-0 flex items-center gap-0.5"
               style={{ color: C.orangeInkDark }}
               title={`Racha de ${myRank.streak_days} ${myRank.streak_days === 1 ? "día" : "días"} seguidos`}
             >
@@ -2375,7 +2376,7 @@ export default function FelpusMatcher() {
           )}
           {nickname.trim() && (
             <span
-              className="felpus-mono text-[11px] font-extrabold shrink-0 px-2.5 py-1.5 rounded-full text-white shadow-sm"
+              className="felpus-mono text-[12px] font-extrabold shrink-0 px-2.5 py-1.5 rounded-full text-white shadow-sm"
               style={{ background: myTier.bg }}
             >
               {myRank?.points || 0} pts · {myTier.label}
@@ -2384,7 +2385,9 @@ export default function FelpusMatcher() {
           {!authLoading && (
             <button
               onClick={user ? handleLogout : handleGoogleLogin}
-              className="shrink-0 flex items-center gap-1 text-[11px] font-bold px-2 py-1.5 rounded-lg border"
+              aria-label={user ? "Cerrar sesión" : "Iniciar sesión con Google"}
+              title={user ? "Cerrar sesión" : "Iniciar sesión con Google"}
+              className="shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border"
               style={{ borderColor: C.border, color: C.muted }}
             >
               {user ? <LogOut className="w-3.5 h-3.5" /> : <LogIn className="w-3.5 h-3.5" />}
@@ -2392,10 +2395,10 @@ export default function FelpusMatcher() {
           )}
         </div>
         {!user && (
-          <p className="text-[10px] px-1" style={{ color: C.muted }}>
+          <p className="text-[12px] leading-snug px-1" style={{ color: C.muted }}>
             Podés reportar mascotas como invitado con solo un apodo, pero para sumar puntos y confirmar
             reencuentros necesitás{" "}
-            <button onClick={handleGoogleLogin} className="font-bold underline" style={{ color: C.text }}>
+            <button onClick={handleGoogleLogin} className="font-bold underline py-1.5" style={{ color: C.text }}>
               iniciar sesión con Google
             </button>
             .
@@ -2403,7 +2406,7 @@ export default function FelpusMatcher() {
         )}
       </div>
 
-      <main className="px-4 py-4 pb-28">
+      <main className="px-4 py-4 pb-8">
         {/* INICIO */}
         {activeTab === "inicio" && (
           <div key="inicio" className="max-w-2xl mx-auto space-y-5 felpus-fadein">
@@ -2469,7 +2472,10 @@ export default function FelpusMatcher() {
               {[
                 {
                   value: activeReports.length,
-                  label: "Reportes activos",
+                  // Corto para que entre en una línea en celular; el lector de
+                  // pantalla sigue diciendo "reportes activos".
+                  label: "Activos",
+                  aria: "reportes activos",
                   color: C.red,
                   onClick: () => {
                     setFilterTipo("todos");
@@ -2514,14 +2520,14 @@ export default function FelpusMatcher() {
                   // El número cuenta hacia arriba con una animación (AnimatedNumber);
                   // sin aria-label estático, un lector de pantalla podía anunciar
                   // cada valor intermedio de la cuenta en vez de solo el final.
-                  aria-label={`${s.value} — ${s.label}`}
+                  aria-label={`${s.value} — ${s.aria || s.label}`}
                   className="felpus-card-hover bg-white dark:bg-[var(--felpus-dark-card)] rounded-xl border shadow-sm p-3 text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
                   style={{ borderColor: C.border }}
                 >
                   <p className="felpus-mono text-xl font-bold" style={{ color: s.color }} aria-hidden="true">
                     <AnimatedNumber value={s.value} />
                   </p>
-                  <p className="text-[10px] font-semibold leading-tight mt-0.5" style={{ color: C.muted }} aria-hidden="true">
+                  <p className="text-[11px] font-semibold leading-tight mt-0.5" style={{ color: C.muted }} aria-hidden="true">
                     {s.label}
                   </p>
                 </button>
@@ -2579,7 +2585,7 @@ export default function FelpusMatcher() {
               <Crown className="w-6 h-6 shrink-0" style={{ color: C.toastAccent }} />
               <div className="flex-1">
                 <p className="felpus-display text-base leading-none mb-0.5">Mayores colaboradores</p>
-                <p className="text-[11px] text-white/75">Puntos por reportar y por confirmar reencuentros — mirá quién ayuda más.</p>
+                <p className="text-[12px] text-white/75">Puntos por reportar y por confirmar reencuentros — mirá quién ayuda más.</p>
               </div>
               <ChevronRight className="w-4 h-4 text-white/60 shrink-0" />
             </button>
@@ -2615,12 +2621,12 @@ export default function FelpusMatcher() {
                         </span>
                       </div>
                       <p className="text-sm font-bold truncate" style={{ color: C.text }}>
-                        {r.nombre || (r.especie === "gato" ? "Gatito/a" : r.especie === "perro" ? "Perrito/a" : "Mascota")}
+                        {petTitle(r)}
                       </p>
-                      <p className="text-[11px] font-semibold mb-1.5" style={{ color: C.greenDark }}>
-                        {r.resueltoEn ? `Reencontrada ${timeAgo(r.resueltoEn)}` : "Reencontrada"}
+                      <p className="text-[12px] font-semibold mb-1.5" style={{ color: C.greenDark }}>
+                        {r.resueltoEn ? `Volvió a casa ${timeAgo(r.resueltoEn)}` : "Volvió a casa"}
                       </p>
-                      <p className="text-[11px] line-clamp-2" style={{ color: C.muted }}>
+                      <p className="text-[12px] line-clamp-2" style={{ color: C.muted }}>
                         {r.descripcion}
                       </p>
                     </button>
@@ -2686,7 +2692,7 @@ export default function FelpusMatcher() {
                 {reportChecklist.map((step) => (
                   <span
                     key={step.id}
-                    className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold transition-colors duration-300"
+                    className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold transition-colors duration-300"
                     style={
                       step.done
                         ? { background: C.successBg, color: C.successText }
@@ -2709,7 +2715,7 @@ export default function FelpusMatcher() {
                   </span>
                 </label>
                 {fieldErrors.fotos && (
-                  <p className="text-[11px] mb-1.5" style={{ color: C.red }}>{fieldErrors.fotos}</p>
+                  <p className="text-[12px] mb-1.5" style={{ color: C.red }}>{fieldErrors.fotos}</p>
                 )}
                 {/* Pedido del usuario (2026-08-10): evitar que se suban
                     carteles/flyers ya armados o imágenes generadas en vez de
@@ -2720,7 +2726,7 @@ export default function FelpusMatcher() {
                     archivo. El resto de las capas ya existían: denunciar
                     "Es falsa o engañosa" (ver REPORT_FLAG_REASONS en
                     matching.js) y el panel de admin. */}
-                <p className="text-[11px] mb-1.5" style={{ color: C.muted }}>
+                <p className="text-[12px] mb-1.5" style={{ color: C.muted }}>
                   Una foto real de la mascota, tal cual es — no un cartel armado ni una imagen generada.
                 </p>
                 <input
@@ -2754,7 +2760,7 @@ export default function FelpusMatcher() {
                   {form.fotos.length < MAX_FOTOS && (
                     <label
                       htmlFor="foto-input"
-                      className="flex flex-col items-center justify-center gap-1 border-2 border-dashed rounded-xl h-24 cursor-pointer text-[11px] text-center transition-colors"
+                      className="flex flex-col items-center justify-center gap-1 border-2 border-dashed rounded-xl h-24 cursor-pointer text-[12px] text-center transition-colors"
                       style={{ borderColor: C.border, color: C.muted }}
                     >
                       <Camera className="w-4 h-4" />
@@ -2762,21 +2768,21 @@ export default function FelpusMatcher() {
                     </label>
                   )}
                 </div>
-                <p className="text-[11px] mt-1.5" style={{ color: C.muted }}>
+                <p className="text-[12px] mt-1.5" style={{ color: C.muted }}>
                   Subí distintos ángulos o poses — ayuda a un matching más preciso.
                 </p>
                 {visionStatus === "analyzing" && (
-                  <p className="text-[11px] mt-1.5 flex items-center gap-1.5" style={{ color: C.muted }}>
+                  <p className="text-[12px] mt-1.5 flex items-center gap-1.5" style={{ color: C.muted }}>
                     <Loader2 className="w-3 h-3 animate-spin" /> Analizando la foto con IA...
                   </p>
                 )}
                 {visionStatus === "ai" && (
-                  <p className="text-[11px] mt-1.5 flex items-center gap-1.5" style={{ color: C.green }}>
+                  <p className="text-[12px] mt-1.5 flex items-center gap-1.5" style={{ color: C.green }}>
                     <Check className="w-3 h-3" /> Análisis visual con IA activado
                   </p>
                 )}
                 {visionStatus === "basic" && (
-                  <p className="text-[11px] mt-1.5" style={{ color: C.muted }}>
+                  <p className="text-[12px] mt-1.5" style={{ color: C.muted }}>
                     Comparación visual básica por color (IA de visión no configurada)
                   </p>
                 )}
@@ -2823,7 +2829,7 @@ export default function FelpusMatcher() {
                       if (lat != null && lng != null) setGeoStatus("done");
                     }}
                     maxLength={100}
-                    placeholder="Ej: Palermo, cerca de Plaza Serrano"
+                    placeholder="Ej: Tres Cerritos"
                     className="felpus-input flex-1 min-w-0 border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
                     style={{ borderColor: fieldErrors.zona ? C.red : C.border, color: C.text }}
                   />
@@ -2844,16 +2850,16 @@ export default function FelpusMatcher() {
                   </button>
                 </div>
                 {fieldErrors.zona && (
-                  <p className="text-[11px] mt-1" style={{ color: C.red }}>{fieldErrors.zona}</p>
+                  <p className="text-[12px] mt-1" style={{ color: C.red }}>{fieldErrors.zona}</p>
                 )}
-                <p className="text-[11px] mt-1" style={{ color: C.muted }}>
+                <p className="text-[12px] mt-1" style={{ color: C.muted }}>
                   Cuanto más exacta sea la dirección — escrita o marcada en el mapa — mejor va a ser el match.
                 </p>
                 {geoStatus === "done" && (
-                  <p className="text-[11px] mt-1" style={{ color: C.green }}>Ubicación capturada — mejora mucho la precisión del match.</p>
+                  <p className="text-[12px] mt-1" style={{ color: C.green }}>Ubicación capturada — mejora mucho la precisión del match.</p>
                 )}
                 {geoStatus === "error" && (
-                  <p className="text-[11px] mt-1" style={{ color: C.muted }}>
+                  <p className="text-[12px] mt-1" style={{ color: C.muted }}>
                     {geoErrorMessage} Mientras tanto se usa solo la zona escrita.
                   </p>
                 )}
@@ -2899,7 +2905,7 @@ export default function FelpusMatcher() {
                     ))}
                   </select>
                   {fieldErrors.sexo && (
-                    <p className="text-[11px] mt-1" style={{ color: C.red }}>{fieldErrors.sexo}</p>
+                    <p className="text-[12px] mt-1" style={{ color: C.red }}>{fieldErrors.sexo}</p>
                   )}
                 </div>
                 <div>
@@ -2935,7 +2941,7 @@ export default function FelpusMatcher() {
                     style={{ borderColor: fieldErrors.colorOtro ? C.red : C.border, color: C.text }}
                   />
                   {fieldErrors.colorOtro && (
-                    <p className="text-[11px] mt-1" style={{ color: C.red }}>{fieldErrors.colorOtro}</p>
+                    <p className="text-[12px] mt-1" style={{ color: C.red }}>{fieldErrors.colorOtro}</p>
                   )}
                 </div>
               )}
@@ -2980,12 +2986,12 @@ export default function FelpusMatcher() {
                 <label id="form-contacto-label" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
                   Contacto <span style={{ color: C.red }}>*</span>
                 </label>
-                <p className="text-[11px] mb-2" style={{ color: C.muted }}>
+                <p className="text-[12px] mb-2" style={{ color: C.muted }}>
                   Para que puedan avisarte si la reconocen. Completá al menos uno.
                 </p>
                 <div className="space-y-3">
                   <div>
-                    <label htmlFor="form-contacto-whatsapp" className="text-[11px] font-semibold mb-1 block" style={{ color: C.muted }}>
+                    <label htmlFor="form-contacto-whatsapp" className="text-[12px] font-semibold mb-1 block" style={{ color: C.muted }}>
                       WhatsApp
                     </label>
                     {whatsappUsingSaved ? (
@@ -3024,7 +3030,7 @@ export default function FelpusMatcher() {
                     )}
                   </div>
                   <div>
-                    <label htmlFor="form-contacto-email" className="text-[11px] font-semibold mb-1 block" style={{ color: C.muted }}>
+                    <label htmlFor="form-contacto-email" className="text-[12px] font-semibold mb-1 block" style={{ color: C.muted }}>
                       Email
                     </label>
                     <input
@@ -3042,7 +3048,7 @@ export default function FelpusMatcher() {
                   </div>
                 </div>
                 {fieldErrors.contacto && (
-                  <p className="text-[11px] mt-1.5" style={{ color: C.red }}>{fieldErrors.contacto}</p>
+                  <p className="text-[12px] mt-1.5" style={{ color: C.red }}>{fieldErrors.contacto}</p>
                 )}
               </div>
 
@@ -3104,7 +3110,7 @@ export default function FelpusMatcher() {
                             setForm((f) => ({ ...f, raza: f.raza === RAZA_NO_SE ? "" : RAZA_NO_SE }));
                           }}
                           aria-pressed={form.raza === RAZA_NO_SE}
-                          className="shrink-0 flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                          className="shrink-0 flex items-center gap-1 text-[12px] font-bold px-3 py-2 min-h-[36px] rounded-full border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
                           style={form.raza === RAZA_NO_SE ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.text, borderColor: C.border, background: C.surface }}
                         >
                           No sé la raza
@@ -3138,7 +3144,7 @@ export default function FelpusMatcher() {
                         className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
                         style={{ borderColor: C.border, color: C.text }}
                       />
-                      <p className="text-[11px] mt-1" style={{ color: C.muted }}>
+                      <p className="text-[12px] mt-1" style={{ color: C.muted }}>
                         {form.especie === "gato"
                           ? "En gatos la raza pesa poco en la búsqueda — \"No sé\" es una respuesta perfectamente válida, no te compliques."
                           : "Si no la sabés, dejalo en blanco o tocá \"No sé la raza\" — no es obligatorio."}
@@ -3199,7 +3205,7 @@ export default function FelpusMatcher() {
                         (ver detalles en handleSubmit) para pesar en el matching. */}
                     <div>
                       <p className="text-sm font-extrabold" style={{ color: C.text }}>Detalles para reconocerlo</p>
-                      <p className="text-[11px] mt-0.5" style={{ color: C.muted }}>
+                      <p className="text-[12px] mt-0.5" style={{ color: C.muted }}>
                         Todo es opcional, pero cuantos más datos agregues, más fácil será identificarlo.
                       </p>
                     </div>
@@ -3250,7 +3256,7 @@ export default function FelpusMatcher() {
 
                     <div>
                       <p className="text-xs font-bold mb-1" style={{ color: C.text }}>¿Tiene algo que lo haga fácil de reconocer?</p>
-                      <p className="text-[11px] mb-1.5" style={{ color: C.muted }}>Elegí una opción o contanos algo particular.</p>
+                      <p className="text-[12px] mb-1.5" style={{ color: C.muted }}>Elegí una opción o contanos algo particular.</p>
                       <div className="flex flex-wrap gap-1.5" role="group" aria-label="¿Tiene algo que lo haga fácil de reconocer?">
                         {MARCA_OPTIONS.map((opt) => {
                           const selected = marcaChips.includes(opt.id);
@@ -3278,7 +3284,7 @@ export default function FelpusMatcher() {
                       <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${marcaChips.includes("mancha") ? "grid-rows-[1fr] mt-3" : "grid-rows-[0fr]"}`}>
                         <div className="overflow-hidden">
                           <div className="rounded-lg pl-3 border-l-2" style={{ borderColor: C.border }}>
-                            <p className="text-[11px] font-bold mb-1.5" style={{ color: C.text }}>¿Dónde tiene la mancha?</p>
+                            <p className="text-[12px] font-bold mb-1.5" style={{ color: C.text }}>¿Dónde tiene la mancha?</p>
                             <div className="flex flex-wrap gap-1.5" role="group" aria-label="¿Dónde tiene la mancha?">
                               {MANCHA_UBICACION_OPTIONS.map((opt) => {
                                 const selected = manchaUbicacion === opt.id;
@@ -3302,7 +3308,7 @@ export default function FelpusMatcher() {
 
                             <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${manchaUbicacion ? "grid-rows-[1fr] mt-2.5" : "grid-rows-[0fr]"}`}>
                               <div className="overflow-hidden">
-                                <p className="text-[11px] font-bold mb-1.5" style={{ color: C.text }}>¿De qué color? (opcional)</p>
+                                <p className="text-[12px] font-bold mb-1.5" style={{ color: C.text }}>¿De qué color? (opcional)</p>
                                 <div className="flex flex-wrap gap-1.5" role="group" aria-label="Color de la mancha">
                                   {MANCHA_COLOR_OPTIONS.map((color) => {
                                     const selected = manchaColor === color;
@@ -3341,7 +3347,7 @@ export default function FelpusMatcher() {
                             onClick={toggleDictation}
                             aria-pressed={dictating}
                             aria-label={dictating ? "Dejar de dictar" : "Dictar por voz"}
-                            className="shrink-0 flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full border disabled:opacity-70 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                            className="shrink-0 flex items-center gap-1 text-[12px] font-bold px-3 py-2 min-h-[36px] rounded-full border disabled:opacity-70 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
                             style={dictating ? { background: C.redSolid, color: "#fff", borderColor: C.redSolid } : { color: C.text, borderColor: C.border, background: C.surface }}
                           >
                             {dictating ? <Square className="w-3 h-3" fill="currentColor" /> : <Mic className="w-3 h-3" />}
@@ -3367,7 +3373,7 @@ export default function FelpusMatcher() {
                         sentirse como "otro campo más" del formulario. */}
                     <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${hasMeaningfulDetails ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
                       <div className="overflow-hidden">
-                        <div className="rounded-lg px-3 py-2 text-[11px] border flex items-start gap-1.5" style={{ background: C.surfaceSubtle, borderColor: C.border, color: C.muted }}>
+                        <div className="rounded-lg px-3 py-2 text-[12px] border flex items-start gap-1.5" style={{ background: C.surfaceSubtle, borderColor: C.border, color: C.muted }}>
                           <Sparkles className="w-3 h-3 mt-0.5 shrink-0" />
                           <p>
                             <span className="font-bold" style={{ color: C.text }}>Vista previa: </span>
@@ -3395,7 +3401,7 @@ export default function FelpusMatcher() {
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                 Publicar y buscar coincidencias
               </button>
-              <p className="text-[10px] text-center -mt-2" style={{ color: C.muted }}>
+              <p className="text-[11px] text-center -mt-2" style={{ color: C.muted }}>
                 +{reportKind === "perdida" ? PUNTOS_PERDIDA : PUNTOS_ENCONTRADA} puntos por este reporte · queda visible para todos.
               </p>
             </div>
@@ -3496,10 +3502,10 @@ export default function FelpusMatcher() {
                               <Badge tipo={m.report.tipo} />
                             )}
                             <p className="text-sm font-semibold mt-1 truncate" style={{ color: C.text }}>{displayColor(m.report)} · {m.report.tamano}</p>
-                            <p className="text-[11px] flex items-center gap-1" style={{ color: C.muted }}>
+                            <p className="text-[12px] flex items-center gap-1" style={{ color: C.muted }}>
                               <MapPin className="w-3 h-3" /> {m.report.zona} · {m.distanceLabel}
                             </p>
-                            <p className="text-[10px] font-semibold" style={{ color: scoreLabel(m.score, C).color }}>{scoreLabel(m.score, C).text}</p>
+                            <p className="text-[11px] font-semibold" style={{ color: scoreLabel(m.score, C).color }}>{scoreLabel(m.score, C).text}</p>
                           </div>
                           <ChevronRight className="w-4 h-4 shrink-0" style={{ color: C.muted }} />
                         </button>
@@ -3512,13 +3518,13 @@ export default function FelpusMatcher() {
                         {comparingId === m.report.id && (
                           <div className="mt-2 grid grid-cols-2 gap-2">
                             <div>
-                              <p className="text-[10px] font-semibold mb-1 text-center" style={{ color: C.muted }}>Tu reporte</p>
+                              <p className="text-[11px] font-semibold mb-1 text-center" style={{ color: C.muted }}>Tu reporte</p>
                               <div className="relative w-full aspect-square rounded-lg overflow-hidden" style={{ background: C.surfaceMuted }}>
                                 <Image src={matchResult.source.foto} alt={reportPhotoAlt(matchResult.source)} fill sizes="150px" className="object-cover" />
                               </div>
                             </div>
                             <div>
-                              <p className="text-[10px] font-semibold mb-1 text-center" style={{ color: C.muted }}>Esta publicación</p>
+                              <p className="text-[11px] font-semibold mb-1 text-center" style={{ color: C.muted }}>Esta publicación</p>
                               <div className="relative w-full aspect-square rounded-lg overflow-hidden" style={{ background: C.surfaceMuted }}>
                                 <Image src={m.report.foto} alt={reportPhotoAlt(m.report)} fill sizes="150px" className="object-cover" />
                               </div>
@@ -3529,7 +3535,7 @@ export default function FelpusMatcher() {
                           <div className="mt-2 pt-2 border-t flex items-center flex-wrap gap-x-3 gap-y-1.5" style={{ borderColor: C.border }}>
                             {confirmingId === m.report.id ? (
                               <div className="flex items-center gap-2 w-full">
-                                <span className="text-[11px] flex-1" style={{ color: C.muted }}>¿Es ella/él?</span>
+                                <span className="text-[12px] flex-1" style={{ color: C.muted }}>¿Es ella/él?</span>
                                 <button
                                   onClick={() =>
                                     markResolvedAndReward({
@@ -3541,24 +3547,24 @@ export default function FelpusMatcher() {
                                     })
                                   }
                                   disabled={resolvingId === matchResult.source.id}
-                                  className="text-[11px] font-bold text-white rounded-lg px-2.5 py-1 disabled:opacity-60"
+                                  className="text-[12px] font-bold text-white rounded-lg px-3 py-2 disabled:opacity-60"
                                   style={{ background: C.greenSolid }}
                                 >
                                   {resolvingId === matchResult.source.id ? "Confirmando…" : "Sí, confirmar"}
                                 </button>
-                                <button onClick={() => setConfirmingId(null)} className="text-[11px] font-semibold" style={{ color: C.muted }}>
+                                <button onClick={() => setConfirmingId(null)} className="text-[12px] font-semibold px-2 py-2" style={{ color: C.muted }}>
                                   Cancelar
                                 </button>
                               </div>
                             ) : (
                               <>
-                                <button onClick={() => handleConfirmTrigger(matchResult.source, m.report.id)} className="text-[11px] font-bold flex items-center gap-1" style={{ color: confirmButtonColor(matchResult.source) }}>
+                                <button onClick={() => handleConfirmTrigger(matchResult.source, m.report.id)} className="text-[12px] font-bold flex items-center gap-1 min-h-[40px]" style={{ color: confirmButtonColor(matchResult.source) }}>
                                   {confirmButtonContent(matchResult.source, "¡Es ella/él! Confirmar reencuentro")}
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => setComparingId((prev) => (prev === m.report.id ? null : m.report.id))}
-                                  className="text-[11px] font-semibold flex items-center gap-1"
+                                  className="text-[12px] font-semibold flex items-center gap-1 min-h-[40px]"
                                   style={{ color: C.text }}
                                 >
                                   <Images className="w-3 h-3" /> {comparingId === m.report.id ? "Ocultar fotos" : "Comparar fotos"}
@@ -3566,7 +3572,7 @@ export default function FelpusMatcher() {
                                 <button
                                   type="button"
                                   onClick={() => dismissMatch(m.report.id)}
-                                  className="text-[11px] font-semibold flex items-center gap-1"
+                                  className="text-[12px] font-semibold flex items-center gap-1 min-h-[40px]"
                                   style={{ color: C.muted }}
                                 >
                                   <X className="w-3 h-3" /> Descartar
@@ -3600,7 +3606,8 @@ export default function FelpusMatcher() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Buscar por zona, nombre, color o descripción..."
+                placeholder="Buscar por zona, nombre o color"
+                aria-label="Buscar por zona, nombre, color o descripción"
                 className="felpus-input w-full border rounded-lg pl-9 pr-3 py-2 text-sm bg-white dark:bg-[var(--felpus-dark-card)]"
                 style={{ borderColor: C.border, color: C.text }}
               />
@@ -3610,10 +3617,11 @@ export default function FelpusMatcher() {
               <select
                 value={filterTipo}
                 onChange={(e) => setFilterTipo(e.target.value)}
+                aria-label="Filtrar por tipo de reporte"
                 className="felpus-input flex-1 min-w-0 border rounded-lg px-3 py-2 text-sm bg-white dark:bg-[var(--felpus-dark-card)]"
                 style={{ borderColor: C.border, color: C.text }}
               >
-                <option value="todos">Perdidas y encontradas</option>
+                <option value="todos">Tipo: todos</option>
                 <option value="perdida">Solo perdidas</option>
                 <option value="encontrada">Solo encontradas</option>
                 <option value="resuelto">Solo reencontradas</option>
@@ -3621,10 +3629,11 @@ export default function FelpusMatcher() {
               <select
                 value={filterEspecie}
                 onChange={(e) => setFilterEspecie(e.target.value)}
+                aria-label="Filtrar por especie"
                 className="felpus-input flex-1 min-w-0 border rounded-lg px-3 py-2 text-sm bg-white dark:bg-[var(--felpus-dark-card)]"
                 style={{ borderColor: C.border, color: C.text }}
               >
-                <option value="todos">Todas las especies</option>
+                <option value="todos">Especie: todas</option>
                 <option value="perro">Perros</option>
                 <option value="gato">Gatos</option>
                 <option value="otro">Otros</option>
@@ -3634,14 +3643,14 @@ export default function FelpusMatcher() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setSortBy("recientes")}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 min-h-[40px] text-xs font-bold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
                 style={sortBy === "recientes" ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
               >
                 Más recientes
               </button>
               <button
                 onClick={() => (myLocation ? setSortBy("cercania") : handleLocateMe())}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 min-h-[40px] text-xs font-bold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
                 style={sortBy === "cercania" ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
               >
                 {locatingMe ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Navigation className="w-3.5 h-3.5" />}
@@ -3656,7 +3665,7 @@ export default function FelpusMatcher() {
               <button
                 type="button"
                 onClick={() => setExploreView("lista")}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 min-h-[40px] text-xs font-bold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
                 style={exploreView === "lista" ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
               >
                 Lista
@@ -3664,7 +3673,7 @@ export default function FelpusMatcher() {
               <button
                 type="button"
                 onClick={() => setExploreView("mapa")}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 min-h-[40px] text-xs font-bold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
                 style={exploreView === "mapa" ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
               >
                 <MapPin className="w-3.5 h-3.5" /> Mapa
@@ -3675,7 +3684,7 @@ export default function FelpusMatcher() {
               <button
                 type="button"
                 onClick={() => setShowAdvancedFilters(true)}
-                className="flex items-center gap-1.5 text-xs font-semibold"
+                className="flex items-center gap-1.5 text-xs font-semibold py-2 pr-2 min-h-[40px]"
                 style={{ color: C.text }}
               >
                 <ChevronDown className="w-3.5 h-3.5" />
@@ -3814,7 +3823,7 @@ export default function FelpusMatcher() {
                             <Image src={m.report.foto} alt={reportPhotoAlt(m.report)} width={40} height={40} loading="lazy" className="w-10 h-10 rounded-lg object-cover bg-white dark:bg-[var(--felpus-dark-card)]" />
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-semibold truncate" style={{ color: C.text }}>{displayColor(m.report)} · {m.report.zona}</p>
-                              <p className="text-[10px]" style={{ color: C.muted }}>{m.distanceLabel}</p>
+                              <p className="text-[11px]" style={{ color: C.muted }}>{m.distanceLabel}</p>
                             </div>
                             <ChevronRight className="w-3.5 h-3.5 shrink-0" style={{ color: C.muted }} />
                           </div>
@@ -3826,27 +3835,27 @@ export default function FelpusMatcher() {
                   <div className="px-3 pb-3 pt-1 border-t" style={{ borderColor: C.border }}>
                     {confirmingId === r.id ? (
                       <div className="flex items-center gap-2">
-                        <span className="text-[11px] flex-1" style={{ color: C.muted }}>¿Confirmás el reencuentro?</span>
+                        <span className="text-[12px] flex-1" style={{ color: C.muted }}>¿Confirmás el reencuentro?</span>
                         <button
                           onClick={() => markResolvedAndReward({ repObjs: [r], bonusFor: [{ userId: r.userId, displayName: r.nickname, reportId: r.id }] })}
                           disabled={resolvingId === r.id}
-                          className="text-[11px] font-bold text-white rounded-lg px-2.5 py-1 disabled:opacity-60"
+                          className="text-[12px] font-bold text-white rounded-lg px-3 py-2 disabled:opacity-60"
                           style={{ background: C.greenSolid }}
                         >
                           {resolvingId === r.id ? "Confirmando…" : "Sí, ya está en casa"}
                         </button>
-                        <button onClick={() => setConfirmingId(null)} className="text-[11px] font-semibold" style={{ color: C.muted }}>
+                        <button onClick={() => setConfirmingId(null)} className="text-[12px] font-semibold px-2 py-2" style={{ color: C.muted }}>
                           Cancelar
                         </button>
                       </div>
                     ) : (
                       <div className="flex items-center justify-between gap-2">
-                        <button onClick={() => handleConfirmTrigger(r)} className="text-[11px] font-bold flex items-center gap-1" style={{ color: confirmButtonColor(r) }}>
+                        <button onClick={() => handleConfirmTrigger(r)} className="text-[12px] font-bold flex items-center gap-1 min-h-[40px]" style={{ color: confirmButtonColor(r) }}>
                           {confirmButtonContent(r, "Marcar como reencontrada")}
                         </button>
                         <ShareButton
                           report={r}
-                          className="text-[11px] font-bold flex items-center gap-1"
+                          className="text-[12px] font-bold flex items-center gap-1 min-h-[40px]"
                           style={{ color: C.text }}
                         >
                           <Share2 className="w-3.5 h-3.5" /> Compartir
@@ -3878,7 +3887,7 @@ export default function FelpusMatcher() {
                   <div className="space-y-2">
                     <ReportsMap reports={filteredReports} onSelectReport={openReportDetail} center={myLocation} />
                     {filteredReports.some((r) => r.lat == null || r.lng == null) && (
-                      <p className="text-[11px]" style={{ color: C.muted }}>
+                      <p className="text-[12px]" style={{ color: C.muted }}>
                         Algunos reportes no tienen ubicación exacta marcada en el mapa y no aparecen acá — probá la
                         vista de lista para verlos todos.
                       </p>
@@ -3978,7 +3987,7 @@ export default function FelpusMatcher() {
                             style={{ width: `${progress.progressPct}%`, background: fillBg }}
                           />
                         </div>
-                        <p className="text-[11px] font-semibold mt-1" style={themeMode === "dark" ? { color: C.muted } : { color: "rgba(255,255,255,0.85)" }}>
+                        <p className="text-[12px] font-semibold mt-1" style={themeMode === "dark" ? { color: C.muted } : { color: "rgba(255,255,255,0.85)" }}>
                           {progress.nextLabel
                             ? `${progress.pointsToNext} pts para ${progress.nextLabel}`
                             : "¡Nivel máximo alcanzado!"}
@@ -4022,7 +4031,7 @@ export default function FelpusMatcher() {
                         <span
                           key={b.id}
                           title={b.label}
-                          className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold"
+                          className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[12px] font-semibold"
                           style={
                             themeMode === "dark"
                               ? { background: C.surfaceSubtle, color: C.tierGoldText }
@@ -4042,7 +4051,7 @@ export default function FelpusMatcher() {
               )
             ) : (
               <div className="text-sm bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl p-4 text-center border" style={{ color: C.muted, borderColor: C.border }}>
-                <button onClick={handleGoogleLogin} className="font-bold underline" style={{ color: C.red }}>
+                <button onClick={handleGoogleLogin} className="font-bold underline py-2" style={{ color: C.red }}>
                   Iniciá sesión con Google
                 </button>{" "}
                 para ver tu posición y tus puntos.
@@ -4084,7 +4093,7 @@ export default function FelpusMatcher() {
                         <p className="text-sm font-bold truncate" style={{ color: C.text }}>
                           {u.nickname} {isMe && <span style={{ color: C.red }}>(vos)</span>}
                         </p>
-                        <p className="text-[11px] flex items-center flex-wrap gap-x-1.5" style={{ color: tier.text }}>
+                        <p className="text-[12px] flex items-center flex-wrap gap-x-1.5" style={{ color: tier.text }}>
                           <span>
                             {tier.label} · {"🐾".repeat(tier.paws)}
                           </span>
@@ -4104,7 +4113,7 @@ export default function FelpusMatcher() {
                       </div>
                       <div className="flex flex-col items-end shrink-0">
                         <span className="felpus-mono text-base font-bold" style={{ color: C.red }}>{u.points || 0}</span>
-                        <span className="text-[9px] font-semibold -mt-0.5" style={{ color: C.muted }}>pts</span>
+                        <span className="text-[11px] font-semibold -mt-0.5" style={{ color: C.muted }}>pts</span>
                       </div>
                     </div>
                     {!isMe && (
@@ -4113,7 +4122,7 @@ export default function FelpusMatcher() {
                         onClick={() => handleSendHeart(u)}
                         disabled={alreadyHearted}
                         aria-label={alreadyHearted ? "Ya le mandaste un corazón" : `Mandarle un corazón a ${u.nickname}`}
-                        className="absolute -top-2 -right-2 flex items-center gap-1 bg-white dark:bg-[var(--felpus-dark-card)] border rounded-full px-2 py-1 shadow-sm disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                        className="absolute -top-2 -right-2 flex items-center gap-1 bg-white dark:bg-[var(--felpus-dark-card)] border rounded-full px-2.5 py-1.5 shadow-sm before:absolute before:-inset-2 before:content-[''] disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
                         style={{ borderColor: C.border }}
                       >
                         <Heart
@@ -4121,7 +4130,7 @@ export default function FelpusMatcher() {
                           style={{ color: alreadyHearted ? C.red : C.muted }}
                           fill={alreadyHearted ? C.red : "none"}
                         />
-                        <span className="felpus-mono text-[10px] font-bold" style={{ color: C.muted }}>
+                        <span className="felpus-mono text-[11px] font-bold" style={{ color: C.muted }}>
                           {u.hearts || 0}
                         </span>
                       </button>
@@ -4131,7 +4140,7 @@ export default function FelpusMatcher() {
               })}
             </div>
 
-            <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-xl p-3.5 border text-[11px] space-y-1.5" style={{ borderColor: C.border, color: C.muted }}>
+            <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-xl p-3.5 border text-[12px] space-y-1.5" style={{ borderColor: C.border, color: C.muted }}>
               <p className="font-bold text-xs mb-1" style={{ color: C.text }}>Cómo se suman puntos</p>
               <p>+{PUNTOS_PERDIDA} pts · publicar una mascota perdida</p>
               <p>+{PUNTOS_ENCONTRADA} pts · publicar una mascota encontrada</p>
@@ -4161,7 +4170,7 @@ export default function FelpusMatcher() {
                 <span className="block text-xs font-bold" style={{ color: C.text }}>
                   Felpus es gratis y sin publicidad
                 </span>
-                <span className="block text-[11px]" style={{ color: C.muted }}>
+                <span className="block text-[12px]" style={{ color: C.muted }}>
                   Si te sirvió, podés donar con Mercado Pago
                 </span>
               </span>
@@ -4259,7 +4268,7 @@ export default function FelpusMatcher() {
                   ["Errores (24h)", adminMetrics?.errors24h],
                 ].map(([label, value]) => (
                   <div key={label} className="rounded-xl p-3 border" style={{ borderColor: C.border, background: C.surface }}>
-                    <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>{label}</p>
+                    <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>{label}</p>
                     <p className="felpus-mono text-xl font-bold" style={{ color: C.text }}>{value ?? "–"}</p>
                   </div>
                 ))}
@@ -4318,19 +4327,19 @@ export default function FelpusMatcher() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-bold truncate" style={{ color: C.text }}>
-                            {f.nombre || `${f.especie} sin nombre`}
+                            {petTitle(f)}
                           </p>
                           <p className="text-xs truncate" style={{ color: C.muted }}>{f.zona} · {f.tipo}</p>
-                          <p className="text-[11px] mt-0.5 flex items-center gap-1" style={{ color: C.redDark }}>
+                          <p className="text-[12px] mt-0.5 flex items-center gap-1" style={{ color: C.redDark }}>
                             <AlertTriangle className="w-3 h-3 shrink-0" />
                             {f.flagCount} denuncia{f.flagCount === 1 ? "" : "s"} · {f.distinctIps} IP{f.distinctIps === 1 ? "" : "s"} distinta{f.distinctIps === 1 ? "" : "s"}
                           </p>
-                          <p className="text-[11px] mt-0.5 truncate" style={{ color: C.muted }}>
+                          <p className="text-[12px] mt-0.5 truncate" style={{ color: C.muted }}>
                             {f.reasons.map(reportFlagReasonLabel).join(" · ")}
                           </p>
                           {f.oculto && (
                             <span
-                              className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                              className="inline-block mt-1 text-[11px] font-bold px-1.5 py-0.5 rounded-full"
                               style={{ background: C.dangerBg, color: C.redDark }}
                             >
                               Oculta automáticamente
@@ -4399,7 +4408,7 @@ export default function FelpusMatcher() {
                   className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
                   style={{ borderColor: C.border, color: C.text }}
                 />
-                <p className="text-[11px]" style={{ color: C.muted }}>
+                <p className="text-[12px]" style={{ color: C.muted }}>
                   {adminFilteredReports.length} de {adminAllReports.length} reportes
                   {adminFilteredReports.length > 200 ? " — mostrando los primeros 200" : ""}
                 </p>
@@ -4432,7 +4441,7 @@ export default function FelpusMatcher() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold truncate" style={{ color: C.text }}>
-                        {r.nombre || `${r.especie} sin nombre`}
+                        {petTitle(r)}
                       </p>
                       <p className="text-xs truncate" style={{ color: C.muted }}>
                         {r.zona} · {r.tipo}
@@ -4440,7 +4449,7 @@ export default function FelpusMatcher() {
                       </p>
                       {r.oculto && (
                         <span
-                          className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                          className="inline-block mt-1 text-[11px] font-bold px-1.5 py-0.5 rounded-full"
                           style={{ background: C.dangerBg, color: C.redDark }}
                         >
                           Oculta
@@ -4579,7 +4588,7 @@ export default function FelpusMatcher() {
                       key={f.id}
                       type="button"
                       onClick={() => setMifelpusFilter(f.id)}
-                      className="shrink-0 text-[11px] font-bold px-2.5 py-1.5 rounded-full border"
+                      className="shrink-0 text-[12px] font-bold px-2.5 py-1.5 rounded-full border"
                       style={
                         mifelpusFilter === f.id
                           ? { background: C.ink, color: C.cream, borderColor: C.ink }
@@ -4616,13 +4625,13 @@ export default function FelpusMatcher() {
                       <ReportCard key={r.id} report={r} onOpenDetail={openReportDetail}>
                         {r.inactivo && !r.resuelto && (
                           <div className="px-3 py-2.5 border-t flex items-center justify-between gap-2 flex-wrap" style={{ borderColor: C.border }}>
-                            <span className="text-[11px]" style={{ color: C.muted }}>
+                            <span className="text-[12px]" style={{ color: C.muted }}>
                               Pausamos las alertas de este reporte por inactividad.
                             </span>
                             <button
                               type="button"
                               onClick={() => renewReport(r.id)}
-                              className="text-[11px] font-bold text-white rounded-lg px-2.5 py-1"
+                              className="text-[12px] font-bold text-white rounded-lg px-2.5 py-1"
                               style={{ background: C.redSolid }}
                             >
                               Seguir buscando
@@ -4678,7 +4687,7 @@ export default function FelpusMatcher() {
                                     <p className="text-xs font-semibold truncate" style={{ color: C.text }}>
                                       {displayColor(m.report)} · {m.report.zona}
                                     </p>
-                                    <p className="text-[10px]" style={{ color: C.muted }}>{m.distanceLabel}</p>
+                                    <p className="text-[11px]" style={{ color: C.muted }}>{m.distanceLabel}</p>
                                   </div>
                                   <ChevronRight className="w-3.5 h-3.5 shrink-0" style={{ color: C.muted }} />
                                 </div>
@@ -4691,7 +4700,7 @@ export default function FelpusMatcher() {
                                     recordMatchDecision(r, m.report, "confirmado");
                                     handleConfirmTrigger(r);
                                   }}
-                                  className="text-[11px] font-bold flex items-center gap-1"
+                                  className="text-[12px] font-bold flex items-center gap-1 min-h-[40px]"
                                   style={{ color: C.successText }}
                                 >
                                   <Check className="w-3 h-3" /> {r.tipo === "perdida" ? "Es mi mascota" : "Es el dueño"}
@@ -4699,7 +4708,7 @@ export default function FelpusMatcher() {
                                 <button
                                   type="button"
                                   onClick={() => discardCardMatch(r, m.report)}
-                                  className="text-[11px] font-semibold flex items-center gap-1"
+                                  className="text-[12px] font-semibold flex items-center gap-1 min-h-[40px]"
                                   style={{ color: C.muted }}
                                 >
                                   <X className="w-3 h-3" /> No es
@@ -4713,25 +4722,25 @@ export default function FelpusMatcher() {
                           {!r.resuelto &&
                             (confirmingId === r.id ? (
                               <div className="flex items-center gap-2">
-                                <span className="text-[11px]" style={{ color: C.muted }}>¿Confirmás?</span>
+                                <span className="text-[12px]" style={{ color: C.muted }}>¿Confirmás?</span>
                                 <button
                                   onClick={() => markResolvedAndReward({ repObjs: [r], bonusFor: [{ userId: r.userId, displayName: r.nickname, reportId: r.id }] })}
                                   disabled={resolvingId === r.id}
-                                  className="text-[11px] font-bold text-white rounded-lg px-2.5 py-1 disabled:opacity-60"
+                                  className="text-[12px] font-bold text-white rounded-lg px-3 py-2 disabled:opacity-60"
                                   style={{ background: C.greenSolid }}
                                 >
                                   {resolvingId === r.id ? "Confirmando…" : "Sí, ya está en casa"}
                                 </button>
-                                <button onClick={() => setConfirmingId(null)} className="text-[11px] font-semibold" style={{ color: C.muted }}>
+                                <button onClick={() => setConfirmingId(null)} className="text-[12px] font-semibold px-2 py-2" style={{ color: C.muted }}>
                                   Cancelar
                                 </button>
                               </div>
                             ) : (
-                              <button onClick={() => handleConfirmTrigger(r)} className="text-[11px] font-bold flex items-center gap-1" style={{ color: confirmButtonColor(r) }}>
+                              <button onClick={() => handleConfirmTrigger(r)} className="text-[12px] font-bold flex items-center gap-1 min-h-[40px]" style={{ color: confirmButtonColor(r) }}>
                                 {confirmButtonContent(r, "Marcar como reencontrada")}
                               </button>
                             ))}
-                          <ShareButton report={r} className="text-[11px] font-bold flex items-center gap-1" style={{ color: C.text }}>
+                          <ShareButton report={r} className="text-[12px] font-bold flex items-center gap-1 min-h-[40px]" style={{ color: C.text }}>
                             <Share2 className="w-3.5 h-3.5" /> Compartir
                           </ShareButton>
                           {myReportsDeleteConfirmId === r.id ? (
@@ -4742,12 +4751,12 @@ export default function FelpusMatcher() {
                                   handleDeleteReport(r);
                                   setMyReportsDeleteConfirmId(null);
                                 }}
-                                className="text-[11px] font-bold text-white rounded-lg px-2 py-1"
+                                className="text-[12px] font-bold text-white rounded-lg px-2 py-1"
                                 style={{ background: C.redSolid }}
                               >
                                 Confirmar
                               </button>
-                              <button type="button" onClick={() => setMyReportsDeleteConfirmId(null)} className="text-[11px] font-semibold" style={{ color: C.muted }}>
+                              <button type="button" onClick={() => setMyReportsDeleteConfirmId(null)} className="text-[12px] font-semibold" style={{ color: C.muted }}>
                                 Cancelar
                               </button>
                             </div>
@@ -4755,7 +4764,7 @@ export default function FelpusMatcher() {
                             <button
                               type="button"
                               onClick={() => setMyReportsDeleteConfirmId(r.id)}
-                              className="text-[11px] font-bold flex items-center gap-1"
+                              className="text-[12px] font-bold flex items-center gap-1 min-h-[40px]"
                               style={{ color: C.redDark }}
                             >
                               <Trash2 className="w-3.5 h-3.5" /> Eliminar
@@ -4792,12 +4801,12 @@ export default function FelpusMatcher() {
                           type="button"
                           onClick={() => handleToggleSaved(r)}
                           disabled={savedBusyId === r.id}
-                          className="text-[11px] font-bold flex items-center gap-1 disabled:opacity-60"
+                          className="text-[12px] font-bold flex items-center gap-1 disabled:opacity-60"
                           style={{ color: C.redDark }}
                         >
                           <X className="w-3.5 h-3.5" /> Quitar de guardadas
                         </button>
-                        <ShareButton report={r} className="text-[11px] font-bold flex items-center gap-1" style={{ color: C.text }}>
+                        <ShareButton report={r} className="text-[12px] font-bold flex items-center gap-1 min-h-[40px]" style={{ color: C.text }}>
                           <Share2 className="w-3.5 h-3.5" /> Compartir
                         </ShareButton>
                       </div>
@@ -4823,15 +4832,15 @@ export default function FelpusMatcher() {
                 {!profileLoading && !profileError && !editingProfile && (
                   <>
                     <div>
-                      <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Nombre</p>
+                      <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>Nombre</p>
                       <p className="text-sm" style={{ color: C.text }}>{profile?.nickname || googleDisplayName || "Sin nombre"}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>Email</p>
+                      <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>Email</p>
                       <p className="text-sm" style={{ color: C.text }}>{user.email}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] uppercase font-bold" style={{ color: C.muted }}>WhatsApp</p>
+                      <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>WhatsApp</p>
                       {profile?.whatsapp ? <ProfileWhatsappLine value={profile.whatsapp} textClassName="text-sm" /> : (
                         <p className="text-sm" style={{ color: C.muted }}>No agregaste un WhatsApp de perfil.</p>
                       )}
@@ -4849,7 +4858,7 @@ export default function FelpusMatcher() {
                 {editingProfile && (
                   <>
                     <div>
-                      <label htmlFor="profile-nombre" className="text-[11px] font-semibold mb-1 block" style={{ color: C.muted }}>Nombre</label>
+                      <label htmlFor="profile-nombre" className="text-[12px] font-semibold mb-1 block" style={{ color: C.muted }}>Nombre</label>
                       <input
                         id="profile-nombre"
                         type="text"
@@ -4861,7 +4870,7 @@ export default function FelpusMatcher() {
                       />
                     </div>
                     <div>
-                      <label htmlFor="profile-whatsapp" className="text-[11px] font-semibold mb-1 block" style={{ color: C.muted }}>
+                      <label htmlFor="profile-whatsapp" className="text-[12px] font-semibold mb-1 block" style={{ color: C.muted }}>
                         WhatsApp (opcional)
                       </label>
                       <PhoneInput
@@ -4872,7 +4881,7 @@ export default function FelpusMatcher() {
                         onChange={setProfilePhoneText}
                         onParsed={setProfilePhoneParsed}
                       />
-                      <p className="text-[11px] mt-1" style={{ color: C.muted }}>
+                      <p className="text-[12px] mt-1" style={{ color: C.muted }}>
                         Se usa como contacto por defecto al publicar una mascota.
                       </p>
                     </div>
@@ -4940,7 +4949,7 @@ export default function FelpusMatcher() {
                 >
                   <item.icon className="w-7 h-7" />
                 </span>
-                <span className="text-[10px] font-bold mt-1" style={{ color: isActive ? C.red : C.muted }}>
+                <span className="text-[11px] font-bold mt-1" style={{ color: isActive ? C.red : C.muted }}>
                   {item.label}
                 </span>
               </button>
@@ -4963,7 +4972,7 @@ export default function FelpusMatcher() {
               >
                 <item.icon className="w-6 h-6 transition-colors duration-200" style={{ color: isActive ? C.red : C.muted }} />
               </span>
-              <span className="text-[10px] font-bold" style={{ color: isActive ? C.red : C.muted }}>
+              <span className="text-[11px] font-bold" style={{ color: isActive ? C.red : C.muted }}>
                 {item.label}
               </span>
             </button>
@@ -5029,30 +5038,28 @@ export default function FelpusMatcher() {
         onAskAssistant={() => setChatOpenToken((t) => t + 1)}
       />
 
-      <footer className="max-w-2xl mx-auto px-4 pb-24 pt-2 space-y-1.5">
+      <footer className="max-w-2xl mx-auto px-4 pb-28 pt-2 space-y-1.5">
         <SocialLinks className="pb-1" />
-        <p className="text-[11px] font-semibold flex items-center gap-1 justify-center" style={{ color: C.greenDark }}>
+        <p className="text-[12px] font-semibold flex items-center gap-1 justify-center" style={{ color: C.greenDark }}>
           <PartyPopper className="w-3.5 h-3.5" /> {resueltas.length} mascotas reencontradas gracias a la comunidad
         </p>
-        <p className="text-[10px] flex items-center gap-1 justify-center" style={{ color: C.muted }}>
-          <HelpCircle className="w-3 h-3" /> Prototipo — no reemplaza denunciar ante autoridades o refugios locales.
+        <p className="text-[12px] leading-snug flex items-start gap-1 justify-center text-center" style={{ color: C.muted }}>
+          <HelpCircle className="w-3.5 h-3.5 shrink-0 mt-px" /> Herramienta comunitaria: no reemplaza la denuncia ante autoridades o refugios.
         </p>
         {/* Enlaces legales — únicos dos links de "salida" de la SPA (todo el
             resto navega con goToTab(), sin cambiar de ruta), por eso van acá
             en vez de ocupar un lugar en la bottom nav de 4 ítems. */}
-        <p className="text-[10px] flex items-center gap-1.5 justify-center pt-0.5" style={{ color: C.muted }}>
+        <p className="text-[12px] flex flex-wrap items-center gap-x-3 justify-center pt-0.5" style={{ color: C.muted }}>
           {/* Link interno a la página local de SEO (/mascotas-perdidas/salta):
               sin un enlace desde el home, Google la descubre solo por el
               sitemap y le da mucho menos peso. */}
-          <Link href="/mascotas-perdidas/salta" className="underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded">
+          <Link href="/mascotas-perdidas/salta" className="inline-block py-2.5 whitespace-nowrap underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded">
             Mascotas perdidas en Salta
           </Link>
-          <span aria-hidden="true">·</span>
-          <Link href="/privacidad" className="underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded">
+          <Link href="/privacidad" className="inline-block py-2.5 whitespace-nowrap underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded">
             Política de Privacidad
           </Link>
-          <span aria-hidden="true">·</span>
-          <Link href="/terminos" className="underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded">
+          <Link href="/terminos" className="inline-block py-2.5 whitespace-nowrap underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded">
             Términos y Condiciones
           </Link>
         </p>
