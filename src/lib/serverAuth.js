@@ -3,7 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 // Usuario real de la sesión (token "Authorization: Bearer" de Supabase Auth),
 // verificado contra Supabase — nunca se confía en un user_id que mande el
 // cliente. Mismo criterio que api/create-report y api/subscribe-push.
-export async function getAuthUserId(request, { supabaseUrl, serviceKey, fetchImpl = fetch } = {}) {
+export async function getAuthUser(request, { supabaseUrl, serviceKey, fetchImpl = fetch } = {}) {
   const header = request.headers.get("authorization") || "";
   if (!header.startsWith("Bearer ") || !supabaseUrl || !serviceKey) return null;
   try {
@@ -12,10 +12,15 @@ export async function getAuthUserId(request, { supabaseUrl, serviceKey, fetchImp
     });
     if (!res.ok) return null;
     const user = await res.json();
-    return typeof user?.id === "string" ? user.id : null;
+    if (typeof user?.id !== "string") return null;
+    return { id: user.id, email: typeof user.email === "string" ? user.email.toLowerCase() : null };
   } catch {
     return null;
   }
+}
+
+export async function getAuthUserId(request, env) {
+  return (await getAuthUser(request, env))?.id || null;
 }
 
 // Comparación de tiempo constante para secretos de webhook.
