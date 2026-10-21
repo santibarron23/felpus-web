@@ -1,8 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { loadGoogleMaps, observeMapResize } from "../lib/googleMaps";
-import { requestLocation, geolocationErrorMessage, MAP_GEOLOCATION_OPTIONS } from "../lib/geolocation";
+import { loadGoogleMaps, observeMapResize, onMapsAuthFailure } from "../lib/googleMaps";
+import {
+  requestLocation,
+  geolocationErrorMessage,
+  isInAppBrowser,
+  MAP_GEOLOCATION_OPTIONS,
+  OPEN_IN_BROWSER_HINT,
+} from "../lib/geolocation";
 import { CITIES } from "../lib/cities";
 
 // Sin ubicación de la persona ni defaultCenter: Salta, donde está la
@@ -15,7 +21,20 @@ import { useTheme } from "./felpus/ThemeProvider";
 // funcionando igual con el botón "Ubicación" (geolocalización del navegador).
 // radiusM (opcional): dibuja un círculo con ese radio alrededor del punto
 // confirmado — lo usa /configuracion/alertas para mostrar la zona.
-export default function MapPicker({ lat, lng, onChange, defaultCenter, radiusM = null }) {
+// fallbackActions (opcional): si el mapa no carga, ofrece igual marcar el
+// punto con el GPS o, si hay defaultCenterLabel, con el centro de esa
+// ciudad — para pantallas como /configuracion/alertas donde el mapa es la
+// ÚNICA forma de elegir la zona (en el formulario de reporte ya existe el
+// botón "Ubicación" aparte, por eso no es el default).
+export default function MapPicker({
+  lat,
+  lng,
+  onChange,
+  defaultCenter,
+  radiusM = null,
+  fallbackActions = false,
+  defaultCenterLabel = null,
+}) {
   const C = useTheme();
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const containerRef = useRef(null);
@@ -47,6 +66,13 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter, radiusM =
     if (!apiKey) return;
     let cancelled = false;
     let stopResizeObserver = null;
+
+    // Key rechazada por Google (dominio no autorizado, API apagada…): el
+    // script carga igual, así que el mapa llega a "ready" y recién después
+    // falla. Se pasa a "error" para mostrar el aviso propio con alternativas.
+    const stopAuthFailure = onMapsAuthFailure(() => {
+      if (!cancelled) setStatus("error");
+    });
 
     loadGoogleMaps(apiKey)
       .then((maps) => {
@@ -104,6 +130,7 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter, radiusM =
 
     return () => {
       cancelled = true;
+      stopAuthFailure();
       if (stopResizeObserver) stopResizeObserver();
     };
     // Sólo se inicializa una vez con la key disponible.
@@ -181,6 +208,20 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter, radiusM =
     );
   }
 
+  // Sin mapa no hay pin para "proponer": el GPS es una fuente precisa, así
+  // que se confirma directo (igual que el botón "Ubicación" del formulario).
+  function locateWithoutMap() {
+    setGeoState("locating");
+    requestLocation(
+      (pos) => {
+        setGeoState("idle");
+        onChangeRef.current(pos.lat, pos.lng);
+      },
+      (err) => setGeoState(geolocationErrorMessage(err)),
+      MAP_GEOLOCATION_OPTIONS
+    );
+  }
+
   function cancelPending() {
     setPending(null);
     if (markerObjRef.current) {
@@ -194,6 +235,12 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter, radiusM =
     }
   }
 
+  const geoMessage = geoState !== "idle" && geoState !== "locating" && (
+    <p className="text-[12px] mt-1" style={{ color: C.redDark }} role="alert">
+      {geoState}
+    </p>
+  );
+
   if (!apiKey) {
     return (
       <div className="text-xs rounded-lg border p-3" style={{ borderColor: C.border, color: C.muted }}>
@@ -205,10 +252,46 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter, radiusM =
   }
 
   if (status === "error") {
+    const inApp = isInAppBrowser();
+    const hasPoint = lat != null && lng != null;
     return (
-      <div className="text-xs rounded-lg border p-3" style={{ borderColor: C.border, color: C.redDark }}>
-        No se pudo cargar Google Maps. Revisá que la clave sea válida y que la Maps JavaScript API esté
-        habilitada en tu proyecto de Google Cloud.
+      <div className="rounded-xl border p-3" style={{ borderColor: C.border, background: C.surfaceSubtle }} role="status">
+        <p className="text-[13px] font-semibold" style={{ color: C.text }}>
+          No pudimos cargar el mapa en este navegador.
+        </p>
+        <p className="text-[12px] mt-1" style={{ color: C.muted }}>
+          {inApp ? `Pasa seguido en el navegador de Instagram o Facebook. ${OPEN_IN_BROWSER_HINT}` : "Probá recargar la página."}
+          {fallbackActions && " Mientras tanto podés marcar la zona así:"}
+        </p>
+        {fallbackActions && (
+          <div className="mt-2 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={locateWithoutMap}
+              disabled={geoState === "locating"}
+              className="w-full text-[12px] font-bold rounded-lg py-2 border disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+              style={{ borderColor: C.border, color: C.text, background: C.surface }}
+            >
+              {geoState === "locating" ? "Buscando tu ubicación…" : "📍 Usar mi ubicación actual"}
+            </button>
+            {defaultCenter && defaultCenterLabel && (
+              <button
+                type="button"
+                onClick={() => onChangeRef.current(defaultCenter.lat, defaultCenter.lng)}
+                className="w-full text-[12px] font-bold rounded-lg py-2 border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                style={{ borderColor: C.border, color: C.text, background: C.surface }}
+              >
+                🏙️ Usar el centro de {defaultCenterLabel}
+              </button>
+            )}
+          </div>
+        )}
+        {geoMessage}
+        {fallbackActions && hasPoint && (
+          <p className="text-[12px] mt-2 font-semibold" style={{ color: C.greenSolid }}>
+            ✓ Zona marcada. Elegí el radio abajo y guardá.
+          </p>
+        )}
       </div>
     );
   }
@@ -233,11 +316,7 @@ export default function MapPicker({ lat, lng, onChange, defaultCenter, radiusM =
           {geoState === "locating" ? "Buscando tu ubicación…" : "📍 Ir a mi ubicación"}
         </button>
       )}
-      {geoState !== "idle" && geoState !== "locating" && (
-        <p className="text-[12px] mt-1" style={{ color: C.redDark }} role="alert">
-          {geoState}
-        </p>
-      )}
+      {geoMessage}
       {pending ? (
         <div className="mt-2 flex items-center gap-2 rounded-lg p-2.5" style={{ background: C.surfaceSubtle, border: `1px solid ${C.border}` }}>
           <span className="text-[12px] flex-1" style={{ color: C.muted }}>¿Confirmás esta ubicación?</span>

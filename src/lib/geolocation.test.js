@@ -44,3 +44,30 @@ describe("requestLocation con opciones de mapa", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("navegador interno de apps (Instagram, Facebook…)", () => {
+  const IG_IOS =
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 390.0.0.27.83 (iPhone15,2; iOS 18_5; es_AR; es; scale=3.00; 1179x2556; 742218154)";
+  const FB_IOS =
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/500.0.0.0;FBBV/1;FBDV/iPhone15,2;FBMD/iPhone;FBSN/iOS;FBSV/18.5;FBSS/3;FBLC/es_LA]";
+  const SAFARI_IOS =
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1";
+
+  it("detecta Instagram y Facebook, no Safari", async () => {
+    const { isInAppBrowser } = await import("./geolocation");
+    expect(isInAppBrowser(IG_IOS)).toBe(true);
+    expect(isInAppBrowser(FB_IOS)).toBe(true);
+    expect(isInAppBrowser(SAFARI_IOS)).toBe(false);
+    expect(isInAppBrowser("")).toBe(false);
+  });
+
+  it("permiso denegado dentro de Instagram: sugiere abrir en Safari/Chrome, no el candado", () => {
+    const msg = geolocationErrorMessage({ code: 1 }, IG_IOS);
+    expect(msg).toMatch(/Safari o Chrome/);
+    expect(msg).not.toMatch(/candado/);
+  });
+
+  it("permiso denegado en Safari: sigue explicando el candado", () => {
+    expect(geolocationErrorMessage({ code: 1 }, SAFARI_IOS)).toMatch(/candado/);
+  });
+});

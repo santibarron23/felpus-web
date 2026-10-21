@@ -28,8 +28,25 @@ export const MAP_GEOLOCATION_OPTIONS = { timeout: 15000, maximumAge: 10 * 60 * 1
 // un intento anterior (el navegador recuerda esa decisión y no vuelve a
 // preguntar) — un bug real de UX, no de código, que sin este mensaje
 // específico es indistinguible de "tu ubicación no está disponible ahora".
-export function geolocationErrorMessage(err) {
+// Navegadores internos de apps (Instagram, Facebook, TikTok, etc.): ahí la
+// ubicación suele venir bloqueada de fábrica (sin cartel para permitirla) y
+// el candado junto a la dirección no existe, así que el consejo útil es
+// abrir el sitio en Safari/Chrome. Caso real (2026-10-21): link compartido
+// en Instagram, abierto desde un iPhone.
+const IN_APP_BROWSER_RE = /Instagram|FBAN|FBAV|FB_IAB|FBIOS|Messenger|TikTok|musical_ly|BytedanceWebview|Line\/|Snapchat|Twitter/i;
+
+export function isInAppBrowser(ua = typeof navigator !== "undefined" ? navigator.userAgent : "") {
+  return IN_APP_BROWSER_RE.test(ua || "");
+}
+
+export const OPEN_IN_BROWSER_HINT =
+  "Abrí felpus.com en Safari o Chrome (en el menú ··· de arriba, \"Abrir en el navegador\").";
+
+export function geolocationErrorMessage(err, ua) {
   const code = err?.code;
+  if (code === 1 && isInAppBrowser(ua)) {
+    return `El navegador de esta app (Instagram, Facebook…) no deja compartir tu ubicación. ${OPEN_IN_BROWSER_HINT}`;
+  }
   if (code === 1) {
     return "Bloqueaste el acceso a tu ubicación en este navegador. Para arreglarlo: tocá el ícono de candado/información junto a la dirección del sitio y permití \"Ubicación\".";
   }

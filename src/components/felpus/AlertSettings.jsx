@@ -206,6 +206,8 @@ export default function AlertSettings({ initialLat = null, initialLng = null }) 
                   defaultCenter={CITIES.salta.geo}
                   radiusM={radius}
                   onChange={(lat, lng) => setPoint({ lat, lng })}
+                  fallbackActions
+                  defaultCenterLabel={CITIES.salta.name}
                 />
               </div>
 

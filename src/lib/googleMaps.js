@@ -2,6 +2,41 @@ import { logError } from "./log";
 
 let mapsLoadingPromise = null;
 
+// Google Maps NO rechaza la promesa de carga cuando la key es inválida o no
+// autoriza el dominio (RefererNotAllowedMapError, ApiNotActivatedMapError,
+// etc.): el script carga bien y, segundos después, la librería llama a
+// window.gm_authFailure y pinta su propio cartel gris "Se ha producido un
+// error" encima del mapa. Caso real (2026-10-21): visto en un iPhone desde
+// el navegador interno de Instagram en /configuracion/alertas. Se captura
+// acá para (1) mostrar un aviso propio con alternativas en vez de ese
+// cartel y (2) dejar en error_logs la URL exacta y el navegador, que es lo
+// que hace falta para saber qué referrer autorizar en Google Cloud.
+let mapsAuthFailed = false;
+const authFailureListeners = new Set();
+
+function installAuthFailureHandler() {
+  if (typeof window === "undefined" || window.gm_authFailure) return;
+  window.gm_authFailure = () => {
+    mapsAuthFailed = true;
+    logError(
+      `Google Maps rechazó la key (gm_authFailure) en ${window.location.origin}${window.location.pathname}`,
+      new Error(`UA: ${navigator.userAgent}`)
+    );
+    authFailureListeners.forEach((cb) => cb());
+  };
+}
+
+// Suscribe cb al rechazo de la key; si ya pasó, lo llama enseguida.
+// Devuelve la función para desuscribirse.
+export function onMapsAuthFailure(cb) {
+  if (mapsAuthFailed) {
+    cb();
+    return () => {};
+  }
+  authFailureListeners.add(cb);
+  return () => authFailureListeners.delete(cb);
+}
+
 // Carga el script de Google Maps (con las librerías "places", para el
 // autocompletado de zona vía PlaceAutocompleteElement — la API nueva, no la
 // legacy que rompía toda la sesión compartida — y "marker", para los
@@ -10,6 +45,7 @@ let mapsLoadingPromise = null;
 // ReportsMap, ZonaAutocomplete, etc).
 export function loadGoogleMaps(apiKey) {
   if (typeof window === "undefined") return Promise.reject(new Error("no window"));
+  installAuthFailureHandler();
   if (window.google?.maps?.places && window.google?.maps?.marker) return Promise.resolve(window.google.maps);
   if (mapsLoadingPromise) return mapsLoadingPromise;
   mapsLoadingPromise = new Promise((resolve, reject) => {
