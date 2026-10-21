@@ -45,6 +45,7 @@ import {
   Pencil,
   MessageCircle,
   Download,
+  Star,
 } from "lucide-react";
 import {
   normalizeText,
@@ -1606,18 +1607,19 @@ export default function FelpusMatcher() {
       setFormError(`La foto pesa demasiado — subí una de menos de ${MAX_FOTO_MB}MB.`);
       return;
     }
-    const idx = form.fotos.length;
     try {
       const dataUrl = await resizeImageFile(file);
       const hist = await computeHistogram(dataUrl);
       setForm((f) => ({ ...f, fotos: [...f.fotos, { dataUrl, hist, embedding: null }] }));
       setVisionStatus("analyzing");
       const embedding = await getImageEmbedding(dataUrl);
-      setForm((f) => {
-        const fotos = [...f.fotos];
-        if (fotos[idx]) fotos[idx] = { ...fotos[idx], embedding };
-        return { ...f, fotos };
-      });
+      // Se busca la foto por su dataUrl y no por posición: mientras se
+      // calcula el embedding la persona puede quitar o reordenar fotos
+      // ("Hacer principal"), y el índice original ya no sería esta foto.
+      setForm((f) => ({
+        ...f,
+        fotos: f.fotos.map((foto) => (foto.dataUrl === dataUrl ? { ...foto, embedding } : foto)),
+      }));
       setVisionStatus(embedding ? "ai" : "basic");
     } catch (err) {
       logError(err);
@@ -1651,6 +1653,13 @@ export default function FelpusMatcher() {
 
   function handleRemovePhoto(index) {
     setForm((f) => ({ ...f, fotos: f.fotos.filter((_, i) => i !== index) }));
+  }
+
+  // La primera foto es la principal: la de la tarjeta, el mapa, al
+  // compartir y la que usa el matching (ver store.js). Mismo criterio que
+  // "Hacer principal" en el panel de admin (AdminEditReport).
+  function handleMakeMainPhoto(index) {
+    setForm((f) => ({ ...f, fotos: [f.fotos[index], ...f.fotos.filter((_, i) => i !== index)] }));
   }
 
   // Nota: este campo usaba antes google.maps.places.Autocomplete (legacy)
@@ -2733,6 +2742,11 @@ export default function FelpusMatcher() {
                 <p className="text-[12px] mb-1.5" style={{ color: C.muted }}>
                   Una foto real de la mascota, tal cual es — no un cartel armado ni una imagen generada.
                 </p>
+                {form.fotos.length > 1 && (
+                  <p className="text-[12px] mb-1.5" style={{ color: C.muted }}>
+                    La primera es la principal (la que se ve en la tarjeta). Tocá la ☆ de otra foto para cambiarla.
+                  </p>
+                )}
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -2751,6 +2765,22 @@ export default function FelpusMatcher() {
                           agregaría overhead. */}
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={foto.dataUrl} alt={`Foto ${i + 1} de la mascota que estás reportando`} className="w-full h-full object-cover" />
+                      {form.fotos.length > 1 &&
+                        (i === 0 ? (
+                          <span className="absolute top-1 left-1 text-[11px] font-bold text-white rounded-full px-2 py-0.5" style={{ background: C.redSolid }}>
+                            Principal
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleMakeMainPhoto(i)}
+                            aria-label={`Hacer principal la foto ${i + 1}`}
+                            title="Hacer principal"
+                            className="absolute top-1 left-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center"
+                          >
+                            <Star className="w-3.5 h-3.5" aria-hidden="true" />
+                          </button>
+                        ))}
                       <button
                         type="button"
                         onClick={() => handleRemovePhoto(i)}
