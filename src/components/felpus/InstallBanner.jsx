@@ -106,7 +106,7 @@ export default function InstallBanner() {
       style={{ background: C.surface, borderColor: C.border, bottom: "calc(96px + env(safe-area-inset-bottom, 0px))" }}
     >
       <div className="flex items-start gap-2.5">
-        <Image src="/assets/icon-192.png" alt="" width={36} height={36} className="w-9 h-9 rounded-xl shrink-0" />
+        <Image src="/assets/icon-192.png" alt="" width={36} height={36} unoptimized className="w-9 h-9 rounded-xl shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-[13px] font-bold" style={{ color: C.text }}>
             Tené Felpus a mano

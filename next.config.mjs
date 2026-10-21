@@ -104,17 +104,38 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ["lucide-react"],
   },
+  // Optimización de imágenes (2026-10-21): se consumían ~4.500 de las 5.000
+  // transformaciones gratis de Vercel por mes. Causas y números en
+  // docs/IMAGENES.md. Resumen de cada opción:
   images: {
-    remotePatterns: [
-      supabasePhotosPattern,
-      // Avatar de Google (googleAvatar en useAuth.js) — mismo host que ya
-      // está permitido en el CSP img-src de acá arriba, ahora también
-      // habilitado para next/image.
-      {
-        protocol: "https",
-        hostname: "**.googleusercontent.com",
-      },
-    ],
+    // Solo las fotos de reportes pasan por el optimizador. El avatar de
+    // Google ya no (unoptimized en el componente: Google lo sirve chico,
+    // =s96-c), y sacar "**.googleusercontent.com" de acá cierra además un
+    // agujero: cualquiera podía pedir /_next/image?url=<cualquier archivo
+    // de googleusercontent> y gastar la cuota de Felpus.
+    remotePatterns: [supabasePhotosPattern],
+    // Supabase sirve las fotos con "Cache-Control: max-age=3600", y Next
+    // usa ese valor (el default de minimumCacheTTL es 60 s): Vercel guardaba
+    // cada foto optimizada solo 1 hora y la volvía a transformar en la
+    // siguiente visita. Las fotos nunca cambian (cada subida va a un path
+    // nuevo con un UUID, sin upsert, ver uploadPhoto en store.js), así que
+    // es seguro guardarlas 30 días. Efecto colateral: si se borra un
+    // reporte, su foto optimizada puede seguir sirviéndose desde la caché
+    // de Vercel hasta 30 días para quien ya tenga esa URL exacta (el
+    // original de Supabase sí se borra al instante).
+    minimumCacheTTL: 2592000,
+    // Antes cada foto se ofrecía en 16 anchos (16 a 3840 px) y cada
+    // celular pedía uno distinto según su pantalla: cada ancho es una
+    // transformación aparte. Ahora hay 7, elegidos para lo que de verdad se
+    // muestra: miniaturas de 40-150 px (64/128/256/384) y la foto grande
+    // del detalle (640/828/1080). Las fotos se guardan con 1000 px como
+    // máximo (resizeImageFile), así que pedir más de 1080 no suma nada.
+    imageSizes: [64, 128, 256, 384],
+    deviceSizes: [640, 828, 1080],
+    // Un solo formato y una sola calidad: cada combinación distinta es otra
+    // transformación. WebP lo soportan todos los navegadores actuales.
+    formats: ["image/webp"],
+    qualities: [75],
   },
   async headers() {
     return [
