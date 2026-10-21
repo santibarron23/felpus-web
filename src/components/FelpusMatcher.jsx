@@ -113,6 +113,7 @@ import {
 } from "../lib/store";
 import { usersReportToCsv } from "../lib/csv";
 import { petTitle } from "../lib/petTitle";
+import { zonaConCiudad } from "../lib/zona";
 import { playTap, playSuccess } from "../lib/sound";
 import { loadGoogleMaps, reverseGeocodeLatLng } from "../lib/googleMaps";
 import { requestLocation, geolocationErrorMessage } from "../lib/geolocation";
@@ -3503,7 +3504,7 @@ export default function FelpusMatcher() {
                             )}
                             <p className="text-sm font-semibold mt-1 truncate" style={{ color: C.text }}>{displayColor(m.report)} · {m.report.tamano}</p>
                             <p className="text-[12px] flex items-center gap-1" style={{ color: C.muted }}>
-                              <MapPin className="w-3 h-3" /> {m.report.zona} · {m.distanceLabel}
+                              <MapPin className="w-3 h-3" /> {zonaConCiudad(m.report)} · {m.distanceLabel}
                             </p>
                             <p className="text-[11px] font-semibold" style={{ color: scoreLabel(m.score, C).color }}>{scoreLabel(m.score, C).text}</p>
                           </div>
@@ -3822,7 +3823,7 @@ export default function FelpusMatcher() {
                             </div>
                             <Image src={m.report.foto} alt={reportPhotoAlt(m.report)} width={40} height={40} loading="lazy" className="w-10 h-10 rounded-lg object-cover bg-white dark:bg-[var(--felpus-dark-card)]" />
                             <div className="min-w-0 flex-1">
-                              <p className="text-xs font-semibold truncate" style={{ color: C.text }}>{displayColor(m.report)} · {m.report.zona}</p>
+                              <p className="text-xs font-semibold truncate" style={{ color: C.text }}>{displayColor(m.report)} · {zonaConCiudad(m.report)}</p>
                               <p className="text-[11px]" style={{ color: C.muted }}>{m.distanceLabel}</p>
                             </div>
                             <ChevronRight className="w-3.5 h-3.5 shrink-0" style={{ color: C.muted }} />
@@ -4329,7 +4330,7 @@ export default function FelpusMatcher() {
                           <p className="text-sm font-bold truncate" style={{ color: C.text }}>
                             {petTitle(f)}
                           </p>
-                          <p className="text-xs truncate" style={{ color: C.muted }}>{f.zona} · {f.tipo}</p>
+                          <p className="text-xs truncate" style={{ color: C.muted }}>{zonaConCiudad(f)} · {f.tipo}</p>
                           <p className="text-[12px] mt-0.5 flex items-center gap-1" style={{ color: C.redDark }}>
                             <AlertTriangle className="w-3 h-3 shrink-0" />
                             {f.flagCount} denuncia{f.flagCount === 1 ? "" : "s"} · {f.distinctIps} IP{f.distinctIps === 1 ? "" : "s"} distinta{f.distinctIps === 1 ? "" : "s"}
@@ -4444,7 +4445,7 @@ export default function FelpusMatcher() {
                         {petTitle(r)}
                       </p>
                       <p className="text-xs truncate" style={{ color: C.muted }}>
-                        {r.zona} · {r.tipo}
+                        {zonaConCiudad(r)} · {r.tipo}
                         {r.resuelto ? " · reencontrada" : ""}
                       </p>
                       {r.oculto && (
@@ -4685,7 +4686,7 @@ export default function FelpusMatcher() {
                                   />
                                   <div className="min-w-0 flex-1">
                                     <p className="text-xs font-semibold truncate" style={{ color: C.text }}>
-                                      {displayColor(m.report)} · {m.report.zona}
+                                      {displayColor(m.report)} · {zonaConCiudad(m.report)}
                                     </p>
                                     <p className="text-[11px]" style={{ color: C.muted }}>{m.distanceLabel}</p>
                                   </div>

@@ -58,6 +58,11 @@ export const C = {
   // más que naranja.
   orangeInkSolid: "#D45516",
   greenSolid: "#2F7955",
+  // Pin de "encontrada" en el mapa (2026-10-21, a pedido): el naranja se
+  // confundía con el rojo de "perdida" en fotos chicas sobre el mapa. Azul
+  // es el opuesto del rojo y se distingue también con daltonismo
+  // (rojo-verde). 6.1:1 sobre blanco.
+  mapFound: "#1F5FD6",
 
   // --- Neutros cálidos ---
   ink: "#382C25",

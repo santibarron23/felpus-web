@@ -11,6 +11,7 @@ import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import { petTitle } from "../../lib/petTitle";
+import { zonaConCiudad } from "../../lib/zona";
 import {
   Cat,
   Dog,
@@ -207,7 +208,7 @@ export function ReportCard({ report, onOpenDetail, saved, onToggleSaved, childre
             {report.nombre ? <span className="font-normal" style={{ color: C.muted }}> · {displayColor(report)}</span> : null}
           </p>
           <p className="text-xs flex items-center gap-1 mt-0.5" style={{ color: C.muted }}>
-            <MapPin className="w-3 h-3" /> {report.zona} · {report.tamano}
+            <MapPin className="w-3 h-3" /> {zonaConCiudad(report)} · {report.tamano}
             {report.edad ? ` · ${report.edad}` : ""}
             {report._dist != null && report._dist !== Infinity && (
               <span className="felpus-mono">· {report._dist.toFixed(1)} km de vos</span>
@@ -234,7 +235,7 @@ export function ReportCard({ report, onOpenDetail, saved, onToggleSaved, childre
 // mano en Felpus.
 function contactMessage(report) {
   const nombre = report.nombre || `un/a ${report.especie}`;
-  return `Hola! Vi en Felpus tu publicación de ${nombre} en ${report.zona}. Creo que puedo ayudar.\n${SITE_URL}/r/${report.id}`;
+  return `Hola! Vi en Felpus tu publicación de ${nombre} en ${zonaConCiudad(report)}. Creo que puedo ayudar.\n${SITE_URL}/r/${report.id}`;
 }
 
 export function DetailModal({ report, contactStatus, onRetryContact, onClose, onResolve, confirming, resolving, onConfirm, onCancelConfirm, isLoggedIn, isOwner, onDelete, onFlagReport, saved, onToggleSaved, onAskAssistant }) {
@@ -275,7 +276,7 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
   const mapsUrl =
     report.lat != null && report.lng != null
       ? `https://www.google.com/maps?q=${report.lat},${report.lng}`
-      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(report.zona)}`;
+      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([report.zona, report.ciudad].filter(Boolean).join(", "))}`;
 
   async function handleDownloadFlyer() {
     setGeneratingFlyer(true);
@@ -394,7 +395,7 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
               <p className="text-[11px] uppercase font-bold flex items-center gap-1" style={{ color: C.muted }}>
                 <MapPin className="w-3 h-3" /> Zona
               </p>
-              <p className="underline" style={{ color: C.text }}>{report.zona}</p>
+              <p className="underline" style={{ color: C.text }}>{zonaConCiudad(report)}</p>
             </a>
             <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
               <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>Fecha</p>
