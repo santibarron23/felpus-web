@@ -674,6 +674,7 @@ export function reportCard(r) {
     tamano: r.tamano,
     raza: r.raza,
     zona: r.zona,
+    ciudad: r.ciudad || "",
     fecha: r.fecha || (r.creadoEn ? new Date(r.creadoEn).toISOString().slice(0, 10) : null),
     foto: typeof r.foto === "string" && r.foto.startsWith("https://") ? r.foto : "",
     resuelto: r.resuelto === true,

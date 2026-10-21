@@ -15,7 +15,7 @@ export function generateStaticParams() {
 
 // Mismas columnas públicas que r/[id]/page.js (nunca "*": ver el comentario
 // de REPORT_OG_COLUMNS ahí — pedir columnas sin grant tira 401 entero).
-const COLUMNS = "id,tipo,especie,nombre,zona,descripcion,foto_url,resuelto,creado_en";
+const COLUMNS = "id,tipo,especie,nombre,zona,ciudad,descripcion,foto_url,resuelto,creado_en";
 
 async function fetchCityReports(city) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

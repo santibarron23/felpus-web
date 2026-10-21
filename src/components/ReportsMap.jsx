@@ -7,6 +7,7 @@ import { loadGoogleMaps, observeMapResize } from "../lib/googleMaps";
 import { logError } from "../lib/log";
 import { requestLocation, MAP_GEOLOCATION_OPTIONS } from "../lib/geolocation";
 import { CITIES } from "../lib/cities";
+import { zonaConCiudad } from "../lib/zona";
 import { useTheme } from "./felpus/ThemeProvider";
 
 // Mapa de sólo lectura que pinta un marcador por cada reporte que tenga
@@ -120,12 +121,14 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
           // se había reemplazado en theme.js por no pasar contraste AA (ver
           // C.orangeInk). Este mapa tenía su propia copia suelta del valor
           // viejo, sin importar el tema, así que el fix nunca le llegó.
-          const color = r.tipo === "perdida" ? C.red : C.orangeInk;
-          const label = `${r.tipo === "perdida" ? "Perdida" : "Encontrada"} · ${r.zona}`;
+          // Encontrada en azul (C.mapFound): el naranja de antes se confundía
+          // con el rojo de "perdida" en los pines chicos.
+          const color = r.tipo === "perdida" ? C.redSolid : C.mapFound;
+          const label = `${r.tipo === "perdida" ? "Perdida" : "Encontrada"} · ${zonaConCiudad(r)}`;
           const pin = document.createElement("div");
           pin.style.cssText = `
             width: 40px; height: 40px; border-radius: 9999px; overflow: hidden;
-            border: 3px solid ${color}; background: #fff; cursor: pointer;
+            border: 4px solid ${color}; background: #fff; cursor: pointer;
             box-shadow: 0 2px 6px rgba(0,0,0,0.35);
           `;
           // role="button" + tabIndex para que el pin sea alcanzable y
@@ -212,6 +215,20 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
         >
           <Bell className="w-3.5 h-3.5" aria-hidden="true" style={{ color: C.red }} /> Vigilar esta zona
         </Link>
+      )}
+      {status === "ready" && (
+        <div
+          className="absolute bottom-2 left-2 flex items-center gap-3 rounded-full px-3 py-1.5 text-xs font-bold shadow-md border"
+          style={{ background: C.surface, borderColor: C.border, color: C.text }}
+          aria-hidden="true"
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-full" style={{ background: C.redSolid }} /> Perdida
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-full" style={{ background: C.mapFound }} /> Encontrada
+          </span>
+        </div>
       )}
     </div>
   );

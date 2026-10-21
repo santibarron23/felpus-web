@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, MapPin, PawPrint, Search, Share2, Stethoscope, Camera } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
 import SocialLinks from "./SocialLinks";
+import { zonaConCiudad } from "../../lib/zona";
 
 // Vista de /mascotas-perdidas/<ciudad> — mismo lenguaje visual que
 // LegalPage.jsx (header con logo, tarjetas felpus-display, paleta vía
@@ -55,7 +56,7 @@ function ReportCard({ r, C }) {
             {titulo}
           </h3>
           <p className="text-xs flex items-center gap-1 truncate" style={{ color: C.muted }}>
-            <MapPin className="w-3 h-3 shrink-0" /> {r.zona}
+            <MapPin className="w-3 h-3 shrink-0" /> {zonaConCiudad(r)}
           </p>
           {r.descripcion && (
             <p className="text-xs mt-0.5 line-clamp-2" style={{ color: C.text }}>

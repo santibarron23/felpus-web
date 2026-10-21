@@ -25,6 +25,7 @@ import {
 import { emptyDraft, normalizeDraft, isDraftEmpty, composeDraftDescription, draftToFormFields, detectRegion, MAX_USER_CHARS } from "../../lib/chatbot";
 import { COLOR_OPTIONS, TAMANO_OPTIONS, EDAD_OPTIONS, MAX_FOTOS, resizeImageFile, computeHistogram, formatFechaAR } from "../../lib/matching";
 import { logError } from "../../lib/log";
+import { zonaConCiudad } from "../../lib/zona";
 import { loadGoogleMaps, reverseGeocodeLatLng } from "../../lib/googleMaps";
 import { requestLocation, geolocationErrorMessage, MAP_GEOLOCATION_OPTIONS } from "../../lib/geolocation";
 
@@ -770,7 +771,7 @@ function ResultCard({ C, card, kind, onOpen }) {
         onClick={onOpen}
         className="w-full flex gap-3 p-2.5 rounded-2xl border text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
         style={{ background: C.surface, borderColor: C.border }}
-        aria-label={`Ver la publicación: ${titulo}${card.zona ? `, ${card.zona}` : ""}`}
+        aria-label={`Ver la publicación: ${titulo}${card.zona ? `, ${zonaConCiudad(card)}` : ""}`}
       >
         <span className="relative w-16 h-16 shrink-0 rounded-xl overflow-hidden" style={{ background: C.surfaceMuted }}>
           {card.foto ? (
@@ -789,7 +790,7 @@ function ResultCard({ C, card, kind, onOpen }) {
             </span>
           )}
           <span className="block text-xs truncate" style={{ color: C.muted }}>
-            {[card.zona, card.fecha ? formatFechaAR(card.fecha) : null].filter(Boolean).join(" · ")}
+            {[zonaConCiudad(card), card.fecha ? formatFechaAR(card.fecha) : null].filter(Boolean).join(" · ")}
           </span>
           <span className="flex items-center gap-2 mt-0.5 text-[12px] font-bold">
             {kind === "matches" && card.probabilidad && <span style={{ color: probColor }}>{PROB_LABEL[card.probabilidad]}</span>}
