@@ -154,6 +154,25 @@ const nextConfig = {
       "node_modules/onnxruntime-common/**",
     ],
   },
+  // felpus-web.vercel.app → felpus.com (2026-10-21): links viejos o
+  // compartidos desde el dominio de Vercel (ej. en Instagram) abrían la app
+  // en otro origen — con su propio localStorage, sesión y permisos (GPS,
+  // notificaciones) aparte de felpus.com, y duplicado para Google. Solo ese
+  // host exacto: los previews de cada PR (felpus-web-git-*.vercel.app)
+  // siguen funcionando. /api queda afuera para no romper llamadas
+  // server-to-server (webhooks, crons) que todavía apunten a ese dominio,
+  // y sw.js para no cortar las suscripciones push ya hechas en ese origen.
+  // 307 (no permanente) para que sea reversible sin caché en los navegadores.
+  async redirects() {
+    return [
+      {
+        source: "/:path((?!api/|sw\\.js$).*)",
+        has: [{ type: "host", value: "felpus-web.vercel.app" }],
+        destination: "https://felpus.com/:path",
+        permanent: false,
+      },
+    ];
+  },
   async headers() {
     return [
       {
