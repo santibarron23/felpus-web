@@ -4955,7 +4955,9 @@ export default function FelpusMatcher() {
       <nav
         className="fixed bottom-0 left-0 right-0 bg-white dark:bg-[var(--felpus-dark-muted-surface)] rounded-t-[28px] flex items-stretch justify-around z-40 px-2"
         style={{
-          paddingBottom: "env(safe-area-inset-bottom, 0px)",
+          // +6px abajo (2026-10-22): en iPhone la barra se veía muy baja,
+          // pegada al borde de la pantalla.
+          paddingBottom: "calc(6px + env(safe-area-inset-bottom, 0px))",
           // La sombra flotante (pensada para separar una barra BLANCA del
           // contenido de abajo) es invisible en dark mode — oscuro sobre
           // oscuro. Ahí, un borde superior nítido cumple el mismo trabajo de
@@ -4998,7 +5000,7 @@ export default function FelpusMatcher() {
                 playTap();
                 goToTab(item.id);
               }}
-              className="flex flex-col items-center justify-center gap-1 py-2.5 px-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50 rounded-xl"
+              className="flex flex-col items-center justify-center gap-1 py-3.5 px-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50 rounded-xl"
               aria-label={item.label}
               aria-current={isActive ? "page" : undefined}
             >

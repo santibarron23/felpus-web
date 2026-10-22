@@ -103,7 +103,7 @@ export default function InstallBanner() {
       role="region"
       aria-label="Instalar Felpus"
       className="felpus-fadein fixed left-4 right-20 sm:right-auto sm:max-w-sm z-30 rounded-2xl border shadow-lg p-3"
-      style={{ background: C.surface, borderColor: C.border, bottom: "calc(96px + env(safe-area-inset-bottom, 0px))" }}
+      style={{ background: C.surface, borderColor: C.border, bottom: "calc(110px + env(safe-area-inset-bottom, 0px))" }}
     >
       <div className="flex items-start gap-2.5">
         <Image src="/assets/icon-192.png" alt="" width={36} height={36} unoptimized className="w-9 h-9 rounded-xl shrink-0" />
