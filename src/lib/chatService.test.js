@@ -190,6 +190,19 @@ describe("pending (botones de respuesta rápida)", () => {
     const r = await runChat({ ...base, context: { ...base.context, skipped: ["sexo"] }, client, readReports: vi.fn(async () => []) });
     expect(r.pending).toBe("nombre");
   });
+  it("con el borrador vacío, si pregunta perdida/encontrada muestra esos botones (visto en un iPhone)", async () => {
+    const r = await runChat({
+      ...base,
+      messages: [{ role: "user", content: "Ayudame a completar el reporte" }],
+      client: fakeClient([text("Dale, te ayudo. Contame primero: ¿perdiste una mascota o encontraste una?")]),
+      readReports: vi.fn(),
+    });
+    expect(r.pending).toBe("tipo");
+  });
+  it("con el borrador vacío y una pregunta que no es un dato, no manda botones", async () => {
+    const r = await runChat({ ...base, client: fakeClient([text("¡Hola! ¿En qué te puedo ayudar?")]), readReports: vi.fn() });
+    expect(r.pending).toBeUndefined();
+  });
   it("sin trabajar el borrador no manda botones", async () => {
     const r = await runChat({ ...base, client: fakeClient([text("¡Hola!")]), readReports: vi.fn() });
     expect(r.pending).toBeUndefined();
