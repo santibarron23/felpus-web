@@ -45,7 +45,7 @@ export function RankingMeCard({ me, name, avatarUrl, ubicacion }) {
       <div className="min-w-0 flex-1">
         <p className="text-base font-bold truncate" style={{ color: C.text }}>{name}</p>
         <p className="text-sm" style={{ color: C.muted }}>
-          {me?.rank ? `#${me.rank.toLocaleString("es-AR")} de todo Felpus` : "Todavía sin puntos"}
+          {me?.rank ? `#${me.rank.toLocaleString("es-AR")} de todo Felpus` : "Todavía sin huellitas"}
         </p>
         {ubicacion && <p className="text-[12px] truncate" style={{ color: C.muted }}>{ubicacion}</p>}
       </div>
@@ -75,7 +75,9 @@ export function RankingStatTiles({ me }) {
         <div className="rounded-3xl p-4 flex flex-col justify-between min-h-[120px]" style={{ background: POINTS_TILE_BG }}>
           <Crown className="w-7 h-7 self-end" style={{ color: C.redSolid }} aria-hidden="true" />
           <div>
-            <p className="felpus-display text-2xl leading-tight" style={{ color: C.text }}>{points} pts</p>
+            <p className="felpus-display text-2xl leading-tight" style={{ color: C.text }}>
+              {points} <span className="text-base">{points === 1 ? "huellita" : "huellitas"}</span>
+            </p>
             <p className="text-[13px] font-semibold truncate" style={{ color: C.text }}>{tier.label}</p>
             <div className="h-1.5 rounded-full overflow-hidden mt-1.5" style={{ background: "rgba(56,44,37,0.15)" }}>
               <div className="h-full rounded-full" style={{ width: `${progress.progressPct}%`, background: C.redSolid }} />
@@ -84,7 +86,7 @@ export function RankingStatTiles({ me }) {
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] font-semibold px-1" style={{ color: C.muted }}>
-        <span>{progress.nextLabel ? `${progress.pointsToNext} pts para ${progress.nextLabel}` : "Nivel máximo alcanzado"}</span>
+        <span>{progress.nextLabel ? `${progress.pointsToNext} ${progress.pointsToNext === 1 ? "huellita" : "huellitas"} para ${progress.nextLabel}` : "Nivel máximo alcanzado"}</span>
         {!!me?.reportes && (
           <span className="inline-flex items-center gap-1">
             <Camera className="w-3.5 h-3.5" aria-hidden="true" /> {me.reportes} {me.reportes === 1 ? "reporte" : "reportes"}
@@ -160,7 +162,7 @@ export function RankingList({ items, myId, myAvatarUrl, heartedIds, poppingHeart
             )}
             <div className="flex flex-col items-end shrink-0 w-12">
               <span className="text-base font-bold leading-tight" style={{ color: C.redDark }}>{u.points || 0}</span>
-              <span className="text-[11px]" style={{ color: C.muted }}>pts</span>
+              <span className="text-[11px]" style={{ color: C.muted }}>{(u.points || 0) === 1 ? "huellita" : "huellitas"}</span>
             </div>
           </li>
         );

@@ -935,7 +935,7 @@ export function ToastStack({ toasts }) {
   return (
     <div className="fixed bottom-20 sm:bottom-6 left-0 right-0 flex flex-col items-center gap-2 px-4 z-50 pointer-events-none">
       {toasts.map((t) => {
-        const pointsMatch = t.message.match(/\+\d+ (puntos|pts)/);
+        const pointsMatch = t.message.match(/\+\d+ (huellitas|puntos|pts)/);
         return (
           <div
             key={t.id}
