@@ -117,7 +117,7 @@ import {
   unsaveReport,
 } from "../lib/store";
 import { usersReportToCsv } from "../lib/csv";
-import { petTitle } from "../lib/petTitle";
+import { petTitle, nombreReal } from "../lib/petTitle";
 import { zonaConCiudad } from "../lib/zona";
 import { ADMIN_EMAIL } from "../lib/adminEdit";
 import AdminEditReport from "./felpus/AdminEditReport";
@@ -137,7 +137,6 @@ import {
 } from "../lib/push";
 import AlertOptInModal from "./felpus/AlertOptInModal";
 import { logError } from "../lib/log";
-import { displayColor } from "../lib/theme";
 import { useTheme, useThemeToggle } from "./felpus/ThemeProvider";
 import MapPicker from "./MapPicker";
 import ReportsMap from "./ReportsMap";
@@ -2328,10 +2327,10 @@ export default function FelpusMatcher() {
                               <span className="flex-1 min-w-0">
                                 <span className="block text-xs font-bold truncate" style={{ color: C.text }}>
                                   Tu {mine.tipo === "perdida" ? "reporte de perdida" : "reporte de encontrada"}
-                                  {mine.nombre ? ` (${mine.nombre})` : ""}
+                                  {nombreReal(mine) ? ` (${nombreReal(mine)})` : ""}
                                 </span>
                                 <span className="block text-[12px] truncate" style={{ color: C.muted }}>
-                                  Coincide con {best.nombre || best.especie} · {Math.round(score * 100)}%
+                                  Coincide con {petTitle(best).toLowerCase()} · {Math.round(score * 100)}%
                                   {extraCount > 0 ? ` · +${extraCount} más` : ""}
                                 </span>
                               </span>
@@ -3174,14 +3173,14 @@ export default function FelpusMatcher() {
                 <div className="overflow-hidden">
                   <div className="space-y-4">
                     <div>
-                      <label htmlFor="form-nombre" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Nombre (si lo sabés)</label>
+                      <label htmlFor="form-nombre" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Nombre de la mascota (si lo sabés)</label>
                       <input
                         id="form-nombre"
                         type="text"
                         value={form.nombre}
                         onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
                         maxLength={60}
-                        placeholder="Opcional"
+                        placeholder="Dejalo vacío si no lo sabés"
                         className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
                         style={{ borderColor: C.border, color: C.text }}
                       />
@@ -3596,7 +3595,7 @@ export default function FelpusMatcher() {
                             ) : (
                               <Badge tipo={m.report.tipo} />
                             )}
-                            <p className="text-sm font-semibold mt-1 truncate" style={{ color: C.text }}>{displayColor(m.report)} · {m.report.tamano}</p>
+                            <p className="text-sm font-semibold mt-1 truncate" style={{ color: C.text }}>{petTitle(m.report)}</p>
                             <p className="text-[12px] flex items-center gap-1" style={{ color: C.muted }}>
                               <MapPin className="w-3 h-3" /> {zonaConCiudad(m.report)} · {m.distanceLabel}
                             </p>
@@ -3940,7 +3939,7 @@ export default function FelpusMatcher() {
                             </div>
                             <Image src={m.report.foto} alt={reportPhotoAlt(m.report)} width={40} height={40} loading="lazy" className="w-10 h-10 rounded-lg object-cover bg-white dark:bg-[var(--felpus-dark-card)]" />
                             <div className="min-w-0 flex-1">
-                              <p className="text-xs font-semibold truncate" style={{ color: C.text }}>{displayColor(m.report)} · {zonaConCiudad(m.report)}</p>
+                              <p className="text-xs font-semibold truncate" style={{ color: C.text }}>{petTitle(m.report)} · {zonaConCiudad(m.report)}</p>
                               <p className="text-[11px]" style={{ color: C.muted }}>{m.distanceLabel}</p>
                             </div>
                             <ChevronRight className="w-3.5 h-3.5 shrink-0" style={{ color: C.muted }} />
@@ -4659,7 +4658,7 @@ export default function FelpusMatcher() {
                                   />
                                   <div className="min-w-0 flex-1">
                                     <p className="text-xs font-semibold truncate" style={{ color: C.text }}>
-                                      {displayColor(m.report)} · {zonaConCiudad(m.report)}
+                                      {petTitle(m.report)} · {zonaConCiudad(m.report)}
                                     </p>
                                     <p className="text-[11px]" style={{ color: C.muted }}>{m.distanceLabel}</p>
                                   </div>

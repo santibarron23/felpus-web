@@ -6,6 +6,7 @@ import { ArrowLeft, MapPin, PawPrint, Search, Share2, Stethoscope, Camera } from
 import { useTheme } from "./ThemeProvider";
 import SocialLinks from "./SocialLinks";
 import { zonaConCiudad } from "../../lib/zona";
+import { petTitle } from "../../lib/petTitle";
 
 // Vista de /mascotas-perdidas/<ciudad> — mismo lenguaje visual que
 // LegalPage.jsx (header con logo, tarjetas felpus-display, paleta vía
@@ -13,15 +14,9 @@ import { zonaConCiudad } from "../../lib/zona";
 // (reportes, FAQ) llegan ya resueltos como props desde el page.js, que es
 // Server Component, así que el texto completo va en el HTML que ve Google.
 
-function especieLabel(r) {
-  if (r.especie === "perro") return "Perro";
-  if (r.especie === "gato") return "Gato";
-  return "Mascota";
-}
-
 function ReportCard({ r, C }) {
   const perdida = r.tipo === "perdida";
-  const titulo = r.nombre ? `${r.nombre} (${especieLabel(r).toLowerCase()})` : especieLabel(r);
+  const titulo = petTitle(r);
   return (
     <li>
       <Link

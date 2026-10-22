@@ -644,9 +644,11 @@ export async function buildFlyerBlob(report, colorText) {
 
   // Nombre
   ctx.fillStyle = accent;
-  ctx.font = `800 38px ${FONT_FAMILY}`;
+  // El título sin nombre ahora es descriptivo ("Perra blanca, tamaño
+  // chico"): se achica para que entre en el ancho del flyer.
+  fitFontSize(ctx, titulo.toUpperCase(), W - 80, 38, 22);
   ctx.textAlign = "center";
-  ctx.fillText(titulo.toUpperCase(), W / 2, y + 32);
+  ctx.fillText(truncateToWidth(ctx, titulo.toUpperCase(), W - 80), W / 2, y + 32);
   y += 44;
 
   ctx.fillStyle = muted;

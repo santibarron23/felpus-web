@@ -3,6 +3,7 @@
 // candidatos. Sin red ni base de datos — eso vive en alertsServer.js — para
 // poder testearla sola.
 import { haversineKm } from "./matching";
+import { nombreReal } from "./petTitle";
 
 export const ALERTS_TZ = "America/Argentina/Salta";
 export const MATCH_MAX_KM = 15;
@@ -78,7 +79,7 @@ export function distanceKmBetween(a, b) {
 // personas (el nombre de la MASCOTA del destinatario sí, como pide el plan).
 export function matchNotification({ recipientReport, otherReport, siteUrl = "" }) {
   const km = distanceKmBetween(recipientReport, otherReport);
-  const nombre = (recipientReport.nombre || "").trim() || "tu mascota";
+  const nombre = nombreReal(recipientReport) || "tu mascota";
   const dist = km != null ? ` ${roundedDistance(km)}` : "";
   return {
     title: "🐾 Puede ser tu mascota",
@@ -103,7 +104,7 @@ export function zoneNotification({ report, distanceM, siteUrl = "" }) {
 }
 
 export function inactivityNotification({ report, siteUrl = "" }) {
-  const nombre = (report.nombre || "").trim() || `tu ${especieWord(report.especie)}`;
+  const nombre = nombreReal(report) || `tu ${especieWord(report.especie)}`;
   return {
     title: "¿Seguís buscando?",
     body: `El reporte de ${nombre} va a dejar de mandar alertas en ${INACTIVE_WARNING_DAYS} días. Tocá para renovarlo.`,
