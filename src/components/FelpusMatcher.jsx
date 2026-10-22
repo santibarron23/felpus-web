@@ -1026,8 +1026,8 @@ export default function FelpusMatcher() {
   useEffect(() => {
     const base = composeDescripcionBase(form);
     const accesorioSentence = composeAccesorioSentence(accesorioChips);
-    const reaccionSentence = composeReaccionSentence(reaccionChips);
-    const marcaSentence = composeMarcaSentence(marcaChips, { manchaUbicacion, manchaColor });
+    const reaccionSentence = composeReaccionSentence(reaccionChips, form.sexo);
+    const marcaSentence = composeMarcaSentence(marcaChips, { manchaUbicacion, manchaColor, sexo: form.sexo });
     const composed = [base, accesorioSentence, reaccionSentence, marcaSentence, detalleLibre.trim()]
       .filter(Boolean)
       .join(" ");

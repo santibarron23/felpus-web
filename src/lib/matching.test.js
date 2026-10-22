@@ -1140,3 +1140,30 @@ describe("fechaLabel", () => {
     expect(fechaLabel(undefined)).toBe("Fecha");
   });
 });
+
+describe("concordancia con el sexo en la descripción", () => {
+  const base = { especie: "gato", raza: "", tamano: "mediano", color: "Blanco", colorOtro: "", edad: "Adulto (3-8 años)" };
+
+  it("hembra: una gata, adulta, miedosa, peluda", () => {
+    expect(composeDescripcionBase({ ...base, sexo: "Hembra" })).toBe("Es una gata, de tamaño mediano, color blanco, adulta, hembra.");
+    expect(composeReaccionSentence(["miedoso"], "Hembra")).toBe("Es miedosa con los desconocidos.");
+    expect(composeMarcaSentence(["peludo"], { sexo: "Hembra" })).toBe("Es muy peluda.");
+  });
+
+  it("macho: un gato, adulto, miedoso, cachorro", () => {
+    expect(composeDescripcionBase({ ...base, sexo: "Macho" })).toBe("Es un gato, de tamaño mediano, color blanco, adulto, macho.");
+    expect(composeDescripcionBase({ ...base, especie: "perro", edad: "Cachorro/cría (0-1 año)", sexo: "Macho" })).toContain(", cachorro, macho.");
+    expect(composeReaccionSentence(["miedoso"], "Macho")).toBe("Es miedoso con los desconocidos.");
+  });
+
+  it("sin sexo o \"No sé\": las dos formas", () => {
+    expect(composeDescripcionBase({ ...base, sexo: "" })).toBe("Es un gato, de tamaño mediano, color blanco, adulto/a.");
+    expect(composeDescripcionBase({ ...base, edad: "Cachorro/cría (0-1 año)", sexo: "No sé" })).toContain(", cachorro/a.");
+    expect(composeReaccionSentence(["miedoso"], "No sé")).toBe("Es miedoso/a con los desconocidos.");
+    expect(composeMarcaSentence(["peludo"])).toBe("Es muy peludo/a.");
+  });
+
+  it("perra con sexo hembra", () => {
+    expect(composeDescripcionBase({ ...base, especie: "perro", sexo: "Hembra" })).toMatch(/^Es una perra,/);
+  });
+});

@@ -1235,9 +1235,22 @@ export function formatFechaAR(fecha) {
 // base de datos y al matching no les cambia nada: siguen viendo el mismo
 // campo de texto de siempre.
 // ---------------------------------------------------------------------------
+// Concordancia con el sexo (2026-10-22, a pedido del usuario): las frases
+// armadas usan "miedoso/a", "peludo/a", etc. Con sexo conocido se elige la
+// forma ("miedosa" si es hembra, "miedoso" si es macho); sin sexo (o "No
+// sé") quedan las dos, como antes.
+export function genderize(text, sexo) {
+  if (!text) return text;
+  if (sexo !== "Hembra" && sexo !== "Macho") return text;
+  const end = sexo === "Hembra" ? "a" : "o";
+  return text.replace(/([A-Za-zÁÉÍÓÚáéíóúÑñ]+)o\/a\b/g, `$1${end}`);
+}
+
 export function composeDescripcionBase(form) {
   if (!form) return "";
-  const especieLabel = form.especie === "perro" ? "un perro" : form.especie === "gato" ? "un gato" : "una mascota";
+  const hembra = form.sexo === "Hembra";
+  const especieLabel =
+    form.especie === "perro" ? (hembra ? "una perra" : "un perro") : form.especie === "gato" ? (hembra ? "una gata" : "un gato") : "una mascota";
   const colorTxt = form.color === "Otro color" ? form.colorOtro : form.color;
   // Mestizo/no sé/otra raza no se suman a la frase — decir "es un perro no
   // sé la raza" no aporta nada que "es un perro" no dijera ya (mismo
@@ -1246,7 +1259,15 @@ export function composeDescripcionBase(form) {
   const parts = [`Es ${especieLabel}${razaTxt ? ` ${razaTxt}` : ""}`];
   if (form.tamano) parts.push(`de tamaño ${form.tamano}`);
   if (colorTxt) parts.push(`color ${colorTxt.toLowerCase()}`);
-  if (form.edad && form.edad !== "No sé") parts.push(form.edad.replace(/\s*\([^)]*\)/, "").toLowerCase());
+  if (form.edad && form.edad !== "No sé") {
+    // "Cachorro/cría" y "Adulto" son las dos edades que cambian con el sexo.
+    const edadTxt = form.edad
+      .replace(/\s*\([^)]*\)/, "")
+      .toLowerCase()
+      .replace(/^cachorro\/cría$/, "cachorro/a")
+      .replace(/^adulto$/, "adulto/a");
+    parts.push(genderize(edadTxt, form.sexo));
+  }
   if (form.sexo && form.sexo !== "No sé") parts.push(form.sexo.toLowerCase());
   return parts.join(", ") + ".";
 }
@@ -1288,11 +1309,11 @@ export function composeAccesorioSentence(ids) {
   return composeChipSentence("Tenía", labels);
 }
 
-export function composeReaccionSentence(ids) {
+export function composeReaccionSentence(ids, sexo) {
   if (!ids || ids.length === 0) return "";
   const clauses = ids
     .filter((id) => id !== "no_se")
-    .map((id) => REACCION_OPTIONS.find((o) => o.id === id)?.clause)
+    .map((id) => genderize(REACCION_OPTIONS.find((o) => o.id === id)?.clause, sexo))
     .filter(Boolean);
   return composeClauses(clauses);
 }
@@ -1301,7 +1322,7 @@ export function composeReaccionSentence(ids) {
 // opcional) — el resto son clauses fijas que ya vienen armadas en
 // MARCA_OPTIONS. "otro" nunca aporta clause (ver comentario junto a
 // MARCA_OPTIONS).
-export function composeMarcaSentence(ids, { manchaUbicacion, manchaColor } = {}) {
+export function composeMarcaSentence(ids, { manchaUbicacion, manchaColor, sexo } = {}) {
   if (!ids || ids.length === 0) return "";
   const clauses = [];
   if (ids.includes("mancha")) {
@@ -1313,7 +1334,7 @@ export function composeMarcaSentence(ids, { manchaUbicacion, manchaColor } = {})
   ids
     .filter((id) => id !== "mancha" && id !== "otro")
     .forEach((id) => {
-      const clause = MARCA_OPTIONS.find((o) => o.id === id)?.clause;
+      const clause = genderize(MARCA_OPTIONS.find((o) => o.id === id)?.clause, sexo);
       if (clause) clauses.push(clause);
     });
   return composeClauses(clauses);

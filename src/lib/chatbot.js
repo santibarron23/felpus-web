@@ -518,8 +518,8 @@ export function composeDraftDescription(draft) {
     // (visto en la prueba real: "de tamaño mediano" sin que nadie lo dijera).
     composeDescripcionBase({ ...f.form, tamano: normalizeDraft(draft).tamano }),
     composeAccesorioSentence(f.accesorioChips),
-    composeReaccionSentence(f.reaccionChips),
-    composeMarcaSentence(f.marcaChips, { manchaUbicacion: f.manchaUbicacion, manchaColor: f.manchaColor }),
+    composeReaccionSentence(f.reaccionChips, f.form.sexo),
+    composeMarcaSentence(f.marcaChips, { manchaUbicacion: f.manchaUbicacion, manchaColor: f.manchaColor, sexo: f.form.sexo }),
     f.detalleLibre.trim(),
   ]
     .filter(Boolean)
