@@ -144,6 +144,7 @@ import Mascot from "./Mascot";
 import ZonaAutocomplete from "./ZonaAutocomplete";
 import MatchScorecard from "./felpus/MatchScorecard";
 import ReportGrid from "./felpus/ReportGrid";
+import { checkPhotoKind } from "../lib/photoCheckClient";
 import { Avatar, RankingList, RankingMeCard, RankingStatTiles } from "./felpus/Ranking";
 import { PAIS_DEFAULT, PAISES, PROVINCIAS_AR, UBICACION_MAX, cleanUbicacion, cropAvatarDataUrl, formatUbicacion } from "../lib/profile";
 import Combobox from "./felpus/Combobox";
@@ -756,6 +757,8 @@ export default function FelpusMatcher() {
   const [adminFlags, setAdminFlags] = useState([]);
   const [adminAllReports, setAdminAllReports] = useState([]);
   const [adminSearch, setAdminSearch] = useState("");
+  // Solo los reportes con alguna foto marcada como flyer/captura al publicar.
+  const [adminSoloFotosDudosas, setAdminSoloFotosDudosas] = useState(false);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState("");
   const [adminBusyId, setAdminBusyId] = useState(null);
@@ -887,13 +890,16 @@ export default function FelpusMatcher() {
   const adminBreakdowns = useMemo(() => computeAdminBreakdowns(adminAllReports), [adminAllReports]);
 
   const adminSearchNormalized = normalizeText(adminSearch.trim());
-  const adminFilteredReports = adminSearchNormalized
-    ? adminAllReports.filter((r) =>
+  const tieneFotoDudosa = (r) => (r.fotos || []).some((f) => f.dudosa);
+  const adminFotosDudosasCount = adminAllReports.filter(tieneFotoDudosa).length;
+  const adminFilteredReports = adminAllReports.filter(
+    (r) =>
+      (!adminSoloFotosDudosas || tieneFotoDudosa(r)) &&
+      (!adminSearchNormalized ||
         [r.nombre, r.zona, r.ciudad, r.provincia, r.especie, r.color, r.nickname].some((v) =>
           normalizeText(v || "").includes(adminSearchNormalized)
-        )
-      )
-    : adminAllReports;
+        ))
+  );
 
   // Apenas la persona toca cualquier campo del formulario, los errores
   // marcados quedan obsoletos — sin esto, el borde rojo de un campo ya
@@ -1663,6 +1669,7 @@ export default function FelpusMatcher() {
       const dataUrl = await resizeImageFile(file);
       const hist = await computeHistogram(dataUrl);
       setForm((f) => ({ ...f, fotos: [...f.fotos, { dataUrl, hist, embedding: null }] }));
+      revisarFoto(dataUrl);
       setVisionStatus("analyzing");
       const embedding = await getImageEmbedding(dataUrl);
       // Se busca la foto por su dataUrl y no por posición: mientras se
@@ -1701,6 +1708,30 @@ export default function FelpusMatcher() {
       logError("No se pudo activar las notificaciones push", e);
       pushToast("error", e?.message || "No pudimos activar las notificaciones.");
     }
+  }
+
+  // ¿Foto real o flyer/captura/ilustración? (ver photoCheck.js). Corre en
+  // paralelo y nunca frena nada: si tarda o falla, la foto queda sin aviso.
+  // Se busca la foto por dataUrl, igual que el embedding.
+  function revisarFoto(dataUrl) {
+    checkPhotoKind(dataUrl).then((check) => {
+      if (!check) return;
+      setForm((f) => ({
+        ...f,
+        fotos: f.fotos.map((foto) => (foto.dataUrl === dataUrl ? { ...foto, check } : foto)),
+      }));
+    });
+  }
+
+  // "Es una foto real, seguir": se publica igual, marcada para revisar.
+  function handleKeepDudosa(index) {
+    setForm((f) => ({ ...f, fotos: f.fotos.map((foto, i) => (i === index ? { ...foto, keep: true } : foto)) }));
+  }
+
+  // "Cambiar foto": la saca y abre el selector para elegir otra.
+  function handleReplaceDudosa(index) {
+    handleRemovePhoto(index);
+    fileInputRef.current?.click();
   }
 
   function handleRemovePhoto(index) {
@@ -1794,6 +1825,7 @@ export default function FelpusMatcher() {
       lng: fields.lng ?? null,
       fotos: fotos?.length ? fotos.slice(0, MAX_FOTOS) : f.fotos,
     }));
+    (fotos || []).slice(0, MAX_FOTOS).forEach((foto) => foto?.dataUrl && revisarFoto(foto.dataUrl));
     setAccesorioChips(acc || []);
     setReaccionChips(rea || []);
     setMarcaChips(mar || []);
@@ -1896,6 +1928,7 @@ export default function FelpusMatcher() {
     setSubmitting(true);
     try {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const fotosDudosas = form.fotos.map((foto, i) => (foto.check?.dudosa ? i : -1)).filter((i) => i >= 0);
       const draft = {
         id,
         tipo: reportKind,
@@ -1922,16 +1955,22 @@ export default function FelpusMatcher() {
         // detallesSimilarity). Si la migración de la columna "detalles"
         // todavía no se corrió, createReport() la omite sola (ver
         // src/lib/store.js) sin que falle la publicación.
-        detalles: buildDetallesEstructurados({
-          accesorios: accesorioChips,
-          comportamientos: reaccionChips,
-          marcaDistintiva: marcaChips,
-          ubicacionMarca: manchaUbicacion,
-          colorMarca: manchaColor,
-        }),
+        detalles: {
+          ...buildDetallesEstructurados({
+            accesorios: accesorioChips,
+            comportamientos: reaccionChips,
+            marcaDistintiva: marcaChips,
+            ubicacionMarca: manchaUbicacion,
+            colorMarca: manchaColor,
+          }),
+          // Fotos que el chequeo marcó como flyer/captura/ilustración y la
+          // persona igual dejó: quedan para revisar en el panel de admin y
+          // no se usan al comparar fotos (ver marcarDudosas en matching.js).
+          ...(fotosDudosas.length ? { fotos_dudosas: fotosDudosas } : {}),
+        },
         contactoWhatsapp: whatsappResult.isValid ? whatsappResult.digits : "",
         contactoEmail: form.contactoEmail.trim(),
-        fotos: form.fotos,
+        fotos: form.fotos.map((foto) => (foto.check?.dudosa ? { ...foto, dudosa: true } : foto)),
         nickname: nickname.trim(),
         userId: user?.id || null,
         resuelto: false,
@@ -2802,7 +2841,8 @@ export default function FelpusMatcher() {
                     "Es falsa o engañosa" (ver REPORT_FLAG_REASONS en
                     matching.js) y el panel de admin. */}
                 <p className="text-[12px] mb-1.5" style={{ color: C.muted }}>
-                  Una foto real de la mascota, tal cual es — no un cartel armado ni una imagen generada.
+                  Una foto real de la mascota, tal cual es — no un cartel, una captura de pantalla ni una imagen generada.
+                  Felpus compara fotos para encontrar coincidencias, y un flyer no sirve para eso.
                 </p>
                 {form.fotos.length > 1 && (
                   <p className="text-[12px] mb-1.5" style={{ color: C.muted }}>
@@ -2827,6 +2867,14 @@ export default function FelpusMatcher() {
                           agregaría overhead. */}
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={foto.dataUrl} alt={`Foto ${i + 1} de la mascota que estás reportando`} className="w-full h-full object-cover" />
+                      {foto.check?.dudosa && (
+                        <span
+                          className="absolute bottom-1 left-1 right-1 text-[10px] font-bold text-white rounded-md px-1.5 py-0.5 text-center"
+                          style={{ background: foto.keep ? "rgba(0,0,0,0.6)" : C.orangeInkSolid }}
+                        >
+                          {foto.keep ? "Para revisar" : "¿Foto real?"}
+                        </span>
+                      )}
                       {form.fotos.length > 1 &&
                         (i === 0 ? (
                           <span className="absolute top-1 left-1 text-[11px] font-bold text-white rounded-full px-2 py-0.5" style={{ background: C.redSolid }}>
@@ -2864,6 +2912,48 @@ export default function FelpusMatcher() {
                     </label>
                   )}
                 </div>
+                {form.fotos.map((foto, i) =>
+                  foto.check?.dudosa && !foto.keep ? (
+                    <div
+                      key={`dudosa-${foto.dataUrl.slice(-24)}`}
+                      role="alert"
+                      className="mt-2 rounded-xl border p-3"
+                      style={{ borderColor: C.orangeInkSolid, background: C.brandTintBg }}
+                    >
+                      <p className="text-[13px] font-bold" style={{ color: C.text }}>
+                        {form.fotos.length > 1 ? `La foto ${i + 1} parece` : "Parece"}{" "}
+                        {foto.check.tipo === "captura"
+                          ? "una captura de pantalla"
+                          : foto.check.tipo === "ilustracion"
+                            ? "una ilustración o imagen armada"
+                            : "un cartel o flyer"}
+                        .
+                      </p>
+                      <p className="text-[12px] mt-0.5" style={{ color: C.muted }}>
+                        Subí una foto real de la mascota: Felpus compara fotos para encontrar coincidencias, y un flyer no
+                        sirve para eso. El flyer para compartir lo arma Felpus solo, con QR, al publicar.
+                      </p>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        <button
+                          type="button"
+                          onClick={() => handleReplaceDudosa(i)}
+                          className="text-[12px] font-bold text-white rounded-lg px-3 py-2"
+                          style={{ background: C.redSolid }}
+                        >
+                          Cambiar foto
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleKeepDudosa(i)}
+                          className="text-[12px] font-semibold rounded-lg px-3 py-2 border"
+                          style={{ borderColor: C.border, color: C.text, background: C.surface }}
+                        >
+                          Es una foto real, seguir
+                        </button>
+                      </div>
+                    </div>
+                  ) : null
+                )}
                 <p className="text-[12px] mt-1.5" style={{ color: C.muted }}>
                   Subí distintos ángulos o poses — ayuda a un matching más preciso.
                 </p>
@@ -4371,6 +4461,19 @@ export default function FelpusMatcher() {
                   className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
                   style={{ borderColor: C.border, color: C.text }}
                 />
+                <button
+                  type="button"
+                  onClick={() => setAdminSoloFotosDudosas((v) => !v)}
+                  aria-pressed={adminSoloFotosDudosas}
+                  className="rounded-full px-3 py-1.5 text-xs font-semibold border"
+                  style={
+                    adminSoloFotosDudosas
+                      ? { background: C.ink, color: C.cream, borderColor: C.ink }
+                      : { color: C.muted, borderColor: C.border, background: C.surface }
+                  }
+                >
+                  📷 Fotos para revisar ({adminFotosDudosasCount})
+                </button>
                 <p className="text-[12px]" style={{ color: C.muted }}>
                   {adminFilteredReports.length} de {adminAllReports.length} reportes
                   {adminFilteredReports.length > 200 ? " — mostrando los primeros 200" : ""}
@@ -4416,6 +4519,15 @@ export default function FelpusMatcher() {
                           style={{ background: C.dangerBg, color: C.redDark }}
                         >
                           Oculta
+                        </span>
+                      )}
+                      {tieneFotoDudosa(r) && (
+                        <span
+                          className="inline-block mt-1 ml-1 text-[11px] font-bold px-1.5 py-0.5 rounded-full"
+                          style={{ background: C.brandTintBg, color: C.orangeInk }}
+                          title="Al publicar, la foto pareció un flyer, una captura o una ilustración"
+                        >
+                          📷 Foto para revisar
                         </span>
                       )}
                     </div>

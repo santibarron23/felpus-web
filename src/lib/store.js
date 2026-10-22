@@ -1,16 +1,18 @@
 import { supabase } from "./supabaseClient";
 import { logError } from "./log";
 import { REPORT_LIST_BASE_FIELDS, REPORT_LIST_OPTIONAL_COLUMNS } from "./reportColumns";
+import { marcarDudosas } from "./matching";
 
 const REPORTS_TABLE = "reports";
 const CONTRIBUTORS_TABLE = "contributors";
 const PHOTOS_BUCKET = "felpus-photos";
 
 function rowToReport(row) {
-  const fotos =
+  const fotosBase =
     Array.isArray(row.foto_urls) && row.foto_urls.length
       ? row.foto_urls.map((url, i) => ({ url, hist: row.hists?.[i] ?? null, embedding: row.embeddings?.[i] ?? null }))
       : [{ url: row.foto_url, hist: row.hist, embedding: row.embedding || null }];
+  const fotos = marcarDudosas(fotosBase, row.detalles);
   return {
     id: row.id,
     tipo: row.tipo,

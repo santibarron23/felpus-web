@@ -1,5 +1,15 @@
 const isDev = process.env.NODE_ENV === "development";
 
+// Archivos de onnxruntime-node que necesitan las funciones que corren
+// modelos (ver outputFileTracingIncludes más abajo).
+const ONNX_RUNTIME_FILES = [
+  "node_modules/onnxruntime-node/package.json",
+  "node_modules/onnxruntime-node/dist/**",
+  "node_modules/onnxruntime-node/bin/napi-v6/linux/x64/onnxruntime_binding.node",
+  "node_modules/onnxruntime-node/bin/napi-v6/linux/x64/libonnxruntime.so*",
+  "node_modules/onnxruntime-common/**",
+];
+
 // Revisión de seguridad (2026-10-11): remotePatterns permitía
 // "**.supabase.co" — o sea, CUALQUIER proyecto de Supabase del mundo, no
 // solo el de Felpus. Eso convertía /_next/image en un proxy/optimizador de
@@ -145,14 +155,10 @@ const nextConfig = {
   // función a 250 MB — solo hace falta el de linux/x64, que es donde corre
   // (con esto la función queda en ~70 MB). Los providers de CUDA/TensorRT
   // no se bajan en el build (ver .npmrc).
+  // /api/photo-check (CLIP, ver photoCheck.js) usa lo mismo.
   outputFileTracingIncludes: {
-    "/api/embed": [
-      "node_modules/onnxruntime-node/package.json",
-      "node_modules/onnxruntime-node/dist/**",
-      "node_modules/onnxruntime-node/bin/napi-v6/linux/x64/onnxruntime_binding.node",
-      "node_modules/onnxruntime-node/bin/napi-v6/linux/x64/libonnxruntime.so*",
-      "node_modules/onnxruntime-common/**",
-    ],
+    "/api/embed": ONNX_RUNTIME_FILES,
+    "/api/photo-check": ONNX_RUNTIME_FILES,
   },
   // felpus-web.vercel.app → felpus.com (2026-10-21): links viejos o
   // compartidos desde el dominio de Vercel (ej. en Instagram) abrían la app

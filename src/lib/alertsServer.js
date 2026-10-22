@@ -1,7 +1,7 @@
 // Despacho de alertas automáticas (servidor). Lo usan /api/notify-match (el
 // trigger de siempre), /api/alerts/dispatch y /api/alerts/flush. Todo lo que
 // toca red (Supabase, web-push) entra por `deps`, así se testea con dobles.
-import { findMatches } from "./matching";
+import { findMatches, marcarDudosas } from "./matching";
 import {
   matchThresholds,
   classifyMatch,
@@ -22,10 +22,11 @@ import {
 // Fila de `reports` → formato de scoreMatch. Antes vivía (casi igual) adentro
 // de api/notify-match; se movió acá para compartirla.
 export function rowToMatchable(row) {
-  const fotos =
+  const fotosBase =
     Array.isArray(row.foto_urls) && row.foto_urls.length
       ? row.foto_urls.map((url, i) => ({ url, hist: row.hists?.[i] ?? null, embedding: row.embeddings?.[i] ?? null }))
       : [{ url: row.foto_url, hist: row.hist, embedding: row.embedding || null }];
+  const fotos = marcarDudosas(fotosBase, row.detalles);
   return {
     id: row.id,
     tipo: row.tipo,

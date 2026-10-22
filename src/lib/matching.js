@@ -363,13 +363,29 @@ function singlePhotoSimilarity(fa, fb) {
   return histogramSimilarity(fa.hist, fb.hist);
 }
 
+// Índices de fotos marcadas como flyer/captura/ilustración al publicar
+// (detalles.fotos_dudosas, ver photoCheck.js): siguen visibles, pero no se
+// usan para comparar fotos (ver imageSimilarity).
+export function marcarDudosas(fotos, detalles) {
+  const dudosas = Array.isArray(detalles?.fotos_dudosas) ? detalles.fotos_dudosas : [];
+  return dudosas.length ? fotos.map((f, i) => (dudosas.includes(i) ? { ...f, dudosa: true } : f)) : fotos;
+}
+
 // Un reporte puede tener hasta 3 fotos (fotos: [{hist, embedding}, ...]).
 // Comparamos todas las combinaciones y nos quedamos con la mejor — alcanza
 // con que una sola foto de cada lado coincida (distintos ángulos/poses de la
 // misma mascota) para que el matching lo detecte.
+//
+// Fotos "dudosas" (flyer, captura, ilustración — ver photoCheck.js y
+// fotos_dudosas en store.js) no se comparan: un flyer contra otro flyer se
+// parece por el diseño, no por la mascota. Si a uno de los dos reportes no
+// le queda ninguna foto válida, devuelve null y scoreMatch reparte el peso
+// de la imagen entre los demás datos.
 export function imageSimilarity(a, b) {
-  const fotosA = a.fotos?.length ? a.fotos : [{ hist: a.hist, embedding: a.embedding }];
-  const fotosB = b.fotos?.length ? b.fotos : [{ hist: b.hist, embedding: b.embedding }];
+  const validas = (r) => (r.fotos?.length ? r.fotos : [{ hist: r.hist, embedding: r.embedding }]).filter((f) => !f.dudosa);
+  const fotosA = validas(a);
+  const fotosB = validas(b);
+  if (!fotosA.length || !fotosB.length) return null;
   let best = 0;
   for (const fa of fotosA) {
     for (const fb of fotosB) {
@@ -976,7 +992,8 @@ export function scoreMatch(a, b) {
   const cronologia = cronologiaFactor(a, b);
   if (cronologia === 0) return sinMatch("cronologia", distanceLabel);
 
-  const imgSim = imageSimilarity(a, b);
+  const imgSimRaw = imageSimilarity(a, b);
+  const imgSim = imgSimRaw ?? 0;
   const structuredSim = structuredFieldSimilarity(a, b);
   // Los campos estructurados (selects) valen mucho más que la redacción
   // libre de la descripción, que varía de persona a persona aunque sea la
@@ -995,10 +1012,14 @@ export function scoreMatch(a, b) {
   // entra con un peso chico y fijo en los dos casos (0.10) — es una señal
   // real pero más débil que las demás, y con el "neutro" de arriba nunca
   // castiga a quien no la cargó.
+  // Sin fotos válidas para comparar (ver imageSimilarity), el peso de la
+  // imagen se reparte proporcionalmente entre el resto.
   const weights =
-    hasAiEmbedding(a) && hasAiEmbedding(b)
-      ? { img: 0.42, text: 0.3, loc: 0.18, fecha: 0.1 }
-      : { img: 0.12, text: 0.5, loc: 0.28, fecha: 0.1 };
+    imgSimRaw == null
+      ? { img: 0, text: 0.5 / 0.88, loc: 0.28 / 0.88, fecha: 0.1 / 0.88 }
+      : hasAiEmbedding(a) && hasAiEmbedding(b)
+        ? { img: 0.42, text: 0.3, loc: 0.18, fecha: 0.1 }
+        : { img: 0.12, text: 0.5, loc: 0.28, fecha: 0.1 };
 
   const combined =
     weights.img * imgSim + weights.text * textSim + weights.loc * locScore + weights.fecha * fechaSim;
@@ -1090,8 +1111,10 @@ export function matchBreakdown(a, b) {
   // el detail siempre se muestra, coincida o no, para no reducir una
   // comparación visual real a un simple ✓/✗ sin matices.
   const imgSim = imageSimilarity(a, b);
-  const imgLabel = imgSim >= 0.7 ? "Muy parecida" : imgSim >= 0.45 ? "Algo parecida" : "Poco parecida";
-  push("imagen", "Foto", imgSim >= 0.45, imgLabel);
+  if (imgSim != null) {
+    const imgLabel = imgSim >= 0.7 ? "Muy parecida" : imgSim >= 0.45 ? "Algo parecida" : "Poco parecida";
+    push("imagen", "Foto", imgSim >= 0.45, imgLabel);
+  }
 
   return items;
 }
