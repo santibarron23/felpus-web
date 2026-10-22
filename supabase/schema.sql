@@ -1621,3 +1621,32 @@ $$;
 
 revoke all on function public.check_chat_rate_limit(text) from public, anon, authenticated;
 grant execute on function public.check_chat_rate_limit(text) to service_role;
+
+-- ---------------------------------------------------------------------------
+-- Perfil: foto y país/provincia/ciudad (2026-10-22). Mismo contenido que
+-- supabase/migrations/20261022_01_perfil_foto_ubicacion.sql (ver ahí el
+-- porqué de cada línea).
+-- ---------------------------------------------------------------------------
+alter table contributors add column if not exists avatar_url text;
+alter table contributors add column if not exists pais text;
+alter table contributors add column if not exists provincia text;
+alter table contributors add column if not exists ciudad text;
+
+alter table contributors drop constraint if exists contributors_avatar_url_bucket;
+alter table contributors add constraint contributors_avatar_url_bucket check (
+  avatar_url is null
+  or (
+    char_length(avatar_url) <= 300
+    and avatar_url like 'https://%.supabase.co/storage/v1/object/public/felpus-photos/avatars/%'
+  )
+);
+
+alter table contributors drop constraint if exists contributors_ubicacion_len;
+alter table contributors add constraint contributors_ubicacion_len check (
+  (pais is null or char_length(pais) <= 60)
+  and (provincia is null or char_length(provincia) <= 80)
+  and (ciudad is null or char_length(ciudad) <= 80)
+);
+
+grant update (avatar_url, pais, provincia, ciudad) on contributors to authenticated;
+grant insert (avatar_url, pais, provincia, ciudad) on contributors to authenticated;

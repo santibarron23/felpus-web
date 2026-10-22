@@ -109,6 +109,8 @@ import {
   adminFetchUsers,
   fetchProfile,
   updateProfile,
+  uploadAvatar,
+  deleteAvatarFile,
   fetchSavedReportIds,
   saveReport,
   unsaveReport,
@@ -141,6 +143,8 @@ import ReportsMap from "./ReportsMap";
 import Mascot from "./Mascot";
 import ZonaAutocomplete from "./ZonaAutocomplete";
 import MatchScorecard from "./felpus/MatchScorecard";
+import { Avatar, RankingList, RankingMeCard, RankingStatTiles } from "./felpus/Ranking";
+import { PAIS_DEFAULT, PAISES, PROVINCIAS_AR, UBICACION_MAX, cleanUbicacion, cropAvatarDataUrl, formatUbicacion } from "../lib/profile";
 import Combobox from "./felpus/Combobox";
 import PhoneInput from "./felpus/PhoneInput";
 import { splitStoredWhatsapp, getDefaultCountry, formatE164ForDisplay } from "../lib/phone";
@@ -563,6 +567,16 @@ export default function FelpusMatcher() {
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [editingProfile, setEditingProfile] = useState(false);
+  // Foto y ubicación del perfil (2026-10-22). avatarDraft: data URL recién
+  // elegida (todavía sin subir); avatarRemoved: tocó "Quitar foto".
+  const [avatarDraft, setAvatarDraft] = useState(null);
+  const [avatarRemoved, setAvatarRemoved] = useState(false);
+  const [paisDraft, setPaisDraft] = useState(PAIS_DEFAULT);
+  const [provinciaDraft, setProvinciaDraft] = useState("");
+  const [ciudadDraft, setCiudadDraft] = useState("");
+  const avatarInputRef = useRef(null);
+  // La foto propia: la del perfil si subió una; si no, la de Google.
+  const myAvatarUrl = profile?.avatar_url || myRank?.avatar_url || googleAvatar || null;
   const [profileNameDraft, setProfileNameDraft] = useState("");
   const [profilePhoneCountry, setProfilePhoneCountry] = useState("AR");
   const [profilePhoneText, setProfilePhoneText] = useState("");
@@ -653,7 +667,24 @@ export default function FelpusMatcher() {
     } else {
       setProfilePhoneCountry(getDefaultCountry());
     }
+    setAvatarDraft(null);
+    setAvatarRemoved(false);
+    setPaisDraft(profile?.pais || PAIS_DEFAULT);
+    setProvinciaDraft(profile?.provincia || "");
+    setCiudadDraft(profile?.ciudad || "");
     setEditingProfile(true);
+  }
+
+  async function handlePickAvatar(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      setAvatarDraft(await cropAvatarDataUrl(file));
+      setAvatarRemoved(false);
+    } catch (err) {
+      pushToast("error", err?.message || "No pudimos leer esa imagen. Probá con otra.");
+    }
   }
 
   async function handleSaveProfile() {
@@ -673,8 +704,22 @@ export default function FelpusMatcher() {
     setProfileSaving(true);
     try {
       const whatsapp = profilePhoneParsed.isValid ? profilePhoneParsed.digits && `+${profilePhoneParsed.digits}` : profile?.whatsapp || "";
-      await updateProfile(user.id, { nickname: name, whatsapp: whatsapp || "" });
-      setProfile((prev) => ({ ...(prev || { id: user.id }), nickname: name, whatsapp: whatsapp || null }));
+      // Solo se mandan foto/ubicación si cambiaron: así guardar nombre o
+      // WhatsApp sigue andando aunque la migración de esas columnas todavía
+      // no se haya corrido.
+      const extra = {};
+      const prevAvatar = profile?.avatar_url || null;
+      if (avatarDraft) extra.avatar_url = await uploadAvatar(avatarDraft, user.id);
+      else if (avatarRemoved && prevAvatar) extra.avatar_url = null;
+      const ubicacion = cleanUbicacion({ pais: paisDraft, provincia: provinciaDraft, ciudad: ciudadDraft });
+      for (const key of ["pais", "provincia", "ciudad"]) {
+        if ((profile?.[key] || null) !== ubicacion[key]) extra[key] = ubicacion[key];
+      }
+      await updateProfile(user.id, { nickname: name, whatsapp: whatsapp || "", ...extra });
+      if ("avatar_url" in extra && prevAvatar) deleteAvatarFile(prevAvatar);
+      setProfile((prev) => ({ ...(prev || { id: user.id }), nickname: name, whatsapp: whatsapp || null, ...extra }));
+      if ("avatar_url" in extra) setMyRank((prev) => (prev ? { ...prev, avatar_url: extra.avatar_url } : prev));
+      setLeaderboard((prev) => prev.map((u) => (u.id === user.id ? { ...u, nickname: name, ...extra } : u)));
       setNickname(name);
       setEditingProfile(false);
       pushToast("success", "Perfil actualizado.");
@@ -1280,7 +1325,7 @@ export default function FelpusMatcher() {
       logError("No se pudo cargar el ranking", e);
     }
     // La posición propia se busca aparte porque el leaderboard general solo
-    // trae el top 10 — si no estás ahí, igual queremos saber tu puesto real.
+    // trae el top 50 — si no estás ahí, igual queremos saber tu puesto real.
     if (user) {
       try {
         const rank = await fetchMyRank(user.id);
@@ -2179,8 +2224,8 @@ export default function FelpusMatcher() {
                 className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
                 style={{ background: activeTab === "mifelpus" ? C.redSolid : C.cream }}
               >
-                {googleAvatar ? (
-                  <Image src={googleAvatar} alt="" unoptimized width={32} height={32} className="w-full h-full object-cover" />
+                {myAvatarUrl ? (
+                  <Image src={myAvatarUrl} alt="" unoptimized width={32} height={32} className="w-full h-full object-cover" />
                 ) : (
                   <User className="w-4 h-4" style={{ color: activeTab === "mifelpus" ? "#fff" : C.text }} />
                 )}
@@ -2315,9 +2360,9 @@ export default function FelpusMatcher() {
         <div className="flex items-center gap-2.5 bg-white dark:bg-[var(--felpus-dark-card)] rounded-xl border px-3 py-2.5 shadow-sm" style={{ borderColor: C.border }}>
           {user ? (
             <>
-              {googleAvatar ? (
+              {myAvatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <Image src={googleAvatar} alt="" unoptimized width={32} height={32} className="w-8 h-8 rounded-full shrink-0" referrerPolicy="no-referrer" />
+                <Image src={myAvatarUrl} alt="" unoptimized width={32} height={32} className="w-8 h-8 rounded-full shrink-0" referrerPolicy="no-referrer" />
               ) : (
                 <span
                   className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-white text-xs font-bold"
@@ -3951,138 +3996,41 @@ export default function FelpusMatcher() {
         {/* RANKING */}
         {activeTab === "ranking" && (
           <div key="ranking" className="max-w-2xl mx-auto space-y-3 felpus-fadein">
-            <div className="bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl p-4 border" style={{ borderColor: C.border }}>
-              <h2 className="felpus-display text-xl mb-1 flex items-center gap-2" style={{ color: C.text }}>
-                <Crown className="w-5 h-5" style={{ color: C.orangeInk }} /> Mayores colaboradores
-              </h2>
-              <p className="text-sm" style={{ color: C.muted }}>
-                Puntos por reportar mascotas y, sobre todo, por confirmar reencuentros reales.
-              </p>
-            </div>
+            <h2 className="felpus-display text-2xl text-center pt-1" style={{ color: C.text }}>
+              Colaboradores
+            </h2>
 
             {user ? (
-              myRank ? (
-                // En modo claro se mantiene igual que siempre (superficie
-                // roja sólida). En modo oscuro NO: una card enteramente roja
-                // era justo el problema que este rediseño busca resolver —
-                // "gran masa roja" en vez de rojo como acento puntual. Ahora
-                // es una superficie oscura elevada (mismo nivel que el resto
-                // de las cards) con rojo/naranja reservados para lo que de
-                // verdad importa acá: posición, puntos y progreso.
-                <div
-                  className="rounded-2xl p-4"
-                  style={
-                    themeMode === "dark"
-                      ? { background: C.surface, border: `1px solid ${C.border}`, color: C.text }
-                      : { background: C.redSolid, color: "#fff" }
-                  }
-                >
-                  <div className="flex items-center gap-3">
-                    <span
-                      className="w-11 h-11 rounded-full flex items-center justify-center text-base font-bold shrink-0"
-                      style={
-                        themeMode === "dark"
-                          ? { background: C.redSolid, color: "#fff" }
-                          : { background: "rgba(255,255,255,0.18)" }
-                      }
-                    >
-                      {(googleDisplayName || myRank.nickname || "?").charAt(0).toUpperCase()}
-                    </span>
-                    <div className="felpus-mono text-xl font-bold w-10 text-center shrink-0" style={themeMode === "dark" ? { color: C.red } : undefined}>
-                      #{myRank.rank}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold" style={themeMode === "dark" ? { color: C.muted } : { color: "rgba(255,255,255,0.8)" }}>
-                        Tu posición
-                      </p>
-                      <p className="text-sm font-bold truncate">{getTier(myRank.points || 0, C).label}</p>
-                    </div>
-                    <div className="felpus-mono text-lg font-bold shrink-0" style={themeMode === "dark" ? { color: C.orangeInk } : undefined}>
-                      {myRank.points || 0} pts
-                    </div>
-                  </div>
-                  {(() => {
-                    const progress = getTierProgress(myRank.points || 0);
-                    const trackBg = themeMode === "dark" ? C.surfaceSubtle : "rgba(255,255,255,0.25)";
-                    const fillBg = themeMode === "dark" ? C.orangeInkSolid : "#fff";
-                    return (
-                      <div className="mt-3">
-                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: trackBg }}>
-                          <div
-                            className="h-full rounded-full transition-[width] duration-700 ease-out"
-                            style={{ width: `${progress.progressPct}%`, background: fillBg }}
-                          />
-                        </div>
-                        <p className="text-[12px] font-semibold mt-1" style={themeMode === "dark" ? { color: C.muted } : { color: "rgba(255,255,255,0.85)" }}>
-                          {progress.nextLabel
-                            ? `${progress.pointsToNext} pts para ${progress.nextLabel}`
-                            : "¡Nivel máximo alcanzado!"}
-                        </p>
-                      </div>
-                    );
-                  })()}
-                  {!!(myRank.reencuentros || myRank.reportes) && (
-                    <div
-                      className="flex items-center gap-4 mt-3 pt-3 text-[13px] font-bold"
-                      style={{ borderTop: `1px solid ${themeMode === "dark" ? C.border : "rgba(255,255,255,0.2)"}` }}
-                    >
-                      {!!myRank.reportes && (
-                        <span className="flex items-center gap-1.5">
-                          <Camera className="w-4 h-4" /> {myRank.reportes} {myRank.reportes === 1 ? "reporte" : "reportes"}
-                        </span>
-                      )}
-                      {!!myRank.reencuentros && (
-                        <span className="flex items-center gap-1.5">
-                          <PartyPopper className="w-4 h-4" /> {myRank.reencuentros}{" "}
-                          {myRank.reencuentros === 1 ? "reencuentro" : "reencuentros"}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  {!!myRank.streak_days && (
-                    <div
-                      className="flex items-center gap-1.5 mt-3 pt-3 text-[13px] font-bold"
-                      style={{ borderTop: `1px solid ${themeMode === "dark" ? C.border : "rgba(255,255,255,0.2)"}` }}
-                    >
-                      <Flame className="w-4 h-4" fill="currentColor" style={{ color: C.streak }} />
-                      Racha de {myRank.streak_days} {myRank.streak_days === 1 ? "día" : "días"} seguidos
-                    </div>
-                  )}
-                  {getBadges(myRank).length > 0 && (
-                    <div
-                      className="flex flex-wrap gap-1.5 mt-3 pt-3"
-                      style={{ borderTop: `1px solid ${themeMode === "dark" ? C.border : "rgba(255,255,255,0.2)"}` }}
-                    >
-                      {getBadges(myRank).map((b) => (
-                        <span
-                          key={b.id}
-                          title={b.label}
-                          className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[12px] font-semibold"
-                          style={
-                            themeMode === "dark"
-                              ? { background: C.surfaceSubtle, color: C.tierGoldText }
-                              : { background: "rgba(255,255,255,0.15)", color: "#fff" }
-                          }
-                        >
-                          <span>{b.icon}</span> {b.label}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-sm bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl p-4 text-center border" style={{ color: C.muted, borderColor: C.border }}>
-                  Todavía no sumaste puntos — reportá una mascota o confirmá un reencuentro para aparecer en el ranking.
-                </div>
-              )
+              <>
+                <RankingMeCard
+                  me={myRank}
+                  name={profile?.nickname || myRank?.nickname || googleDisplayName || "Vos"}
+                  avatarUrl={myAvatarUrl}
+                  ubicacion={formatUbicacion(profile || myRank)}
+                />
+                {myRank ? (
+                  <RankingStatTiles me={myRank} />
+                ) : (
+                  <p className="text-sm text-center px-2" style={{ color: C.muted }}>
+                    Reportá una mascota o confirmá un reencuentro para sumar puntos y aparecer en el ranking.
+                  </p>
+                )}
+              </>
             ) : (
-              <div className="text-sm bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl p-4 text-center border" style={{ color: C.muted, borderColor: C.border }}>
+              <div className="text-sm bg-white dark:bg-[var(--felpus-dark-card)] rounded-3xl p-4 text-center border" style={{ color: C.muted, borderColor: C.border }}>
                 <button onClick={handleGoogleLogin} className="font-bold underline py-2" style={{ color: C.red }}>
                   Iniciá sesión con Google
                 </button>{" "}
                 para ver tu posición y tus puntos.
               </div>
             )}
+
+            <div className="pt-2 px-1">
+              <h3 className="text-lg font-bold" style={{ color: C.text }}>Ranking general</h3>
+              <p className="text-[12px]" style={{ color: C.muted }}>
+                Puntos por reportar mascotas y, sobre todo, por confirmar reencuentros reales.
+              </p>
+            </div>
 
             {loadingReports && leaderboard.length === 0 && (
               <div className="space-y-2">
@@ -4100,71 +4048,14 @@ export default function FelpusMatcher() {
               </div>
             )}
 
-            <div className="space-y-2">
-              {leaderboard.map((u, i) => {
-                const tier = getTier(u.points || 0, C);
-                const isMe = !!user && u.id === user.id;
-                const alreadyHearted = heartedIds.includes(u.id);
-                return (
-                  <div key={u.id || u.nickname + i} className="relative">
-                    <div className="flex items-center gap-2.5 bg-white dark:bg-[var(--felpus-dark-card)] rounded-xl p-3 border" style={{ borderColor: isMe ? C.red : C.border }}>
-                      <div className="w-5 text-center felpus-mono text-sm font-bold shrink-0" style={{ color: C.muted }}>{i + 1}</div>
-                      <span
-                        className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
-                        style={{ background: tier.bg }}
-                      >
-                        {i === 0 ? <Crown className="w-4 h-4" /> : u.nickname.charAt(0).toUpperCase()}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold truncate" style={{ color: C.text }}>
-                          {u.nickname} {isMe && <span style={{ color: C.red }}>(vos)</span>}
-                        </p>
-                        <p className="text-[12px] flex items-center flex-wrap gap-x-1.5" style={{ color: tier.text }}>
-                          <span>
-                            {tier.label} · {"🐾".repeat(tier.paws)}
-                          </span>
-                          {!!u.reencuentros && (
-                            <span className="inline-flex items-center gap-0.5" style={{ color: C.greenDark }}>
-                              <PartyPopper className="w-3 h-3" /> {u.reencuentros}
-                            </span>
-                          )}
-                          {getBadges(u).length > 0 && (
-                            <span>
-                              {getBadges(u).map((b) => (
-                                <span key={b.id} title={b.label}>{b.icon}</span>
-                              ))}
-                            </span>
-                          )}
-                        </p>
-                      </div>
-                      <div className="flex flex-col items-end shrink-0">
-                        <span className="felpus-mono text-base font-bold" style={{ color: C.red }}>{u.points || 0}</span>
-                        <span className="text-[11px] font-semibold -mt-0.5" style={{ color: C.muted }}>pts</span>
-                      </div>
-                    </div>
-                    {!isMe && (
-                      <button
-                        type="button"
-                        onClick={() => handleSendHeart(u)}
-                        disabled={alreadyHearted}
-                        aria-label={alreadyHearted ? "Ya le mandaste un corazón" : `Mandarle un corazón a ${u.nickname}`}
-                        className="absolute -top-2 -right-2 flex items-center gap-1 bg-white dark:bg-[var(--felpus-dark-card)] border rounded-full px-2.5 py-1.5 shadow-sm before:absolute before:-inset-2 before:content-[''] disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
-                        style={{ borderColor: C.border }}
-                      >
-                        <Heart
-                          className={poppingHeartId === u.id ? "w-3.5 h-3.5 felpus-heart-pop" : "w-3.5 h-3.5"}
-                          style={{ color: alreadyHearted ? C.red : C.muted }}
-                          fill={alreadyHearted ? C.red : "none"}
-                        />
-                        <span className="felpus-mono text-[11px] font-bold" style={{ color: C.muted }}>
-                          {u.hearts || 0}
-                        </span>
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+            <RankingList
+              items={leaderboard}
+              myId={user?.id}
+              myAvatarUrl={myAvatarUrl}
+              heartedIds={heartedIds}
+              poppingHeartId={poppingHeartId}
+              onSendHeart={handleSendHeart}
+            />
 
             <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-xl p-3.5 border text-[12px] space-y-1.5" style={{ borderColor: C.border, color: C.muted }}>
               <p className="font-bold text-xs mb-1" style={{ color: C.text }}>Cómo se suman puntos</p>
@@ -4562,8 +4453,8 @@ export default function FelpusMatcher() {
                   className="w-14 h-14 rounded-full overflow-hidden shrink-0 flex items-center justify-center text-lg font-bold text-white"
                   style={{ background: C.redSolid }}
                 >
-                  {googleAvatar ? (
-                    <Image src={googleAvatar} alt="" unoptimized width={56} height={56} className="w-full h-full object-cover" />
+                  {myAvatarUrl ? (
+                    <Image src={myAvatarUrl} alt="" unoptimized width={56} height={56} className="w-full h-full object-cover" />
                   ) : (
                     (profile?.nickname || googleDisplayName || user.email || "?")[0].toUpperCase()
                   )}
@@ -4876,6 +4767,12 @@ export default function FelpusMatcher() {
                       <p className="text-sm" style={{ color: C.text }}>{user.email}</p>
                     </div>
                     <div>
+                      <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>De dónde sos</p>
+                      <p className="text-sm" style={{ color: formatUbicacion(profile, { conPais: true }) ? C.text : C.muted }}>
+                        {formatUbicacion(profile, { conPais: true }) || "No agregaste tu ciudad."}
+                      </p>
+                    </div>
+                    <div>
                       <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>WhatsApp</p>
                       {profile?.whatsapp ? <ProfileWhatsappLine value={profile.whatsapp} textClassName="text-sm" /> : (
                         <p className="text-sm" style={{ color: C.muted }}>No agregaste un WhatsApp de perfil.</p>
@@ -4893,6 +4790,38 @@ export default function FelpusMatcher() {
                 )}
                 {editingProfile && (
                   <>
+                    <div className="flex items-center gap-3">
+                      <Avatar
+                        url={avatarDraft || (avatarRemoved ? null : profile?.avatar_url || googleAvatar)}
+                        name={profileNameDraft || googleDisplayName}
+                        size={64}
+                        rounded="rounded-2xl"
+                      />
+                      <div className="flex flex-col items-start gap-1">
+                        <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handlePickAvatar} />
+                        <button
+                          type="button"
+                          onClick={() => avatarInputRef.current?.click()}
+                          className="flex items-center gap-1.5 border rounded-lg px-3 py-2 text-[13px] font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                          style={{ borderColor: C.border, color: C.text }}
+                        >
+                          <Camera className="w-3.5 h-3.5" /> {avatarDraft || profile?.avatar_url ? "Cambiar foto" : "Subir foto"}
+                        </button>
+                        {(avatarDraft || (profile?.avatar_url && !avatarRemoved)) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAvatarDraft(null);
+                              setAvatarRemoved(true);
+                            }}
+                            className="text-[12px] font-semibold px-1"
+                            style={{ color: C.muted }}
+                          >
+                            Quitar foto
+                          </button>
+                        )}
+                      </div>
+                    </div>
                     <div>
                       <label htmlFor="profile-nombre" className="text-[12px] font-semibold mb-1 block" style={{ color: C.muted }}>Nombre</label>
                       <input
@@ -4905,6 +4834,71 @@ export default function FelpusMatcher() {
                         style={{ borderColor: C.border, color: C.text }}
                       />
                     </div>
+                    <fieldset className="space-y-2">
+                      <legend className="text-[12px] font-semibold mb-1" style={{ color: C.muted }}>De dónde sos (opcional)</legend>
+                      <select
+                        aria-label="País"
+                        value={PAISES.includes(paisDraft) ? paisDraft : "Otro"}
+                        onChange={(e) => {
+                          setPaisDraft(e.target.value === "Otro" ? "" : e.target.value);
+                          setProvinciaDraft("");
+                        }}
+                        className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
+                        style={{ borderColor: C.border, color: C.text }}
+                      >
+                        {PAISES.map((p) => (
+                          <option key={p} value={p}>{p}</option>
+                        ))}
+                      </select>
+                      {!PAISES.includes(paisDraft) && (
+                        <input
+                          type="text"
+                          aria-label="Escribí tu país"
+                          placeholder="País"
+                          value={paisDraft}
+                          onChange={(e) => setPaisDraft(e.target.value)}
+                          maxLength={UBICACION_MAX.pais}
+                          className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
+                          style={{ borderColor: C.border, color: C.text }}
+                        />
+                      )}
+                      {paisDraft === "Argentina" ? (
+                        <select
+                          aria-label="Provincia"
+                          value={provinciaDraft}
+                          onChange={(e) => setProvinciaDraft(e.target.value)}
+                          className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
+                          style={{ borderColor: C.border, color: provinciaDraft ? C.text : C.muted }}
+                        >
+                          <option value="">Provincia</option>
+                          {PROVINCIAS_AR.map((p) => (
+                            <option key={p} value={p}>{p}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          aria-label="Provincia o estado"
+                          placeholder="Provincia o estado"
+                          value={provinciaDraft}
+                          onChange={(e) => setProvinciaDraft(e.target.value)}
+                          maxLength={UBICACION_MAX.provincia}
+                          className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
+                          style={{ borderColor: C.border, color: C.text }}
+                        />
+                      )}
+                      <input
+                        type="text"
+                        aria-label="Ciudad"
+                        placeholder="Ciudad"
+                        value={ciudadDraft}
+                        onChange={(e) => setCiudadDraft(e.target.value)}
+                        maxLength={UBICACION_MAX.ciudad}
+                        className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
+                        style={{ borderColor: C.border, color: C.text }}
+                      />
+                      <p className="text-[12px]" style={{ color: C.muted }}>Se muestra en el ranking de colaboradores.</p>
+                    </fieldset>
                     <div>
                       <label htmlFor="profile-whatsapp" className="text-[12px] font-semibold mb-1 block" style={{ color: C.muted }}>
                         WhatsApp (opcional)
