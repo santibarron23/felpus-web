@@ -11,6 +11,7 @@ import {
   MapPin,
   Camera,
   Navigation,
+  LayoutGrid,
   Loader2,
   Sparkles,
   ChevronRight,
@@ -143,6 +144,7 @@ import ReportsMap from "./ReportsMap";
 import Mascot from "./Mascot";
 import ZonaAutocomplete from "./ZonaAutocomplete";
 import MatchScorecard from "./felpus/MatchScorecard";
+import ReportGrid from "./felpus/ReportGrid";
 import { Avatar, RankingList, RankingMeCard, RankingStatTiles } from "./felpus/Ranking";
 import { PAIS_DEFAULT, PAISES, PROVINCIAS_AR, UBICACION_MAX, cleanUbicacion, cropAvatarDataUrl, formatUbicacion } from "../lib/profile";
 import Combobox from "./felpus/Combobox";
@@ -389,6 +391,10 @@ export default function FelpusMatcher() {
   }, [searchQuery]);
   const [filterTamano, setFilterTamano] = useState("todos");
   const [filterColor, setFilterColor] = useState("todos");
+  // Filtros nuevos (2026-10-22): raza (texto, coincide parcial: "cani"
+  // encuentra "Caniche") y sexo.
+  const [filterRaza, setFilterRaza] = useState("");
+  const [filterSexo, setFilterSexo] = useState("todos");
   const [filterFecha, setFilterFecha] = useState("todos");
   const [filterRadioKm, setFilterRadioKm] = useState(null);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
@@ -2047,7 +2053,12 @@ export default function FelpusMatcher() {
   const FECHA_LIMITES_MS = { "24h": 24 * 3600 * 1000, "7d": 7 * 24 * 3600 * 1000, "30d": 30 * 24 * 3600 * 1000 };
   const normalizedQuery = normalizeText(debouncedSearchQuery).trim();
   const hasAdvancedFilters =
-    filterTamano !== "todos" || filterColor !== "todos" || filterFecha !== "todos" || filterRadioKm != null;
+    filterTamano !== "todos" ||
+    filterColor !== "todos" ||
+    filterFecha !== "todos" ||
+    filterRadioKm != null ||
+    !!filterRaza.trim() ||
+    filterSexo !== "todos";
 
   // Memoizados por la misma razón que filteredReports más abajo: reports
   // solo cambia cuando de verdad llega data nueva, no en cada render.
@@ -2074,6 +2085,7 @@ export default function FelpusMatcher() {
   // sus marcadores todo el tiempo, no solo cuando la lista filtrada
   // realmente cambiaba — carísimo, y encima expuso un crash real cuando el
   // mapa estaba en un estado roto (ver ReportsMap.jsx).
+  const normalizedRaza = normalizeText(filterRaza.trim());
   const filteredReports = useMemo(() => {
     // "resuelto" (Solo reencontradas, el filtro que activa la tarjeta
     // "Reencontradas" de Inicio) cambia la base de la lista: en vez de los
@@ -2084,6 +2096,8 @@ export default function FelpusMatcher() {
       if (filterEspecie !== "todos" && r.especie !== filterEspecie) return false;
       if (filterTamano !== "todos" && r.tamano !== filterTamano) return false;
       if (filterColor !== "todos" && r.color !== filterColor) return false;
+      if (normalizedRaza && !normalizeText(r.raza || "").includes(normalizedRaza)) return false;
+      if (filterSexo !== "todos" && r.sexo !== filterSexo) return false;
       if (filterFecha !== "todos" && Date.now() - r.creadoEn > FECHA_LIMITES_MS[filterFecha]) return false;
       if (normalizedQuery) {
         // ciudad/provincia: mismo campo estructurado que ahora completa la
@@ -2123,6 +2137,8 @@ export default function FelpusMatcher() {
     filterEspecie,
     filterTamano,
     filterColor,
+    normalizedRaza,
+    filterSexo,
     filterFecha,
     normalizedQuery,
     myLocation,
@@ -2137,7 +2153,7 @@ export default function FelpusMatcher() {
   const [visibleCount, setVisibleCount] = useState(REPORTS_PAGE_SIZE);
   useEffect(() => {
     setVisibleCount(REPORTS_PAGE_SIZE);
-  }, [filterTipo, filterEspecie, filterTamano, filterColor, filterFecha, filterRadioKm, normalizedQuery, sortBy]);
+  }, [filterTipo, filterEspecie, filterTamano, filterColor, normalizedRaza, filterSexo, filterFecha, filterRadioKm, normalizedQuery, sortBy]);
   const visibleReports = filteredReports.slice(0, visibleCount);
 
   const myTier = getTier(myRank?.points || 0, C);
@@ -3730,7 +3746,7 @@ export default function FelpusMatcher() {
             {/* En desktop (lg+) la lista y el mapa se muestran lado a lado
                 (ver más abajo), así que este toggle deja de tener sentido —
                 aprovecha el espacio ancho en vez de forzar a elegir una vista. */}
-            <div className="flex items-center gap-2 lg:hidden">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setExploreView("lista")}
@@ -3741,8 +3757,23 @@ export default function FelpusMatcher() {
               </button>
               <button
                 type="button"
-                onClick={() => setExploreView("mapa")}
+                onClick={() => {
+                  // La grilla es "lo más cerca primero": pide la ubicación
+                  // si todavía no la tiene (handleLocateMe ya ordena por
+                  // cercanía al recibirla).
+                  setExploreView("grilla");
+                  if (myLocation) setSortBy("cercania");
+                  else if (!locatingMe) handleLocateMe();
+                }}
                 className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 min-h-[40px] text-xs font-bold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                style={exploreView === "grilla" ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" /> Grilla
+              </button>
+              <button
+                type="button"
+                onClick={() => setExploreView("mapa")}
+                className="lg:hidden flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 min-h-[40px] text-xs font-bold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
                 style={exploreView === "mapa" ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
               >
                 <MapPin className="w-3.5 h-3.5" /> Mapa
@@ -3770,6 +3801,11 @@ export default function FelpusMatcher() {
                 setFilterTamano={setFilterTamano}
                 filterColor={filterColor}
                 setFilterColor={setFilterColor}
+                filterRaza={filterRaza}
+                setFilterRaza={setFilterRaza}
+                filterSexo={filterSexo}
+                setFilterSexo={setFilterSexo}
+                filterEspecie={filterEspecie}
                 filterFecha={filterFecha}
                 setFilterFecha={setFilterFecha}
                 filterRadioKm={filterRadioKm}
@@ -3799,7 +3835,7 @@ export default function FelpusMatcher() {
                 sesión (no una por cada ida y vuelta a esta pestaña) gracias
                 a exploreVisited, ver comentario donde se declara. */}
             <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:gap-5 lg:items-start">
-              <div className={exploreView === "lista" ? "" : "hidden lg:block"}>
+              <div className={exploreView === "mapa" ? "hidden lg:block" : ""}>
                 {loadingReports && (
                   <div className="space-y-3">
                     <SkeletonCard />
@@ -3841,7 +3877,20 @@ export default function FelpusMatcher() {
                   </div>
                 )}
 
-            <div className="space-y-3">
+            {exploreView === "grilla" && (
+              <>
+                {sortBy !== "cercania" && !locatingMe && (
+                  <p className="text-[12px] mb-2" style={{ color: C.muted }}>
+                    Sin tu ubicación se ordenan por las más recientes.{" "}
+                    <button type="button" onClick={handleLocateMe} className="font-bold underline" style={{ color: C.text }}>
+                      Usar mi ubicación
+                    </button>
+                  </p>
+                )}
+                <ReportGrid reports={visibleReports} onOpen={openReportDetail} />
+              </>
+            )}
+            <div className={exploreView === "grilla" ? "hidden" : "space-y-3"}>
               {visibleReports.map((r) => r.resuelto ? (
                 // Reencontrada (filtro "Solo reencontradas"): misma tarjeta que
                 // la sección "Reencuentros felices", sin coincidencias ni

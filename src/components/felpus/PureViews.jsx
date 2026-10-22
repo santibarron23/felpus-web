@@ -37,7 +37,7 @@ import {
   Flag,
   Bookmark,
 } from "lucide-react";
-import { scoreLabel, isRecent, formatFechaAR, buildShareText, reportPhotoAlt, COLOR_OPTIONS, REPORT_FLAG_REASONS, fechaLabel } from "../../lib/matching";
+import { scoreLabel, isRecent, formatFechaAR, buildShareText, reportPhotoAlt, COLOR_OPTIONS, REPORT_FLAG_REASONS, fechaLabel, getRazaOptions, RAZA_ESPECIALES } from "../../lib/matching";
 import { SITE_URL } from "../../lib/site";
 import { logError } from "../../lib/log";
 import { useFocusTrap } from "./useFocusTrap";
@@ -1002,6 +1002,11 @@ export function FilterSheet({
   setFilterTamano,
   filterColor,
   setFilterColor,
+  filterRaza = "",
+  setFilterRaza = () => {},
+  filterSexo = "todos",
+  setFilterSexo = () => {},
+  filterEspecie = "todos",
   filterFecha,
   setFilterFecha,
   filterRadioKm,
@@ -1073,6 +1078,38 @@ export function FilterSheet({
             </select>
           </div>
 
+          <div className="flex gap-2">
+            <input
+              type="text"
+              list="filtro-razas"
+              value={filterRaza}
+              onChange={(e) => setFilterRaza(e.target.value)}
+              placeholder="Raza (ej: caniche)"
+              aria-label="Filtrar por raza"
+              maxLength={40}
+              className="felpus-input flex-1 min-w-0 border rounded-lg px-3 py-2 text-sm bg-white dark:bg-[var(--felpus-dark-card)]"
+              style={{ borderColor: C.border, color: C.text }}
+            />
+            <datalist id="filtro-razas">
+              {getRazaOptions(filterEspecie === "todos" ? "perro" : filterEspecie)
+                .concat(filterEspecie === "todos" ? getRazaOptions("gato").slice(RAZA_ESPECIALES.length) : [])
+                .map((r) => (
+                  <option key={r} value={r} />
+                ))}
+            </datalist>
+            <select
+              value={filterSexo}
+              onChange={(e) => setFilterSexo(e.target.value)}
+              aria-label="Filtrar por sexo"
+              className="felpus-input w-[42%] border rounded-lg px-3 py-2 text-sm bg-white dark:bg-[var(--felpus-dark-card)]"
+              style={{ borderColor: C.border, color: C.text }}
+            >
+              <option value="todos">Cualquier sexo</option>
+              <option value="Macho">Macho</option>
+              <option value="Hembra">Hembra</option>
+            </select>
+          </div>
+
           <div>
             <p className="text-[12px] font-semibold mb-1.5" style={{ color: C.muted }}>Antigüedad</p>
             <div className="flex gap-1.5 flex-wrap">
@@ -1136,6 +1173,8 @@ export function FilterSheet({
               onClick={() => {
                 setFilterTamano("todos");
                 setFilterColor("todos");
+                setFilterRaza("");
+                setFilterSexo("todos");
                 setFilterFecha("todos");
                 setFilterRadioKm(null);
               }}
