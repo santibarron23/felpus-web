@@ -10,6 +10,7 @@ import {
   OPEN_IN_BROWSER_HINT,
 } from "../lib/geolocation";
 import { CITIES } from "../lib/cities";
+import FullscreenMapPicker from "./FullscreenMapPicker";
 
 // Sin ubicación de la persona ni defaultCenter: Salta, donde está la
 // comunidad de Felpus (antes, Buenos Aires).
@@ -55,8 +56,17 @@ export default function MapPicker({
   // reporte (eso sigue requiriendo tocar y confirmar).
   const startCenterRef = useRef(null);
   const userMovedRef = useRef(false);
+  // true cuando ya se sabe dónde está la persona (GPS): el mapa grande
+  // arranca más cerca.
+  const locatedRef = useRef(false);
   // Botón "Ir a mi ubicación" dentro del mapa: "idle" | "locating" | mensaje de error.
   const [geoState, setGeoState] = useState("idle");
+  // Pantallas táctiles (2026-10-22): el mapa chico de la página es solo una
+  // vista (no se mueve ni se toca, así no pide "usá dos dedos" ni se pelea
+  // con el scroll) y para marcar se abre FullscreenMapPicker, con pin fijo
+  // en el centro. Se decide una vez al crear el mapa.
+  const [touch, setTouch] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
 
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -77,6 +87,8 @@ export default function MapPicker({
     loadGoogleMaps(apiKey)
       .then((maps) => {
         if (cancelled || !containerRef.current) return;
+        const isTouch = !!window.matchMedia?.("(pointer: coarse)").matches;
+        setTouch(isTouch);
         const center = {
           lat: lat ?? defaultCenter?.lat ?? FALLBACK_CENTER.lat,
           lng: lng ?? defaultCenter?.lng ?? FALLBACK_CENTER.lng,
@@ -88,11 +100,12 @@ export default function MapPicker({
           mapTypeControl: false,
           fullscreenControl: false,
           clickableIcons: false,
+          ...(isTouch ? { gestureHandling: "none", zoomControl: false, keyboardShortcuts: false } : {}),
         });
         const marker = new maps.Marker({
           position: center,
           map,
-          draggable: true,
+          draggable: !isTouch,
         });
         marker.addListener("dragend", () => {
           userMovedRef.current = true;
@@ -101,6 +114,7 @@ export default function MapPicker({
           setPending({ lat: pos.lat(), lng: pos.lng() });
         });
         map.addListener("click", (e) => {
+          if (isTouch) return;
           userMovedRef.current = true;
           marker.setPosition(e.latLng);
           marker.setOpacity(0.55);
@@ -116,6 +130,7 @@ export default function MapPicker({
           requestLocation(
             (pos) => {
               if (cancelled || userMovedRef.current) return;
+              locatedRef.current = true;
               startCenterRef.current = pos;
               map.setCenter(pos);
               map.setZoom(15);
@@ -296,16 +311,66 @@ export default function MapPicker({
     );
   }
 
+  const hasPoint = lat != null && lng != null;
+  const fullscreenCenter = hasPoint
+    ? { lat, lng }
+    : startCenterRef.current || { lat: defaultCenter?.lat ?? FALLBACK_CENTER.lat, lng: defaultCenter?.lng ?? FALLBACK_CENTER.lng };
+
   return (
     <div>
-      <div
-        ref={containerRef}
-        role="region"
-        aria-label="Mapa interactivo para marcar la ubicación exacta. Si usás teclado, el botón Ubicación hace lo mismo sin necesidad del mapa."
-        className="w-full rounded-xl overflow-hidden border"
-        style={{ height: 220, borderColor: C.border, background: C.surfaceMuted }}
-      />
-      {status === "ready" && (
+      <div className="relative">
+        <div
+          ref={containerRef}
+          role="region"
+          aria-label="Mapa interactivo para marcar la ubicación exacta. Si usás teclado, el botón Ubicación hace lo mismo sin necesidad del mapa."
+          className="w-full rounded-xl overflow-hidden border"
+          style={{ height: 220, borderColor: C.border, background: C.surfaceMuted }}
+        />
+        {touch && status === "ready" && (
+          <button
+            type="button"
+            onClick={() => setFullscreen(true)}
+            aria-label="Abrir el mapa para marcar la ubicación"
+            className="absolute inset-0 rounded-xl flex items-end justify-center pb-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+          >
+            <span className="rounded-full px-3.5 py-2 text-[13px] font-bold text-white shadow-md" style={{ background: C.emphasisBg }}>
+              {hasPoint ? "Tocá para cambiar el lugar" : "Tocá para marcar en el mapa"}
+            </span>
+          </button>
+        )}
+      </div>
+      {fullscreen && (
+        <FullscreenMapPicker
+          apiKey={apiKey}
+          center={fullscreenCenter}
+          zoom={hasPoint || locatedRef.current ? 16 : 13}
+          radiusM={radiusM}
+          onClose={() => setFullscreen(false)}
+          onConfirm={(newLat, newLng) => {
+            setFullscreen(false);
+            userMovedRef.current = true;
+            onChangeRef.current(newLat, newLng);
+          }}
+        />
+      )}
+      {touch && status === "ready" && (
+        <>
+          <button
+            type="button"
+            onClick={() => setFullscreen(true)}
+            className="mt-2 w-full text-[13px] font-bold rounded-lg py-2.5 border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+            style={{ borderColor: C.border, color: C.text, background: C.surfaceSubtle }}
+          >
+            📍 {hasPoint ? "Cambiar el lugar en el mapa" : "Marcar en el mapa"}
+          </button>
+          <p className="text-[11px] mt-1" style={{ color: C.muted }}>
+            {hasPoint
+              ? "✓ Ubicación marcada. Cuanto más cerca esté del pin de otro reporte, mayor el % de coincidencia."
+              : "Se abre el mapa grande: movelo hasta que el pin quede en el lugar y tocá \"Usar esta ubicación\"."}
+          </p>
+        </>
+      )}
+      {!touch && status === "ready" && (
         <button
           type="button"
           onClick={goToMyLocation}
@@ -317,7 +382,7 @@ export default function MapPicker({
         </button>
       )}
       {geoMessage}
-      {pending ? (
+      {touch ? null : pending ? (
         <div className="mt-2 flex items-center gap-2 rounded-lg p-2.5" style={{ background: C.surfaceSubtle, border: `1px solid ${C.border}` }}>
           <span className="text-[12px] flex-1" style={{ color: C.muted }}>¿Confirmás esta ubicación?</span>
           <button
