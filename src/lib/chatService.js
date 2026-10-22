@@ -99,12 +99,16 @@ function addUsage(total, usage) {
 }
 
 export function pendingFor({ draft, draftChanged, reply, context, image }) {
-  if (isDraftEmpty(draft)) return null;
   if (!(reply || "").includes("?")) return null;
   // Primero lo que de verdad pregunta el texto; si no se reconoce, el
   // primer dato que falta (que es lo que el prompt le pide preguntar).
+  // Va ANTES del chequeo de borrador vacío (2026-10-22): la primera
+  // pregunta ("¿perdiste una mascota o encontraste una?") llega con el
+  // borrador todavía vacío, y sin esto no mostraba los botones y había que
+  // escribir la respuesta (visto en un iPhone real).
   const asked = detectAskedField(reply);
   if (asked) return asked;
+  if (isDraftEmpty(draft)) return null;
   if (!draftChanged) return null;
   return missingFields(draft, { hasPhoto: context.hasPhoto || !!image, skipped: context.skipped })[0]?.clave || null;
 }
