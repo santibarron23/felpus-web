@@ -78,13 +78,33 @@ export function classifyScores(scores, palabras = null) {
 }
 
 let ocrWorkerPromise = null;
+// Último paso que reportó Tesseract (para el log si se cuelga).
+let ocrStage = "sin arrancar";
+// Si el OCR se colgó una vez en esta instancia, no se vuelve a esperar:
+// decide solo CLIP hasta que Vercel levante una instancia nueva.
+let ocrDisabled = false;
+// Por qué no hubo OCR en el último pedido ("timeout: <paso>", "error: …"):
+// va en la respuesta de /api/photo-check para poder diagnosticarlo desde
+// afuera sin acceso a los logs de Vercel. No incluye nada sensible.
+let ocrNote = null;
+// Tiempo máximo para leer el texto. Visto en producción (2026-10-22): en
+// Vercel el OCR se quedó colgado sin tirar error y arrastró todo el pedido
+// hasta el corte de 60 s (FUNCTION_INVOCATION_TIMEOUT), así que tampoco
+// llegaba la respuesta de CLIP.
+const OCR_TIMEOUT_MS = 15000;
 
 function getOcrWorker() {
   if (!ocrWorkerPromise) {
     ocrWorkerPromise = (async () => {
       const { createWorker } = await import("tesseract.js");
       // Datos del idioma: se bajan de su CDN la primera vez y quedan en /tmp.
-      return createWorker("spa", 1, { cachePath: "/tmp/tesseract-cache" });
+      return createWorker("spa", 1, {
+        cachePath: "/tmp/tesseract-cache",
+        logger: (m) => {
+          ocrStage = m?.status || ocrStage;
+        },
+        errorHandler: (e) => logError("Error del worker de OCR", e),
+      });
     })().catch((e) => {
       ocrWorkerPromise = null;
       throw e;
@@ -93,17 +113,36 @@ function getOcrWorker() {
   return ocrWorkerPromise;
 }
 
-// Cuántas palabras legibles tiene la imagen; null si el OCR falla (en ese
-// caso decide solo CLIP).
+async function readWordsSinLimite(bytes) {
+  const worker = await getOcrWorker();
+  const { data } = await worker.recognize(bytes, {}, { blocks: true });
+  const words = (data.blocks || []).flatMap((b) => b.paragraphs.flatMap((p) => p.lines.flatMap((l) => l.words)));
+  return countReadableWords(words);
+}
+
+// Cuántas palabras legibles tiene la imagen; null si el OCR falla o tarda
+// demasiado (en ese caso decide solo CLIP).
 async function readWords(bytes) {
+  if (ocrDisabled) return null; // ocrNote queda con el motivo original
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), OCR_TIMEOUT_MS);
+  });
   try {
-    const worker = await getOcrWorker();
-    const { data } = await worker.recognize(bytes, {}, { blocks: true });
-    const words = (data.blocks || []).flatMap((b) => b.paragraphs.flatMap((p) => p.lines.flatMap((l) => l.words)));
-    return countReadableWords(words);
+    const result = await Promise.race([readWordsSinLimite(bytes), timeout]);
+    if (result === "timeout") {
+      ocrDisabled = true;
+      ocrNote = `timeout: ${ocrStage}`;
+      logError(`El OCR no respondió en ${OCR_TIMEOUT_MS / 1000} s (último paso: ${ocrStage}); sigue solo CLIP`);
+      return null;
+    }
+    return result;
   } catch (e) {
-    logError("No se pudo leer el texto de la foto (OCR)", e);
+    ocrNote = `error: ${String(e?.message || e).slice(0, 120)} (${ocrStage})`;
+    logError(`No se pudo leer el texto de la foto (OCR, último paso: ${ocrStage})`, e);
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -134,5 +173,7 @@ export async function checkPhoto(bytes) {
   const result = await classify(image, keys.map((k) => LABELS[k]));
   const byLabel = Object.fromEntries(result.map((r) => [r.label, r.score]));
   const scores = Object.fromEntries(keys.map((k) => [k, byLabel[LABELS[k]] || 0]));
-  return classifyScores(scores, await palabrasPromise);
+  const palabras = await palabrasPromise;
+  const out = classifyScores(scores, palabras);
+  return palabras == null && ocrNote ? { ...out, ocr: ocrNote } : out;
 }
