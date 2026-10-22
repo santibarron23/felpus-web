@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyScores, PHOTO_CHECK_THRESHOLD } from "./photoCheck";
+import { classifyScores, countReadableWords, PHOTO_CHECK_THRESHOLD, OCR_WORDS_THRESHOLD } from "./photoCheck";
 import { imageSimilarity, marcarDudosas, matchBreakdown, scoreMatch } from "./matching";
 
 const real = { perro: 0.9, gato: 0.02, mascota: 0.06, cartel: 0.01, captura: 0.005, ilustracion: 0.005 };
@@ -46,5 +46,28 @@ describe("fotos dudosas en el matching", () => {
   it("con al menos una foto válida de cada lado, compara solo esas", () => {
     const mixto = { ...b, fotos: [{ embedding: emb(0.9), hist: null, dudosa: true }, b.fotos[0]] };
     expect(imageSimilarity(a, mixto)).toBe(imageSimilarity(a, b));
+  });
+});
+
+describe("OCR como segunda señal", () => {
+  it("cuenta solo palabras legibles (confianza alta, 3+ letras)", () => {
+    const words = [
+      { text: "Se", confidence: 95 },
+      { text: "perdió", confidence: 92 },
+      { text: "Zona", confidence: 88 },
+      { text: "xq", confidence: 90 },
+      { text: "|||", confidence: 99 },
+      { text: "Shopping", confidence: 40 },
+    ];
+    expect(countReadableWords(words)).toBe(2);
+  });
+  it("con mucho texto marca aunque CLIP diga foto real (tipo 'texto')", () => {
+    expect(classifyScores(real, OCR_WORDS_THRESHOLD)).toMatchObject({ dudosa: true, tipo: "texto" });
+  });
+  it("una foto real con una o dos palabras de fondo no se marca", () => {
+    expect(classifyScores(real, 1)).toMatchObject({ dudosa: false });
+  });
+  it("si el OCR no corrió (null), decide solo CLIP", () => {
+    expect(classifyScores(real, null).dudosa).toBe(false);
   });
 });

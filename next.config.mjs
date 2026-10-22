@@ -111,6 +111,9 @@ const nextConfig = {
   // lucide-react ya usa imports nombrados (tree-shakeable de por sí), pero
   // esta opción le ahorra a Next tener que inferirlo: acelera el build y
   // asegura que solo los íconos realmente importados entren al bundle.
+  // tesseract.js arranca su worker desde archivos propios del paquete: si
+  // Next lo mete en el bundle, no los encuentra.
+  serverExternalPackages: ["tesseract.js"],
   experimental: {
     optimizePackageImports: ["lucide-react"],
   },
@@ -158,7 +161,16 @@ const nextConfig = {
   // /api/photo-check (CLIP, ver photoCheck.js) usa lo mismo.
   outputFileTracingIncludes: {
     "/api/embed": ONNX_RUNTIME_FILES,
-    "/api/photo-check": ONNX_RUNTIME_FILES,
+    // + Tesseract (OCR): el worker y el wasm se cargan con rutas que el
+    // rastreo de Next no sigue.
+    "/api/photo-check": [
+      ...ONNX_RUNTIME_FILES,
+      "node_modules/tesseract.js/src/**",
+      "node_modules/tesseract.js/package.json",
+      "node_modules/tesseract.js-core/tesseract-core*lstm*",
+      "node_modules/tesseract.js-core/package.json",
+      "node_modules/tesseract.js-core/index.js",
+    ],
   },
   // felpus-web.vercel.app → felpus.com (2026-10-21): links viejos o
   // compartidos desde el dominio de Vercel (ej. en Instagram) abrían la app

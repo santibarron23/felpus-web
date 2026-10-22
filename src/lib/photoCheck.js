@@ -21,9 +21,21 @@
 // No detecta bien imágenes generadas con IA que parecen fotos: eso sigue
 // dependiendo de las denuncias y del panel de admin.
 //
+// Segunda señal (2026-10-22): texto en la imagen (OCR con Tesseract, gratis,
+// también en el servidor). Un flyer donde la foto ocupa casi todo engaña a
+// CLIP, pero sigue teniendo "Se perdió", la zona, la fecha, el teléfono…
+// Calibrado con las mismas 133 fotos: todos los flyers y capturas dieron 7
+// palabras legibles o más (incluida la captura de historia que CLIP no
+// veía), y ninguna foto real de mascota pasó de 1. Tres "fotos reales" con
+// 4 a 26 palabras resultaron ser capturas (un posteo, una noticia, la
+// galería del celular). La foto se marca si CUALQUIERA de las dos señales
+// lo indica.
+//
 // Nunca bloquea: la app avisa y la persona decide (ver FelpusMatcher). Si
 // igual la publica, la foto queda marcada para revisar y no se usa al
 // comparar fotos (ver fotos_dudosas en matching.js).
+import { logError } from "./log";
+
 export const CHECK_MODEL = "Xenova/clip-vit-base-patch32";
 const CHECK_MODEL_REVISION = "d15189d7028b43f1d3e65039190477f6af591c2a";
 
@@ -41,15 +53,58 @@ const LABELS = {
 };
 const MALAS = ["cartel", "captura", "ilustracion"];
 export const PHOTO_CHECK_THRESHOLD = 0.07;
+export const OCR_WORDS_THRESHOLD = 7;
+
+// Palabras "de verdad" que leyó el OCR: confianza alta y al menos 3 letras
+// seguidas (descarta el ruido que sale de pelo, baldosas o rejas).
+export function countReadableWords(words) {
+  return (words || []).filter((w) => (w?.confidence ?? 0) >= 70 && /[a-záéíóúüñ]{3,}/i.test(w?.text || "")).length;
+}
 
 // scores: probabilidad de cada frase de LABELS (suman 1).
 // Devuelve { dudosa, tipo, score }; tipo es la frase "mala" más probable
 // (para el texto del aviso) o null si la foto parece real.
-export function classifyScores(scores) {
-  const score = MALAS.reduce((acc, k) => acc + (scores?.[k] || 0), 0);
-  if (!(score >= PHOTO_CHECK_THRESHOLD)) return { dudosa: false, tipo: null, score: Math.round(score * 1000) / 1000 };
-  const tipo = MALAS.reduce((best, k) => ((scores[k] || 0) > (scores[best] || 0) ? k : best), MALAS[0]);
-  return { dudosa: true, tipo, score: Math.round(score * 1000) / 1000 };
+// palabras (opcional): las que leyó el OCR (null si no corrió). Con mucho
+// texto y CLIP tranquilo, tipo "texto" (el aviso dice "mucho texto").
+export function classifyScores(scores, palabras = null) {
+  const score = Math.round(MALAS.reduce((acc, k) => acc + (scores?.[k] || 0), 0) * 1000) / 1000;
+  const conTexto = palabras != null && palabras >= OCR_WORDS_THRESHOLD;
+  if (score >= PHOTO_CHECK_THRESHOLD) {
+    const tipo = MALAS.reduce((best, k) => ((scores[k] || 0) > (scores[best] || 0) ? k : best), MALAS[0]);
+    return { dudosa: true, tipo, score, palabras };
+  }
+  if (conTexto) return { dudosa: true, tipo: "texto", score, palabras };
+  return { dudosa: false, tipo: null, score, palabras };
+}
+
+let ocrWorkerPromise = null;
+
+function getOcrWorker() {
+  if (!ocrWorkerPromise) {
+    ocrWorkerPromise = (async () => {
+      const { createWorker } = await import("tesseract.js");
+      // Datos del idioma: se bajan de su CDN la primera vez y quedan en /tmp.
+      return createWorker("spa", 1, { cachePath: "/tmp/tesseract-cache" });
+    })().catch((e) => {
+      ocrWorkerPromise = null;
+      throw e;
+    });
+  }
+  return ocrWorkerPromise;
+}
+
+// Cuántas palabras legibles tiene la imagen; null si el OCR falla (en ese
+// caso decide solo CLIP).
+async function readWords(bytes) {
+  try {
+    const worker = await getOcrWorker();
+    const { data } = await worker.recognize(bytes, {}, { blocks: true });
+    const words = (data.blocks || []).flatMap((b) => b.paragraphs.flatMap((p) => p.lines.flatMap((l) => l.words)));
+    return countReadableWords(words);
+  } catch (e) {
+    logError("No se pudo leer el texto de la foto (OCR)", e);
+    return null;
+  }
 }
 
 let classifierPromise = null;
@@ -71,6 +126,7 @@ function getClassifier() {
 
 // bytes: Buffer con la imagen. Tira error si no se puede leer.
 export async function checkPhoto(bytes) {
+  const palabrasPromise = readWords(bytes);
   const { RawImage } = await import("@huggingface/transformers");
   const classify = await getClassifier();
   const image = await RawImage.fromBlob(new Blob([bytes]));
@@ -78,5 +134,5 @@ export async function checkPhoto(bytes) {
   const result = await classify(image, keys.map((k) => LABELS[k]));
   const byLabel = Object.fromEntries(result.map((r) => [r.label, r.score]));
   const scores = Object.fromEntries(keys.map((k) => [k, byLabel[LABELS[k]] || 0]));
-  return classifyScores(scores);
+  return classifyScores(scores, await palabrasPromise);
 }
