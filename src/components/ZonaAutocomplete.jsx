@@ -45,6 +45,11 @@ export default function ZonaAutocomplete({
           includedRegionCodes: ["AR"],
         });
         el.style.width = "100%";
+        // El elemento de Google trae un ancho mínimo propio (~320 px): en un
+        // celular, al lado del botón "Ubicación", ensanchaba la página y
+        // empujaba ese botón fuera de la pantalla (visto en iPhone,
+        // 2026-10-22). Con min-width 0 se achica al espacio que le queda.
+        el.style.minWidth = "0";
         if (id) el.setAttribute("aria-label", "Zona / barrio");
         containerRef.current.appendChild(el);
         elRef.current = el;
@@ -100,8 +105,10 @@ export default function ZonaAutocomplete({
   // absolute) tapándolo — así solo se ve una cosa a la vez, pero el
   // contenedor de abajo nunca estuvo escondido.
   return (
-    <div className="relative flex-1" style={{ minHeight: 40 }}>
-      <div ref={containerRef} className={className} style={{ ...style, padding: 0, width: "100%" }} />
+    // min-w-0: sin esto, como ítem flex, este wrapper no puede ser más
+    // angosto que su contenido (el elemento de Google, ver arriba).
+    <div className="relative flex-1 min-w-0" style={{ minHeight: 40 }}>
+      <div ref={containerRef} className={className} style={{ ...style, padding: 0, width: "100%", minWidth: 0 }} />
       {!ready && (
         <input
           id={id}
