@@ -457,12 +457,12 @@ export async function fetchLeaderboard() {
     .select("*")
     .neq("id", "__seed_lock__")
     .order("points", { ascending: false })
-    .limit(10);
+    .limit(50);
   if (error) throw error;
   return data || [];
 }
 
-// El leaderboard general solo trae el top 10 — esto busca la posición real
+// El leaderboard general solo trae el top 50 — esto busca la posición real
 // de un colaborador puntual (esté o no entre los primeros 10), contando
 // cuántos tienen más puntos que él en vez de traer toda la tabla.
 export async function fetchMyRank(userId) {
@@ -508,17 +508,42 @@ export async function fetchProfile(userId) {
 // de los dos casos es. Nunca toca points/reportes/reencuentros/hearts/
 // streak_days: al no incluirlos en el objeto, el upsert los deja como
 // están (o, si la fila es nueva, caen en sus valores default de la tabla).
-export async function updateProfile(userId, { nickname, whatsapp }) {
+// extra (opcional): { avatar_url, pais, provincia, ciudad } — se mandan solo
+// las claves presentes, así un perfil que no las toca sigue guardando igual
+// aunque la migración 20261022_01 todavía no se haya corrido.
+export async function updateProfile(userId, { nickname, whatsapp, ...extra }) {
   if (!userId) throw new Error("Necesitás iniciar sesión para editar tu perfil.");
-  const { error } = await supabase
-    .from(CONTRIBUTORS_TABLE)
-    .upsert({ id: userId, nickname, whatsapp: whatsapp || null, updated_at: new Date().toISOString() });
+  const row = { id: userId, nickname, whatsapp: whatsapp || null, updated_at: new Date().toISOString() };
+  for (const key of ["avatar_url", "pais", "provincia", "ciudad"]) {
+    if (key in extra) row[key] = extra[key] || null;
+  }
+  const { error } = await supabase.from(CONTRIBUTORS_TABLE).upsert(row);
   if (error) {
     if (isMissingColumnError(error, "whatsapp")) {
       throw new Error("Guardar el WhatsApp del perfil todavía no está disponible. Probá de nuevo más tarde.");
     }
+    if (["avatar_url", "pais", "provincia", "ciudad"].some((c) => isMissingColumnError(error, c)) || String(error.code) === "42501") {
+      throw new Error("La foto y la ubicación del perfil todavía no están disponibles. Probá de nuevo más tarde.");
+    }
     throw error;
   }
+}
+
+// Foto de perfil: va al mismo bucket público que las fotos de mascotas, en
+// avatars/<id>/ (el check contributors_avatar_url_bucket solo acepta esa
+// carpeta). uploadPhoto ya le agrega un sufijo aleatorio al nombre.
+export async function uploadAvatar(dataUrl, userId) {
+  return uploadPhoto(dataUrl, `avatars/${userId}/avatar`);
+}
+
+// Borra la foto anterior al cambiarla. Best effort: la policy
+// felpus_photos_owner_delete solo deja borrar lo que subió uno mismo, y si
+// falla queda un archivo huérfano chico, nada más.
+export async function deleteAvatarFile(url) {
+  const path = storagePathFromPublicUrl(url);
+  if (!path || !path.startsWith("avatars/")) return;
+  const { error } = await supabase.storage.from(PHOTOS_BUCKET).remove([path]);
+  if (error) logError("No se pudo borrar la foto de perfil anterior", error);
 }
 
 const SAVED_REPORTS_TABLE = "saved_reports";
