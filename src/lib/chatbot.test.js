@@ -219,7 +219,7 @@ describe("del borrador al formulario y a la descripción", () => {
   });
   it("la descripción de la vista previa sale de las mismas funciones que el formulario", () => {
     const text = composeDraftDescription(luna);
-    expect(text).toMatch(/^Es un perro, de tamaño chico, color marrón, hembra\./);
+    expect(text).toMatch(/^Es una perra, de tamaño chico, color marrón, hembra\./);
     expect(text).toContain("collar");
     expect(text).toContain("Lleva un collar rosa.");
   });
