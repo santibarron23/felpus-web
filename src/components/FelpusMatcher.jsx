@@ -2922,7 +2922,9 @@ export default function FelpusMatcher() {
                     >
                       <p className="text-[13px] font-bold" style={{ color: C.text }}>
                         {form.fotos.length > 1 ? `La foto ${i + 1} parece` : "Parece"}{" "}
-                        {foto.check.tipo === "captura"
+                        {foto.check.tipo === "texto"
+                          ? "un flyer o una imagen con mucho texto"
+                          : foto.check.tipo === "captura"
                           ? "una captura de pantalla"
                           : foto.check.tipo === "ilustracion"
                             ? "una ilustración o imagen armada"
