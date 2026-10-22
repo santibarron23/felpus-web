@@ -72,13 +72,20 @@ function rowToReport(row) {
 // la service_role key). upsert ahora en false: como cada path es siempre
 // nuevo, no hace falta pisar nada — si alguna vez colisiona (no debería),
 // mejor que falle fuerte a que sobreescriba en silencio.
+// Solo JPEG/PNG/WebP (2026-10-22): el bucket ya no acepta SVG ni otros
+// tipos (ver supabase/migrations/20261022_02_bucket_fotos_seguro.sql). La
+// app siempre sube JPEG (resizeImageFile / cropAvatarDataUrl); esto corta
+// antes con un mensaje claro si algún día llegara otra cosa.
+const UPLOAD_EXT = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+
 export async function uploadPhoto(dataUrl, path) {
   const res = await fetch(dataUrl);
   const blob = await res.blob();
-  const ext = blob.type.includes("svg") ? "svg" : "jpg";
+  const ext = UPLOAD_EXT[blob.type];
+  if (!ext) throw new Error("Formato de imagen no permitido. Subí una foto JPG, PNG o WebP.");
   const fullPath = `${path}-${crypto.randomUUID()}.${ext}`;
   const { error } = await supabase.storage.from(PHOTOS_BUCKET).upload(fullPath, blob, {
-    contentType: blob.type || "image/jpeg",
+    contentType: blob.type,
     upsert: false,
   });
   if (error) throw error;
