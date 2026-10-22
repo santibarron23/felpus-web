@@ -26,6 +26,7 @@ import { emptyDraft, normalizeDraft, isDraftEmpty, composeDraftDescription, draf
 import { COLOR_OPTIONS, TAMANO_OPTIONS, EDAD_OPTIONS, MAX_FOTOS, resizeImageFile, computeHistogram, formatFechaAR, fechaLabel } from "../../lib/matching";
 import { logError } from "../../lib/log";
 import { zonaConCiudad } from "../../lib/zona";
+import { petTitle } from "../../lib/petTitle";
 import { loadGoogleMaps, reverseGeocodeLatLng } from "../../lib/googleMaps";
 import { requestLocation, geolocationErrorMessage, MAP_GEOLOCATION_OPTIONS } from "../../lib/geolocation";
 
@@ -761,8 +762,8 @@ function MessageBubble({ m, C, onQuick, onFaq, onAction, onOpenReport, disabled,
 const PROB_LABEL = { alta: "Probabilidad alta", media: "Probabilidad media", baja: "Probabilidad baja" };
 
 function ResultCard({ C, card, kind, onOpen }) {
-  const titulo = [card.nombre || (card.especie === "gato" ? "Gato" : "Perro"), card.tipo === "perdida" ? "perdido/a" : "encontrado/a"].join(" · ");
-  const rasgos = [card.color, card.tamano, card.raza].filter(Boolean).join(", ");
+  const titulo = petTitle(card);
+  const rasgos = [card.tipo === "perdida" ? "Perdida" : "Encontrada", card.color, card.tamano, card.raza].filter(Boolean).join(", ");
   const probColor = card.probabilidad === "alta" ? C.matchText : card.probabilidad === "media" ? C.orangeInk : C.muted;
   return (
     <div role="listitem">

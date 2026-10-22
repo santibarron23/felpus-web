@@ -10,7 +10,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
-import { petTitle } from "../../lib/petTitle";
+import { petTitle, petDescriptor, nombreReal } from "../../lib/petTitle";
 import { zonaConCiudad } from "../../lib/zona";
 import {
   Cat,
@@ -203,9 +203,14 @@ export function ReportCard({ report, onOpenDetail, saved, onToggleSaved, childre
               {report.especie}
             </span>
           </div>
-          <p className="text-sm font-semibold truncate" style={{ color: C.text }}>
-            {report.nombre ? report.nombre : displayColor(report)}
-            {report.nombre ? <span className="font-normal" style={{ color: C.muted }}> · {displayColor(report)}</span> : null}
+          {/* Título: el nombre real o, sin nombre, una descripción ("Perra
+              blanca, tamaño chico") — nunca el color solo, que se leía como
+              nombre (ver petTitle.js). Hasta 2 líneas en el celular. */}
+          <p className="text-sm font-semibold line-clamp-2 break-words" style={{ color: C.text }}>
+            {petTitle(report)}
+            {nombreReal(report) && petDescriptor(report) ? (
+              <span className="font-normal" style={{ color: C.muted }}> · {petDescriptor(report)}</span>
+            ) : null}
           </p>
           <p className="text-xs flex items-center gap-1 mt-0.5" style={{ color: C.muted }}>
             <MapPin className="w-3 h-3" /> {zonaConCiudad(report)} · {report.tamano}
@@ -234,7 +239,7 @@ export function ReportCard({ report, onOpenDetail, saved, onToggleSaved, childre
 // confirmar que están hablando del mismo caso, sin tener que buscarlo a
 // mano en Felpus.
 function contactMessage(report) {
-  const nombre = report.nombre || `un/a ${report.especie}`;
+  const nombre = nombreReal(report) || petTitle(report).toLowerCase();
   return `Hola! Vi en Felpus tu publicación de ${nombre} en ${zonaConCiudad(report)}. Creo que puedo ayudar.\n${SITE_URL}/r/${report.id}`;
 }
 
@@ -328,7 +333,7 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
         ref={modalRef}
         role="dialog"
         aria-modal="true"
-        aria-label={`Detalle de ${report.nombre || report.especie}`}
+        aria-label={`Detalle de ${petTitle(report)}`}
         className="bg-white dark:bg-[var(--felpus-dark-card)] rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >

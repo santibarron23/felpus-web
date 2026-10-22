@@ -3,6 +3,7 @@ import CityLanding from "../../../components/felpus/CityLanding";
 import { CITIES, getCity, cityOrFilter, cityFaqs } from "../../../lib/cities";
 import { safeJsonLdString } from "../../../lib/jsonLd";
 import { SITE_URL } from "../../../lib/site";
+import { petTitle } from "../../../lib/petTitle";
 
 // Solo las ciudades de lib/cities.js — cualquier otro slug es 404 en vez de
 // generar páginas casi vacías e indexables para cualquier texto en la URL.
@@ -108,7 +109,7 @@ export default async function CityPage({ params }) {
             "@type": "ListItem",
             position: i + 1,
             url: `${SITE_URL}/r/${r.id}`,
-            name: `${r.tipo === "perdida" ? "Perdida" : "Encontrada"}: ${r.nombre || r.especie} en ${r.zona}`,
+            name: `${r.tipo === "perdida" ? "Perdida" : "Encontrada"}: ${petTitle(r)} en ${r.zona}`,
           })),
         },
       },

@@ -1,6 +1,7 @@
 import RedirectClient from "./RedirectClient";
 import { safeJsonLdString } from "../../../lib/jsonLd";
 import { SITE_URL } from "../../../lib/site";
+import { petTitle } from "../../../lib/petTitle";
 
 // Fetch server-side directo contra la REST API de Supabase (no el cliente
 // de src/lib/supabaseClient.js — ese está armado para persistir sesión en
@@ -57,8 +58,7 @@ export async function generateMetadata({ params }) {
     };
   }
   const tipoTxt = report.tipo === "perdida" ? "Perdida" : "Encontrada";
-  const nombre =
-    report.nombre || (report.especie === "gato" ? "un gato" : report.especie === "perro" ? "un perro" : "una mascota");
+  const nombre = petTitle(report);
   const title = `${tipoTxt}: ${nombre} en ${report.zona} — Felpus`;
   const description = report.descripcion
     ? report.descripcion.slice(0, 200)
@@ -102,7 +102,7 @@ export default async function ReportPage({ params }) {
     ? {
         "@context": "https://schema.org",
         "@type": "WebPage",
-        name: `${report.tipo === "perdida" ? "Perdida" : "Encontrada"}: ${report.nombre || report.especie} en ${report.zona}`,
+        name: `${report.tipo === "perdida" ? "Perdida" : "Encontrada"}: ${petTitle(report)} en ${report.zona}`,
         description: report.descripcion || undefined,
         url: `${SITE_URL}/r/${id}`,
         image: report.foto_url || undefined,

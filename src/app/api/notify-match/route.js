@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { findMatches } from "../../../lib/matching";
 import { rowToMatchable, makeDb, makePusher, dispatchNewReport } from "../../../lib/alertsServer";
 import { logError } from "../../../lib/log";
+import { petTitle, nombreReal } from "../../../lib/petTitle";
 import { SITE_URL } from "../../../lib/site";
 import { C } from "../../../lib/theme";
 
@@ -112,10 +113,10 @@ export function escapeHtml(value) {
 
 async function sendMatchEmail({ resendKey, toEmail, matchedReport, newReport, score }) {
   const link = `${SITE_URL}/r/${encodeURIComponent(newReport.id)}`;
-  const nombre = escapeHtml(newReport.nombre || (newReport.especie === "gato" ? "un gato" : "un perro"));
+  const nombre = escapeHtml(nombreReal(newReport) || petTitle(newReport).toLowerCase());
   const color = escapeHtml(newReport.color);
   const zona = escapeHtml(newReport.zona);
-  const matchedNombre = escapeHtml(matchedReport.nombre || matchedReport.especie);
+  const matchedNombre = escapeHtml(petTitle(matchedReport));
   const pct = Math.round(score * 100);
   const html = `
     <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">
@@ -132,7 +133,7 @@ async function sendMatchEmail({ resendKey, toEmail, matchedReport, newReport, sc
     body: JSON.stringify({
       from: "Felpus <onboarding@resend.dev>",
       to: [toEmail],
-      subject: `🐾 Posible coincidencia con ${matchedReport.nombre || matchedReport.especie} en Felpus`,
+      subject: `🐾 Posible coincidencia con ${petTitle(matchedReport)} en Felpus`,
       html,
     }),
   });
