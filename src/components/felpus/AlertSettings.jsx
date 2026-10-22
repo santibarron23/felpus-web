@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { ArrowLeft, Bell, BellOff, Loader2, LogIn } from "lucide-react";
+import { ArrowLeft, Bell, BellOff, Check, Loader2, LogIn } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
 import { useAuth } from "./useAuth";
 import { IosInstallSteps } from "./InstallBanner";
@@ -41,6 +41,12 @@ const TYPES = [
   { value: "encontrada", label: "Encontradas" },
 ];
 
+// Clave comparable del formulario: mismo punto, radio, especies, tipos y pausa.
+function zoneKey(point, radius, species, types, paused) {
+  if (!point) return null;
+  return JSON.stringify([point.lat, point.lng, radius, [...species].sort(), [...types].sort(), paused]);
+}
+
 function toggle(list, value) {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 }
@@ -58,6 +64,11 @@ export default function AlertSettings({ initialLat = null, initialLng = null }) 
   const [message, setMessage] = useState(null); // { tone: "ok" | "error", text }
   const [permission, setPermission] = useState("default");
   const [deviceOn, setDeviceOn] = useState(false);
+  // Foto de lo último guardado (o cargado del servidor). Mientras el
+  // formulario sea igual, el botón queda verde "Zona guardada"; al tocar
+  // cualquier cosa vuelve a rojo "Guardar cambios" (2026-10-22: después de
+  // guardar no quedaba claro que se había guardado, el aviso salía al pie).
+  const [savedKey, setSavedKey] = useState(null);
   const [deviceBusy, setDeviceBusy] = useState(false);
   const iosNeedsInstall = typeof window !== "undefined" && needsIosInstallForPush();
 
@@ -78,6 +89,9 @@ export default function AlertSettings({ initialLat = null, initialLng = null }) 
         setSpecies(z.species);
         setTypes(z.report_types);
         setPaused(!z.active);
+        if (initialLat == null) {
+          setSavedKey(zoneKey({ lat: z.lat, lng: z.lng }, z.radius_m, z.species, z.report_types, !z.active));
+        }
       }
     } finally {
       setLoaded(true);
@@ -118,7 +132,7 @@ export default function AlertSettings({ initialLat = null, initialLng = null }) 
     e.preventDefault();
     setMessage(null);
     if (!point) {
-      setMessage({ tone: "error", text: "Marcá en el mapa el centro de la zona que querés vigilar." });
+      setMessage({ tone: "error", zone: true, text: "Marcá en el mapa el centro de la zona que querés vigilar." });
       return;
     }
     setSaving(true);
@@ -130,8 +144,10 @@ export default function AlertSettings({ initialLat = null, initialLng = null }) 
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "No pudimos guardar tu zona.");
+      setSavedKey(zoneKey(point, radius, species, types, paused));
       setMessage({
         tone: "ok",
+        zone: true,
         text: paused
           ? "Guardado. Tus alertas están en pausa."
           : deviceOn
@@ -139,12 +155,13 @@ export default function AlertSettings({ initialLat = null, initialLng = null }) 
             : "Guardado. Activá las notificaciones en este dispositivo para recibir los avisos.",
       });
     } catch (err) {
-      setMessage({ tone: "error", text: err.message });
+      setMessage({ tone: "error", zone: true, text: err.message });
     } finally {
       setSaving(false);
     }
   }
 
+  const isSaved = !!savedKey && savedKey === zoneKey(point, radius, species, types, paused);
   const card = "rounded-2xl border p-4 space-y-3";
   const cardStyle = { background: C.surface, borderColor: C.border };
   const chip = (on) => ({
@@ -257,11 +274,26 @@ export default function AlertSettings({ initialLat = null, initialLng = null }) 
               <button
                 type="submit"
                 disabled={saving || !loaded}
-                className="w-full rounded-xl py-3 text-sm font-bold text-white disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
-                style={{ background: C.redSolid }}
+                className="w-full rounded-xl py-3 text-sm font-bold text-white disabled:opacity-60 flex items-center justify-center gap-1.5 transition-colors duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                style={{ background: isSaved ? C.greenSolid : C.redSolid }}
               >
-                {saving ? "Guardando…" : "Guardar mi zona"}
+                {saving ? (
+                  "Guardando…"
+                ) : isSaved ? (
+                  <>
+                    <Check className="w-4 h-4" aria-hidden="true" /> Zona guardada
+                  </>
+                ) : savedKey ? (
+                  "Guardar cambios"
+                ) : (
+                  "Guardar mi zona"
+                )}
               </button>
+              {message?.zone && (
+                <p role="status" className="text-[13px] font-semibold text-center -mt-1" style={{ color: message.tone === "error" ? C.dangerText : C.successText }}>
+                  {message.text}
+                </p>
+              )}
             </form>
 
             <section className={card} style={cardStyle} aria-labelledby="dispositivo-title">
@@ -309,7 +341,7 @@ export default function AlertSettings({ initialLat = null, initialLng = null }) 
             </section>
 
             <p role="status" aria-live="polite" className="text-sm font-semibold min-h-[1.25rem]" style={{ color: message?.tone === "error" ? C.dangerText : C.successText }}>
-              {message?.text || ""}
+              {message && !message.zone ? message.text : ""}
             </p>
           </>
         )}
