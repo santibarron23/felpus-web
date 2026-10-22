@@ -39,6 +39,14 @@ export const COLOR_OPTIONS = [
 
 export const SEXO_OPTIONS = ["Macho", "Hembra", "No sé"];
 
+// Etiqueta del campo fecha según el tipo de reporte: "Fecha" a secas no
+// aclaraba si era cuándo se perdió o cuándo se encontró.
+export function fechaLabel(tipo) {
+  if (tipo === "perdida") return "Fecha en que se perdió";
+  if (tipo === "encontrada") return "Fecha en que se encontró";
+  return "Fecha";
+}
+
 // Motivos de denuncia — ids estables (se guardan tal cual en
 // report_flags.reason vía la función flag_report, ver schema.sql); el label
 // es sólo lo que se muestra en el botón y puede cambiar de redacción sin

@@ -8,7 +8,7 @@ import Image from "next/image";
 import { ArrowLeft, ArrowRight, Loader2, Star, X } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
 import { authedFetch } from "../../lib/push";
-import { COLOR_OPTIONS, EDAD_OPTIONS, PESO_OPTIONS, SEXO_OPTIONS, TAMANO_OPTIONS } from "../../lib/matching";
+import { COLOR_OPTIONS, EDAD_OPTIONS, PESO_OPTIONS, SEXO_OPTIONS, TAMANO_OPTIONS, fechaLabel } from "../../lib/matching";
 
 function initialFields(r) {
   return {
@@ -250,7 +250,7 @@ export default function AdminEditReport({ report, onClose, onSaved }) {
               {select("peso", ["", ...PESO_OPTIONS])}
             </div>
             <div>
-              <label htmlFor="ae-fecha" className={label}>Fecha</label>
+              <label htmlFor="ae-fecha" className={label}>{fechaLabel(fields.tipo)}</label>
               <input id="ae-fecha" type="date" value={fields.fecha} onChange={set("fecha")} className={input} style={inputStyle} />
             </div>
           </div>
