@@ -119,6 +119,25 @@ body {
   }
 }
 
+/* Campos de fecha en iPhone: con la apariencia nativa, Safari de iOS les
+   da un ancho mínimo propio e ignora width:100%, así que el recuadro se
+   salía de la tarjeta por la derecha (visto en iPhone, 2026-10-22). Sin la
+   apariencia nativa respeta el ancho del contenedor; el selector de fecha
+   del sistema se sigue abriendo igual al tocarlo. min-height: vacío, iOS
+   lo achataba a la altura de una línea. */
+input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 2.5rem;
+}
+/* iOS centra el valor; el resto de los campos va alineado a la izquierda. */
+input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
+}
+
 @keyframes felpus-pulse {
   0% {
     transform: scale(1);
