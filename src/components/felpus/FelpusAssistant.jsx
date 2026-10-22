@@ -496,7 +496,7 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
           aria-label={`Abrir ${ASSISTANT_NAME}`}
           aria-expanded={false}
           className={`felpus-assistant-fab fixed right-4 z-40 flex items-center gap-2 rounded-full pl-3 pr-4 h-12 text-white text-sm font-bold shadow-lg transition-all duration-200 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-4 focus-visible:ring-[var(--felpus-focus)]/40 ${fabHidden ? "translate-x-24 opacity-0 pointer-events-none" : ""}`}
-          style={{ background: C.redSolid, bottom: "calc(96px + env(safe-area-inset-bottom, 0px))" }}
+          style={{ background: C.redSolid, bottom: "calc(110px + env(safe-area-inset-bottom, 0px))" }}
         >
           <PawPrint className="w-5 h-5" aria-hidden="true" />
           <span className="hidden sm:inline">Asistente</span>
