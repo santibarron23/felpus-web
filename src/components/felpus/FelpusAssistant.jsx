@@ -23,7 +23,7 @@ import {
   fallbackReply,
 } from "../../lib/chatFaq";
 import { emptyDraft, normalizeDraft, isDraftEmpty, composeDraftDescription, draftToFormFields, detectRegion, MAX_USER_CHARS } from "../../lib/chatbot";
-import { COLOR_OPTIONS, TAMANO_OPTIONS, EDAD_OPTIONS, MAX_FOTOS, resizeImageFile, computeHistogram, formatFechaAR } from "../../lib/matching";
+import { COLOR_OPTIONS, TAMANO_OPTIONS, EDAD_OPTIONS, MAX_FOTOS, resizeImageFile, computeHistogram, formatFechaAR, fechaLabel } from "../../lib/matching";
 import { logError } from "../../lib/log";
 import { zonaConCiudad } from "../../lib/zona";
 import { loadGoogleMaps, reverseGeocodeLatLng } from "../../lib/googleMaps";
@@ -960,7 +960,7 @@ function DraftPreview({ C, draft, photos, onChange, onLocation, onPublish, onDis
                   </select>
                 </label>
                 <label className="space-y-0.5">
-                  <span className="font-semibold" style={{ color: C.muted }}>Fecha</span>
+                  <span className="font-semibold" style={{ color: C.muted }}>{fechaLabel(shown.tipo)}</span>
                   <input type="date" className={fieldClass} style={fieldStyle} value={shown.fecha} onChange={set("fecha")} />
                 </label>
               </div>

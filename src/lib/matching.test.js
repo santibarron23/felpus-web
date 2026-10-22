@@ -1131,3 +1131,12 @@ describe("computeAdminBreakdowns", () => {
     expect(findLabel(result.porRazaEncontrada, "Labrador")).toEqual({ label: "Labrador", count: 1, pct: 100 });
   });
 });
+
+describe("fechaLabel", () => {
+  it("aclara si es la fecha en que se perdió o se encontró", async () => {
+    const { fechaLabel } = await import("./matching");
+    expect(fechaLabel("perdida")).toBe("Fecha en que se perdió");
+    expect(fechaLabel("encontrada")).toBe("Fecha en que se encontró");
+    expect(fechaLabel(undefined)).toBe("Fecha");
+  });
+});

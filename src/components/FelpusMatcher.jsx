@@ -87,6 +87,7 @@ import {
   PUNTOS_BONO_ORIGINAL,
   SCORE_MINIMO,
   computeAdminBreakdowns,
+  fechaLabel,
 } from "../lib/matching";
 import {
   fetchReports,
@@ -3219,7 +3220,7 @@ export default function FelpusMatcher() {
                     </div>
 
                     <div>
-                      <label htmlFor="form-fecha" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Fecha</label>
+                      <label htmlFor="form-fecha" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>{fechaLabel(reportKind)}</label>
                       <input
                         id="form-fecha"
                         type="date"

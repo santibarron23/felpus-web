@@ -37,7 +37,7 @@ import {
   Flag,
   Bookmark,
 } from "lucide-react";
-import { scoreLabel, isRecent, formatFechaAR, buildShareText, reportPhotoAlt, COLOR_OPTIONS, REPORT_FLAG_REASONS } from "../../lib/matching";
+import { scoreLabel, isRecent, formatFechaAR, buildShareText, reportPhotoAlt, COLOR_OPTIONS, REPORT_FLAG_REASONS, fechaLabel } from "../../lib/matching";
 import { SITE_URL } from "../../lib/site";
 import { logError } from "../../lib/log";
 import { useFocusTrap } from "./useFocusTrap";
@@ -398,7 +398,7 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
               <p className="underline" style={{ color: C.text }}>{zonaConCiudad(report)}</p>
             </a>
             <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
-              <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>Fecha</p>
+              <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>{fechaLabel(report.tipo)}</p>
               <p style={{ color: C.text }}>{formatFechaAR(report.fecha)}</p>
             </div>
             {report.sexo && (
