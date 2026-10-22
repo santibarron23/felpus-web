@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
-import { Bell } from "lucide-react";
+import { Bell, Loader2, LocateFixed, Maximize2, X } from "lucide-react";
 import { loadGoogleMaps, observeMapResize } from "../lib/googleMaps";
 import { logError } from "../lib/log";
-import { requestLocation, MAP_GEOLOCATION_OPTIONS } from "../lib/geolocation";
+import { requestLocation, geolocationErrorMessage, MAP_GEOLOCATION_OPTIONS } from "../lib/geolocation";
 import { CITIES } from "../lib/cities";
 import { zonaConCiudad } from "../lib/zona";
 import { useTheme } from "./felpus/ThemeProvider";
@@ -19,7 +20,18 @@ import { useTheme } from "./felpus/ThemeProvider";
 export default function ReportsMap({ reports, onSelectReport, center }) {
   const C = useTheme();
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-  const containerRef = useRef(null);
+  // Pantallas táctiles (2026-10-22, igual que MapPicker): el mapa de la
+  // página es solo vista y al tocarlo pasa a pantalla completa, donde se
+  // mueve con un dedo. Es el MISMO mapa (no se crea otro: Google cobra cada
+  // carga, ver exploreVisited en FelpusMatcher): su <div> se crea a mano y
+  // se mueve entre el lugar de la página y el de pantalla completa. Esos dos
+  // lugares no tienen hijos de React, así React nunca se cruza con él.
+  const mapElRef = useRef(null);
+  const inlineHostRef = useRef(null);
+  const fullHostRef = useRef(null);
+  const [touch, setTouch] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [geoState, setGeoState] = useState("idle");
   const mapObjRef = useRef(null);
   const markersRef = useRef([]);
   const onSelectRef = useRef(onSelectReport);
@@ -39,8 +51,14 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
     let stopResizeObserver = null;
     loadGoogleMaps(apiKey)
       .then((maps) => {
-        if (cancelled || !containerRef.current) return;
-        const map = new maps.Map(containerRef.current, {
+        if (cancelled || !inlineHostRef.current) return;
+        const isTouch = !!window.matchMedia?.("(pointer: coarse)").matches;
+        setTouch(isTouch);
+        const el = document.createElement("div");
+        el.style.cssText = "width: 100%; height: 100%;";
+        inlineHostRef.current.appendChild(el);
+        mapElRef.current = el;
+        const map = new maps.Map(el, {
           // Mientras llega la ubicación: Salta (antes, Buenos Aires).
           center: center || CITIES.salta.geo,
           zoom: center ? 13 : 12,
@@ -52,12 +70,13 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
           // para renderizarse — "DEMO_MAP_ID" es el ID público de Google para
           // desarrollo/uso sin configuración extra, no requiere Cloud Console.
           mapId: "DEMO_MAP_ID",
+          ...(isTouch ? { gestureHandling: "none", zoomControl: false, keyboardShortcuts: false } : {}),
         });
         mapObjRef.current = map;
         map.addListener("dragstart", () => {
           userMovedRef.current = true;
         });
-        stopResizeObserver = observeMapResize(map, containerRef.current);
+        stopResizeObserver = observeMapResize(map, el);
         setStatus("ready");
         // Sin ubicación conocida, antes el mapa arrancaba siempre en Buenos
         // Aires aunque los reportes estuvieran en Salta. Ahora: la ubicación
@@ -81,10 +100,33 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
     return () => {
       cancelled = true;
       if (stopResizeObserver) stopResizeObserver();
+      mapElRef.current?.remove();
     };
     // Sólo se inicializa una vez con la key disponible.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiKey]);
+
+  // Mueve el mapa al lugar que corresponda y ajusta cómo responde al dedo.
+  // Mientras está a pantalla completa, la página de atrás no scrollea.
+  useEffect(() => {
+    const el = mapElRef.current;
+    const map = mapObjRef.current;
+    if (status !== "ready" || !el || !map) return;
+    const host = fullscreen ? fullHostRef.current : inlineHostRef.current;
+    if (host && el.parentNode !== host) host.appendChild(el);
+    map.setOptions({ gestureHandling: fullscreen ? "greedy" : touch ? "none" : "auto", zoomControl: !touch });
+    if (!fullscreen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => {
+      if (e.key === "Escape") setFullscreen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [fullscreen, status, touch]);
 
   // "Más cercanas" (o cualquier ubicación que llegue después de montar el
   // mapa): antes el centro solo se usaba al crear el mapa y después se
@@ -197,39 +239,125 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
     window.location.href = `/configuracion/alertas?lat=${c.lat().toFixed(5)}&lng=${c.lng().toFixed(5)}`;
   };
 
+  function locate() {
+    setGeoState("locating");
+    requestLocation(
+      (pos) => {
+        setGeoState("idle");
+        userMovedRef.current = true;
+        mapObjRef.current?.panTo(pos);
+        mapObjRef.current?.setZoom(14);
+      },
+      (err) => setGeoState(geolocationErrorMessage(err)),
+      MAP_GEOLOCATION_OPTIONS
+    );
+  }
+
+  // Botón "Vigilar esta zona" y leyenda: iguales en los dos modos.
+  const overlays = status === "ready" && (
+    <>
+      <Link
+        href="/configuracion/alertas"
+        onClick={watchZone}
+        className="absolute top-2 left-2 inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-bold shadow-md border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+        style={{ background: C.surface, borderColor: C.border, color: C.text }}
+      >
+        <Bell className="w-3.5 h-3.5" aria-hidden="true" style={{ color: C.red }} /> Vigilar esta zona
+      </Link>
+      <div
+        className="absolute bottom-2 left-2 flex items-center gap-3 rounded-full px-3 py-1.5 text-xs font-bold shadow-md border"
+        style={{ background: C.surface, borderColor: C.border, color: C.text }}
+        aria-hidden="true"
+      >
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-full" style={{ background: C.redSolid }} /> Perdida
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-full" style={{ background: C.mapFound }} /> Encontrada
+        </span>
+      </div>
+    </>
+  );
+
   return (
     <div className="relative">
       <div
-        ref={containerRef}
+        ref={inlineHostRef}
         role="region"
         aria-label="Mapa de mascotas reportadas cerca tuyo"
         className="w-full rounded-xl overflow-hidden border"
         style={{ height: 340, borderColor: C.border, background: C.surfaceMuted }}
       />
-      {status === "ready" && (
-        <Link
-          href="/configuracion/alertas"
-          onClick={watchZone}
-          className="absolute top-2 left-2 inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-bold shadow-md border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
-          style={{ background: C.surface, borderColor: C.border, color: C.text }}
+      {!fullscreen && overlays}
+      {touch && status === "ready" && !fullscreen && (
+        <button
+          type="button"
+          onClick={() => setFullscreen(true)}
+          aria-label="Abrir el mapa en pantalla completa"
+          className="absolute inset-0 top-12 bottom-12 flex items-center justify-center focus:outline-none"
         >
-          <Bell className="w-3.5 h-3.5" aria-hidden="true" style={{ color: C.red }} /> Vigilar esta zona
-        </Link>
-      )}
-      {status === "ready" && (
-        <div
-          className="absolute bottom-2 left-2 flex items-center gap-3 rounded-full px-3 py-1.5 text-xs font-bold shadow-md border"
-          style={{ background: C.surface, borderColor: C.border, color: C.text }}
-          aria-hidden="true"
-        >
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full" style={{ background: C.redSolid }} /> Perdida
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-bold text-white shadow-md"
+            style={{ background: C.emphasisBg }}
+          >
+            <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" /> Tocá para abrir el mapa
           </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full" style={{ background: C.mapFound }} /> Encontrada
-          </span>
-        </div>
+        </button>
       )}
+      {fullscreen &&
+        createPortal(
+          // z-[55]: tapa la barra de abajo (z-40) pero queda DEBAJO del
+          // detalle de un reporte (z-60), que se abre al tocar un pin.
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Mapa de mascotas reportadas"
+            className="fixed inset-0 z-[55] flex flex-col"
+            style={{ background: C.surface }}
+          >
+            <div
+              className="flex items-center gap-2 px-3 pb-2 border-b"
+              style={{ borderColor: C.border, paddingTop: "calc(8px + env(safe-area-inset-top, 0px))" }}
+            >
+              <button
+                type="button"
+                onClick={() => setFullscreen(false)}
+                aria-label="Cerrar el mapa"
+                className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                style={{ background: C.surfaceSubtle, color: C.text }}
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <p className="text-[13px] font-semibold leading-snug" style={{ color: C.text }}>
+                Tocá una foto para ver el reporte
+              </p>
+            </div>
+            <div className="relative flex-1" style={{ marginBottom: "env(safe-area-inset-bottom, 0px)" }}>
+              <div ref={fullHostRef} className="absolute inset-0" style={{ background: C.surfaceMuted }} />
+              {overlays}
+              <button
+                type="button"
+                onClick={locate}
+                disabled={geoState === "locating"}
+                aria-label="Ir a mi ubicación"
+                className="absolute right-3 w-12 h-12 rounded-full shadow-lg flex items-center justify-center disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                style={{ background: C.surface, color: C.text, bottom: 12 }}
+              >
+                {geoState === "locating" ? <Loader2 className="w-5 h-5 animate-spin" /> : <LocateFixed className="w-5 h-5" />}
+              </button>
+              {geoState !== "idle" && geoState !== "locating" && (
+                <p
+                  className="absolute left-3 right-3 top-14 rounded-lg px-3 py-2 text-[12px] shadow-md"
+                  style={{ background: C.surface, color: C.redDark }}
+                  role="alert"
+                >
+                  {geoState}
+                </p>
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
