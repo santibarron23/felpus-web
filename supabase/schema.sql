@@ -1650,3 +1650,28 @@ alter table contributors add constraint contributors_ubicacion_len check (
 
 grant update (avatar_url, pais, provincia, ciudad) on contributors to authenticated;
 grant insert (avatar_url, pais, provincia, ciudad) on contributors to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Bucket felpus-photos más cerrado (2026-10-22). Mismo contenido que
+-- supabase/migrations/20261022_02_bucket_fotos_seguro.sql (ver ahí el
+-- porqué): sin SVG, hasta 2 MB y solo los nombres de archivo que usa la app.
+-- Reemplaza la configuración del bucket y la policy de insert de más arriba.
+-- ---------------------------------------------------------------------------
+update storage.buckets
+set file_size_limit = 2097152,
+    allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp']
+where id = 'felpus-photos';
+
+drop policy if exists "felpus_photos_public_insert" on storage.objects;
+create policy "felpus_photos_public_insert"
+  on storage.objects for insert
+  with check (
+    bucket_id = 'felpus-photos'
+    and (
+      name ~ '^[A-Za-z0-9-]{10,120}\.(jpg|jpeg|png|webp)$'
+      or (
+        auth.uid() is not null
+        and name ~ ('^avatars/' || auth.uid()::text || '/avatar-[0-9a-f-]{36}\.(jpg|jpeg|png|webp)$')
+      )
+    )
+  );
