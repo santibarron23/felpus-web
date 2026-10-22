@@ -1429,7 +1429,7 @@ export default function FelpusMatcher() {
   // autor.
   function handleConfirmTrigger(ownerReport, toggleId = ownerReport?.id) {
     if (!user) {
-      pushToast("error", "Iniciá sesión con Google para confirmar reencuentros y sumar puntos.");
+      pushToast("error", "Iniciá sesión con Google para confirmar reencuentros y sumar huellitas.");
       handleGoogleLogin();
       return;
     }
@@ -1522,7 +1522,7 @@ export default function FelpusMatcher() {
 
   async function markResolvedAndReward({ repObjs, bonusFor = [] }) {
     if (!user) {
-      pushToast("error", "Iniciá sesión con Google para confirmar reencuentros y sumar puntos.");
+      pushToast("error", "Iniciá sesión con Google para confirmar reencuentros y sumar huellitas.");
       return;
     }
     // Re-entrada: si ya hay una confirmación en vuelo para este mismo
@@ -1598,7 +1598,7 @@ export default function FelpusMatcher() {
       await loadLeaderboard();
       setConfirmingId(null);
       playSuccess();
-      pushToast("success", `🎉 ¡Gracias ${resolverDisplayName}! +${PUNTOS_REENCUENTRO} puntos por confirmar el reencuentro.`);
+      pushToast("success", `🎉 ¡Gracias ${resolverDisplayName}! +${PUNTOS_REENCUENTRO} huellitas por confirmar el reencuentro.`);
     } catch (e) {
       logError(e);
       pushToast("error", "No pudimos guardar el reencuentro. Probá de nuevo.");
@@ -1974,7 +1974,7 @@ export default function FelpusMatcher() {
         );
         await loadLeaderboard();
       } else {
-        pushToast("success", "Reporte publicado. Iniciá sesión con Google para sumar puntos por tus aportes.");
+        pushToast("success", "Reporte publicado. Iniciá sesión con Google para sumar huellitas por tus aportes.");
       }
       setForm(emptyForm());
       setAccesorioChips([]);
@@ -2439,7 +2439,7 @@ export default function FelpusMatcher() {
               className="felpus-mono text-[12px] font-extrabold shrink-0 px-2.5 py-1.5 rounded-full text-white shadow-sm"
               style={{ background: myTier.bg }}
             >
-              {myRank?.points || 0} pts · {myTier.label}
+              🐾 {myRank?.points || 0} · {myTier.label}
             </span>
           )}
           {!authLoading && (
@@ -2456,7 +2456,7 @@ export default function FelpusMatcher() {
         </div>
         {!user && (
           <p className="text-[12px] leading-snug px-1" style={{ color: C.muted }}>
-            Podés reportar mascotas como invitado con solo un apodo, pero para sumar puntos y confirmar
+            Podés reportar mascotas como invitado con solo un apodo, pero para sumar huellitas y confirmar
             reencuentros necesitás{" "}
             <button onClick={handleGoogleLogin} className="font-bold underline py-1.5" style={{ color: C.text }}>
               iniciar sesión con Google
@@ -2645,7 +2645,7 @@ export default function FelpusMatcher() {
               <Crown className="w-6 h-6 shrink-0" style={{ color: C.toastAccent }} />
               <div className="flex-1">
                 <p className="felpus-display text-base leading-none mb-0.5">Mayores colaboradores</p>
-                <p className="text-[12px] text-white/75">Puntos por reportar y por confirmar reencuentros — mirá quién ayuda más.</p>
+                <p className="text-[12px] text-white/75">Huellitas por reportar y por confirmar reencuentros — mirá quién ayuda más.</p>
               </div>
               <ChevronRight className="w-4 h-4 text-white/60 shrink-0" />
             </button>
@@ -3481,7 +3481,7 @@ export default function FelpusMatcher() {
                 Publicar y buscar coincidencias
               </button>
               <p className="text-[11px] text-center -mt-2" style={{ color: C.muted }}>
-                +{reportKind === "perdida" ? PUNTOS_PERDIDA : PUNTOS_ENCONTRADA} puntos por este reporte · queda visible para todos.
+                +{reportKind === "perdida" ? PUNTOS_PERDIDA : PUNTOS_ENCONTRADA} huellitas por este reporte · queda visible para todos.
               </p>
             </div>
           </form>
@@ -3520,7 +3520,7 @@ export default function FelpusMatcher() {
                     <p className="text-xs font-bold flex items-center gap-1.5" style={{ color: C.green }}>
                       <Check className="w-4 h-4" /> Reporte publicado (
                       <span className="felpus-points-pop">
-                        +{matchResult.source.tipo === "perdida" ? PUNTOS_PERDIDA : PUNTOS_ENCONTRADA} pts
+                        +{matchResult.source.tipo === "perdida" ? PUNTOS_PERDIDA : PUNTOS_ENCONTRADA} huellitas
                       </span>
                       )
                     </p>
@@ -4010,7 +4010,7 @@ export default function FelpusMatcher() {
                   <RankingStatTiles me={myRank} />
                 ) : (
                   <p className="text-sm text-center px-2" style={{ color: C.muted }}>
-                    Reportá una mascota o confirmá un reencuentro para sumar puntos y aparecer en el ranking.
+                    Reportá una mascota o confirmá un reencuentro para sumar huellitas y aparecer en el ranking.
                   </p>
                 )}
               </>
@@ -4019,14 +4019,14 @@ export default function FelpusMatcher() {
                 <button onClick={handleGoogleLogin} className="font-bold underline py-2" style={{ color: C.red }}>
                   Iniciá sesión con Google
                 </button>{" "}
-                para ver tu posición y tus puntos.
+                para ver tu posición y tus huellitas.
               </div>
             )}
 
             <div className="pt-2 px-1">
               <h3 className="text-lg font-bold" style={{ color: C.text }}>Ranking general</h3>
               <p className="text-[12px]" style={{ color: C.muted }}>
-                Puntos por reportar mascotas y, sobre todo, por confirmar reencuentros reales.
+                Huellitas por reportar mascotas y, sobre todo, por confirmar reencuentros reales.
               </p>
             </div>
 
@@ -4041,7 +4041,7 @@ export default function FelpusMatcher() {
             {!loadingReports && leaderboard.length === 0 && (
               <div className="text-sm bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl p-6 text-center border" style={{ color: C.muted, borderColor: C.border }}>
                 <Mascot mood="happy" size={88} className="mx-auto mb-2" />
-                <p className="font-semibold" style={{ color: C.text }}>Todavía nadie sumó puntos.</p>
+                <p className="font-semibold" style={{ color: C.text }}>Todavía nadie sumó huellitas.</p>
                 <p className="mt-1">¡Sé la primera persona de la lista!</p>
               </div>
             )}
@@ -4056,11 +4056,11 @@ export default function FelpusMatcher() {
             />
 
             <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-xl p-3.5 border text-[12px] space-y-1.5" style={{ borderColor: C.border, color: C.muted }}>
-              <p className="font-bold text-xs mb-1" style={{ color: C.text }}>Cómo se suman puntos</p>
-              <p>+{PUNTOS_PERDIDA} pts · publicar una mascota perdida</p>
-              <p>+{PUNTOS_ENCONTRADA} pts · publicar una mascota encontrada</p>
-              <p>+{PUNTOS_REENCUENTRO} pts · confirmar un reencuentro real</p>
-              <p>+{PUNTOS_BONO_ORIGINAL} pts · bono para quien reportó originalmente esa mascota</p>
+              <p className="font-bold text-xs mb-1" style={{ color: C.text }}>Cómo se suman huellitas</p>
+              <p>+{PUNTOS_PERDIDA} huellitas · publicar una mascota perdida</p>
+              <p>+{PUNTOS_ENCONTRADA} huellitas · publicar una mascota encontrada</p>
+              <p>+{PUNTOS_REENCUENTRO} huellitas · confirmar un reencuentro real</p>
+              <p>+{PUNTOS_BONO_ORIGINAL} huellitas · bono para quien reportó originalmente esa mascota</p>
             </div>
 
             {/* Donación — deliberadamente el último elemento de la pantalla,

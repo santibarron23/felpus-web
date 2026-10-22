@@ -72,7 +72,7 @@ export const FAQ_TOPICS = [
     id: "cuenta",
     label: "Iniciar sesión y mis publicaciones",
     answer:
-      "Se entra con Google, desde \"iniciar sesión con Google\" en Inicio. No hace falta para publicar, pero con cuenta sumás puntos, guardás publicaciones, ves las tuyas en \"Mi Felpus\", podés eliminarlas y confirmar el reencuentro.",
+      "Se entra con Google, desde \"iniciar sesión con Google\" en Inicio. No hace falta para publicar, pero con cuenta sumás huellitas, guardás publicaciones, ves las tuyas en \"Mi Felpus\", podés eliminarlas y confirmar el reencuentro.",
   },
   {
     id: "reencuentro",
