@@ -140,6 +140,7 @@ import MapPicker from "./MapPicker";
 import ReportsMap from "./ReportsMap";
 import Mascot from "./Mascot";
 import ZonaAutocomplete from "./ZonaAutocomplete";
+import MatchScorecard from "./felpus/MatchScorecard";
 import Combobox from "./felpus/Combobox";
 import PhoneInput from "./felpus/PhoneInput";
 import { splitStoredWhatsapp, getDefaultCountry, formatE164ForDisplay } from "../lib/phone";
@@ -3549,22 +3550,12 @@ export default function FelpusMatcher() {
                             No depende de ningún estado nuevo: matchBreakdown
                             es una función pura sobre los mismos dos reportes
                             que ya calcularon el score. */}
-                        <MatchBreakdownChips items={matchBreakdown(matchResult.source, m.report)} />
-                        {comparingId === m.report.id && (
-                          <div className="mt-2 grid grid-cols-2 gap-2">
-                            <div>
-                              <p className="text-[11px] font-semibold mb-1 text-center" style={{ color: C.muted }}>Tu reporte</p>
-                              <div className="relative w-full aspect-square rounded-lg overflow-hidden" style={{ background: C.surfaceMuted }}>
-                                <Image src={matchResult.source.foto} alt={reportPhotoAlt(matchResult.source)} fill sizes="150px" className="object-cover" />
-                              </div>
-                            </div>
-                            <div>
-                              <p className="text-[11px] font-semibold mb-1 text-center" style={{ color: C.muted }}>Esta publicación</p>
-                              <div className="relative w-full aspect-square rounded-lg overflow-hidden" style={{ background: C.surfaceMuted }}>
-                                <Image src={m.report.foto} alt={reportPhotoAlt(m.report)} fill sizes="150px" className="object-cover" />
-                              </div>
-                            </div>
-                          </div>
+                        {/* "Ver comparación" cambia los chips por la tarjeta
+                            completa (fotos, una fila por criterio y el %). */}
+                        {comparingId === m.report.id ? (
+                          <MatchScorecard source={matchResult.source} match={m} />
+                        ) : (
+                          <MatchBreakdownChips items={matchBreakdown(matchResult.source, m.report)} />
                         )}
                         {!m.report.resuelto && !matchResult.source.resuelto && (
                           <div className="mt-2 pt-2 border-t flex items-center flex-wrap gap-x-3 gap-y-1.5" style={{ borderColor: C.border }}>
@@ -3602,7 +3593,7 @@ export default function FelpusMatcher() {
                                   className="text-[12px] font-semibold flex items-center gap-1 min-h-[40px]"
                                   style={{ color: C.text }}
                                 >
-                                  <Images className="w-3 h-3" /> {comparingId === m.report.id ? "Ocultar fotos" : "Comparar fotos"}
+                                  <Images className="w-3 h-3" /> {comparingId === m.report.id ? "Ocultar comparación" : "Ver comparación"}
                                 </button>
                                 <button
                                   type="button"

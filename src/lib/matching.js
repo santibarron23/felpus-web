@@ -1023,15 +1023,18 @@ export function scoreMatch(a, b) {
 // no arriesgar la lógica de matching ya afinada y testeada — esto es pura
 // presentación, calculado aparte con los mismos datos.
 //
-// Cada ítem: { key, label, coincide: true|false, detail? }. Se omite un
+// Cada ítem: { key, label, coincide: true|false, detail?, value? }. value
+// (opcional) es el dato compartido cuando coincide ("Mediano", "Hembra") —
+// lo usa la tarjeta de comparación (MatchScorecard) para no mostrar un
+// "Coincide" genérico; los chips no lo usan. Se omite un
 // campo entero (no aparece en la lista) cuando alguno de los dos reportes no
 // lo completó — mismo criterio que usa structuredFieldSimilarity para no
 // pesar "sin dato" como si fuera una diferencia real.
 export function matchBreakdown(a, b) {
   const items = [];
-  const push = (key, label, coincide, detail) => {
+  const push = (key, label, coincide, detail, value) => {
     if (coincide == null) return;
-    items.push({ key, label, coincide, detail: detail || null });
+    items.push({ key, label, coincide, detail: detail || null, value: value || null });
   };
 
   // Misma compatibilidad de colores que scoreMatch (ver colorSimilarity):
@@ -1042,19 +1045,19 @@ export function matchBreakdown(a, b) {
   if (colorSim != null) {
     const colorTxt = (r) => (r.color === "Otro color" && r.colorOtro ? r.colorOtro : r.color);
     const detail = colorSim >= 1 ? null : colorSim >= 0.5 ? `Parecido: ${colorTxt(a)} / ${colorTxt(b)}` : `${colorTxt(a)} / ${colorTxt(b)}`;
-    push("color", "Color", colorSim >= 0.5, detail);
+    push("color", "Color", colorSim >= 0.5, detail, colorTxt(a));
   }
 
   if (a.tamano && b.tamano) {
-    push("tamano", "Tamaño", a.tamano === b.tamano, a.tamano === b.tamano ? null : `${a.tamano} / ${b.tamano}`);
+    push("tamano", "Tamaño", a.tamano === b.tamano, a.tamano === b.tamano ? null : `${a.tamano} / ${b.tamano}`, a.tamano);
   }
 
   if (a.sexo && b.sexo && a.sexo !== "No sé" && b.sexo !== "No sé") {
-    push("sexo", "Sexo", a.sexo === b.sexo);
+    push("sexo", "Sexo", a.sexo === b.sexo, a.sexo === b.sexo ? null : `${a.sexo} / ${b.sexo}`, a.sexo);
   }
 
   const razaSim = razaSimilarity(a.raza, b.raza);
-  if (razaSim != null) push("raza", "Raza", razaSim >= 1, razaSim >= 1 ? null : `${a.raza} / ${b.raza}`);
+  if (razaSim != null) push("raza", "Raza", razaSim >= 1, razaSim >= 1 ? null : `${a.raza} / ${b.raza}`, a.raza);
 
   const detallesSim = detallesSimilarity(a, b);
   if (detallesSim != null) push("detalles", "Características", detallesSim >= 0.5);
@@ -1069,7 +1072,7 @@ export function matchBreakdown(a, b) {
     const zonaA = normalizeText(a.zona);
     const zonaB = normalizeText(b.zona);
     const sameZone = !!zonaA && !!zonaB && (zonaA === zonaB || zonaA.includes(zonaB) || zonaB.includes(zonaA));
-    push("zona", "Zona", sameZone, sameZone ? null : `${a.zona} / ${b.zona}`);
+    push("zona", "Zona", sameZone, sameZone ? null : `${a.zona} / ${b.zona}`, a.zona);
   }
   if (a.lat != null && a.lng != null && b.lat != null && b.lng != null) {
     const d = haversineKm(a.lat, a.lng, b.lat, b.lng);

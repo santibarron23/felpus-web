@@ -604,7 +604,7 @@ describe("matchBreakdown", () => {
     const b = makeReport({ id: "r2", color: "Blanco", tamano: "grande", sexo: "Hembra" });
     const items = matchBreakdown(a, b);
     const byKey = Object.fromEntries(items.map((i) => [i.key, i]));
-    expect(byKey.color).toEqual({ key: "color", label: "Color", coincide: false, detail: "Negro / Blanco" });
+    expect(byKey.color).toMatchObject({ key: "color", label: "Color", coincide: false, detail: "Negro / Blanco" });
     expect(byKey.tamano.coincide).toBe(false);
     expect(byKey.sexo.coincide).toBe(false);
   });
@@ -1165,5 +1165,15 @@ describe("concordancia con el sexo en la descripción", () => {
 
   it("perra con sexo hembra", () => {
     expect(composeDescripcionBase({ ...base, especie: "perro", sexo: "Hembra" })).toMatch(/^Es una perra,/);
+  });
+});
+
+describe("matchBreakdown: valor compartido (para la tarjeta de comparación)", () => {
+  it("cuando coincide trae el dato en value; cuando no, el detalle con los dos", () => {
+    const a = { especie: "gato", tamano: "mediano", sexo: "Hembra", zona: "Tres Cerritos" };
+    const items = matchBreakdown(a, { ...a, sexo: "Macho" });
+    expect(items.find((i) => i.key === "tamano")).toMatchObject({ coincide: true, value: "mediano", detail: null });
+    expect(items.find((i) => i.key === "sexo")).toMatchObject({ coincide: false, detail: "Hembra / Macho" });
+    expect(items.find((i) => i.key === "zona")).toMatchObject({ coincide: true, value: "Tres Cerritos" });
   });
 });
