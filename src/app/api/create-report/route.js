@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { logError } from "../../../lib/log";
 import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
 import { validateReportContact } from "../../../lib/reportValidation";
+import { sanitizeReportRow } from "../../../lib/reportRow";
 
 // Corre en el servidor — nunca en el navegador, así que la service role key
 // nunca queda expuesta al público.
@@ -61,6 +62,16 @@ export async function POST(request) {
   if (!row || typeof row !== "object" || !row.id) {
     return Response.json({ error: "Falta el reporte a publicar." }, { status: 400 });
   }
+
+  // Lista cerrada de columnas + validación (ver lib/reportRow.js): nunca se
+  // inserta con la service_role key algo que el formulario no manda.
+  const sanitized = sanitizeReportRow(row, {
+    photosPrefix: `${supabaseUrl}/storage/v1/object/public/felpus-photos/`,
+  });
+  if (sanitized.error) {
+    return Response.json({ error: sanitized.error }, { status: 400 });
+  }
+  row = sanitized.row;
 
   // Antes del rate limit a propósito: un error de tipeo en el contacto no
   // debería consumirle el cupo por hora a alguien real. Ver
@@ -130,7 +141,9 @@ export async function POST(request) {
 
   if (finalError) {
     logError("No se pudo publicar el reporte", finalError);
-    return Response.json({ error: finalError.message || "No se pudo publicar el reporte." }, { status: 400 });
+    // Mensaje genérico: el texto de Postgres (nombres de tablas, columnas y
+    // restricciones) queda solo en el log del servidor.
+    return Response.json({ error: "No se pudo publicar el reporte. Revisá los datos y probá de nuevo." }, { status: 400 });
   }
 
   // push_token (auditoría integral, 2026-08-09): capability token para

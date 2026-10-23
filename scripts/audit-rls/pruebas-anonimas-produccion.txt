@@ -1,0 +1,74 @@
+## LECTURAS de columnas sensibles
+reports.contacto_whatsapp => {"code":"42501","details":null,"hint":"Grant the required privileges to the current role with: GRANT SELECT ON public.reports TO anon;","message":"permission de
+reports.contacto_email => {"code":"42501","details":null,"hint":"Grant the required privileges to the current role with: GRANT SELECT ON public.reports TO anon;","message":"permission de
+reports.push_token => {"code":"42501","details":null,"hint":"Grant the required privileges to the current role with: GRANT SELECT ON public.reports TO anon;","message":"permission de
+reports.push_subscription => {"code":"42501","details":null,"hint":"Grant the required privileges to the current role with: GRANT SELECT ON public.reports TO anon;","message":"permission de
+reports oculto=true (moderados) => [] [HTTP 200]
+contributors.whatsapp => {"code":"42501","details":null,"hint":"Grant the required privileges to the current role with: GRANT SELECT ON public.contributors TO anon;","message":"permissi
+contributors embed via FK? (reports->contributors) => {"code":"PGRST200","details":"Searched for a foreign key relationship between 'reports' and 'contributors' in the schema 'public', but no matches were found.","
+push_subscriptions => [] [HTTP 200]
+alert_zones => [] [HTTP 200]
+notifications_log => [] [HTTP 200]
+matches => [] [HTTP 200]
+saved_reports => [] [HTTP 200]
+points_events => [] [HTTP 200]
+heart_sends => [] [HTTP 200]
+report_flags => [] [HTTP 200]
+error_logs => [] [HTTP 200]
+contact_requests => [] [HTTP 200]
+chat_requests => [] [HTTP 200]
+embed_requests => [] [HTTP 200]
+report_submissions => [] [HTTP 200]
+flag_submissions => [] [HTTP 200]
+error_log_submissions => [] [HTTP 200]
+points_award_log => [] [HTTP 200]
+## RPC (funciones) como anónimo, con IDs inexistentes
+rpc admin_delete_report => {"code":"42501","details":null,"hint":null,"message":"permission denied for function admin_delete_report"} [HTTP 401]
+rpc admin_set_oculto => {"code":"42501","details":null,"hint":null,"message":"permission denied for function admin_set_oculto"} [HTTP 401]
+rpc admin_list_users => {"code":"42501","details":null,"hint":null,"message":"permission denied for function admin_list_users"} [HTTP 401]
+rpc admin_list_all_reports => {"code":"42501","details":null,"hint":null,"message":"permission denied for function admin_list_all_reports"} [HTTP 401]
+rpc admin_metrics => {"code":"42501","details":null,"hint":null,"message":"permission denied for function admin_metrics"} [HTTP 401]
+rpc admin_list_flagged_reports => {"code":"42501","details":null,"hint":null,"message":"permission denied for function admin_list_flagged_reports"} [HTTP 401]
+rpc get_report_contact => {"code":"42501","details":null,"hint":null,"message":"permission denied for function get_report_contact"} [HTTP 401]
+rpc award_points => {"code":"42501","details":null,"hint":null,"message":"permission denied for function award_points"} [HTTP 401]
+rpc bump_streak => {"code":"42501","details":null,"hint":null,"message":"permission denied for function bump_streak"} [HTTP 401]
+rpc send_heart => {"code":"42501","details":null,"hint":null,"message":"permission denied for function send_heart"} [HTTP 401]
+rpc get_my_whatsapp => {"code":"42501","details":null,"hint":null,"message":"permission denied for function get_my_whatsapp"} [HTTP 401]
+rpc flag_report => {"code":"42501","details":null,"hint":null,"message":"permission denied for function flag_report"} [HTTP 401]
+rpc subscribe_report_push => {"code":"42501","details":null,"hint":null,"message":"permission denied for function subscribe_report_push"} [HTTP 401]
+rpc get_alert_zone => {"code":"42501","details":null,"hint":null,"message":"permission denied for function get_alert_zone"} [HTTP 401]
+rpc alert_zone_recipients => {"code":"42501","details":null,"hint":null,"message":"permission denied for function alert_zone_recipients"} [HTTP 401]
+rpc check_chat_rate_limit => {"code":"42501","details":null,"hint":null,"message":"permission denied for function check_chat_rate_limit"} [HTTP 401]
+rpc notify_new_report => {"code":"PGRST202","details":"Searched for the function public.notify_new_report without parameters or with a single unnamed json/jsonb parameter, but no matche
+## ESCRITURAS (filas inválidas a propósito: si hubiera permiso, la base las rechaza igual)
+INSERT reports => {"code":"42501","details":null,"hint":"Grant the required privileges to the current role with: GRANT INSERT ON public.reports TO anon;","message":"permission de
+INSERT contributors => {"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"contributors\""} [HTTP 401]
+INSERT matches => {"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"matches\""} [HTTP 401]
+INSERT points_events => {"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"points_events\""} [HTTP 401]
+INSERT error_logs => {"code":"42501","details":null,"hint":"Grant the required privileges to the current role with: GRANT INSERT ON public.error_logs TO anon;","message":"permission
+UPDATE reports (0 filas, columna protegida user_id) => {"code":"42501","details":null,"hint":"Grant the required privileges to the current role with: GRANT UPDATE ON public.reports TO anon;","message":"permission de
+UPDATE reports oculto (columna sin grant) => {"code":"42501","details":null,"hint":"Grant the required privileges to the current role with: GRANT UPDATE ON public.reports TO anon;","message":"permission de
+UPDATE contributors points (sin grant) => {"code":"42501","details":null,"hint":"Grant the required privileges to the current role with: GRANT UPDATE ON public.contributors TO anon;","message":"permissi
+## STORAGE
+listar bucket => [] [HTTP 200]
+listar avatars/ => [] [HTTP 200]
+listar buckets => [] [HTTP 200]
+## AUTH
+auth admin users (anon) => {"code":401,"error_code":"no_authorization","msg":"This endpoint requires a valid Bearer token"} [HTTP 401]
+## RUTAS API DEL SITIO (anónimo)
+admin/report PATCH sin login => {"error":"No autorizado."} [HTTP 403]
+admin/report PATCH con token falso => {"error":"No autorizado."} [HTTP 403]
+matches GET sin login => {"matches":[]} [HTTP 200]
+matches PATCH sin login => {"error":"Iniciá sesión con Google."} [HTTP 401]
+reports/renew pushToken falso => {"error":"Falta reportId."} [HTTP 400]
+alerts/zone GET sin login => {"error":"Iniciá sesión para configurar tus alertas."} [HTTP 401]
+push/subscribe sin login => {"error":"Iniciá sesión para activar las alertas."} [HTTP 401]
+alerts/dispatch sin secreto => {"error":"No autorizado."} [HTTP 401]
+alerts/flush sin secreto => {"error":"No autorizado."} [HTTP 401]
+notify-match sin secreto => {"error":"No autorizado."} [HTTP 401]
+dev/test-push en producción =>  [HTTP 404]
+report-contact id inexistente => {"contactoWhatsapp":"","contactoEmail":""} [HTTP 200]
+create-report fila incompleta (debe fallar sin crear nada) => {"error":"null value in column \"tipo\" of relation \"reports\" violates not-null constraint"} [HTTP 400]
+subscribe-push reporte inexistente => {"error":"No se encontró ese reporte."} [HTTP 403]
+## ¿Quedó algo creado por la prueba?
+busca __auditoria_no_existe__ => [] [HTTP 200]
