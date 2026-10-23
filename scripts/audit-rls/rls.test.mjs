@@ -84,6 +84,9 @@ const APP = [
   ["usuario quita una guardada", A, "delete from saved_reports where report_id = 'rep-b'"],
   ["usuario edita su perfil", A, `update contributors set nickname = 'Ana M', whatsapp = '+549387' where id = '${A.sub}'`],
   ["usuario nuevo crea su perfil", ADMIN, `insert into contributors (id, nickname) values ('${ADMIN.sub}', 'Admin')`],
+  // Lo que manda updateProfile (store.js): upsert SIN whatsapp + update aparte.
+  ["usuario cambia nombre/foto (upsert sin whatsapp)", A, `insert into contributors (id, nickname) values ('${A.sub}', 'Ana Nueva') on conflict (id) do update set nickname = excluded.nickname`],
+  ["usuario cambia su WhatsApp (update sin leerlo)", A, `update contributors set whatsapp = '+5493871111111' where id = '${A.sub}'`],
   ["usuario lee su WhatsApp", A, "select public.get_my_whatsapp() as w where public.get_my_whatsapp() is not null"],
   ["dueño ve coincidencias de su reporte", A, "select * from matches"],
   ["usuario manda un corazón", A, `select public.send_heart('${B.sub}')`],
@@ -168,6 +171,18 @@ describe("permisos de la base — con la migración 20261023_02", () => {
       expect(denied(r), JSON.stringify(r.rows)).toBe(true);
     });
   }
+
+  // Bug del 2026-10-23: con whatsapp adentro del upsert, Postgres exige
+  // poder LEER esa columna (ON CONFLICT DO UPDATE) y rechaza todo el
+  // guardado del perfil. Por eso updateProfile no lo manda en el upsert.
+  it("un upsert de perfil CON whatsapp falla (la app no debe mandarlo así)", async () => {
+    const r = await attempt(
+      db,
+      A,
+      `insert into contributors (id, nickname, whatsapp) values ('${A.sub}', 'Ana', null) on conflict (id) do update set nickname = excluded.nickname, whatsapp = excluded.whatsapp`
+    );
+    expect(r.ok).toBe(false);
+  });
 
   it("una tabla nueva arranca cerrada para anon y authenticated", async () => {
     await db.exec("create table public.tabla_nueva (id int); insert into public.tabla_nueva values (1);");

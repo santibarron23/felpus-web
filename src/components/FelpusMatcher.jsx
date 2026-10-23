@@ -721,11 +721,16 @@ export default function FelpusMatcher() {
       for (const key of ["pais", "provincia", "ciudad"]) {
         if ((profile?.[key] || null) !== ubicacion[key]) extra[key] = ubicacion[key];
       }
-      await updateProfile(user.id, { nickname: name, whatsapp: whatsapp || "", ...extra });
+      // El WhatsApp va solo si cambió: si no se pudo leer el guardado (ver
+      // fetchMyWhatsapp), cambiar el nombre o la foto no lo borra.
+      if ((whatsapp || null) !== (profile?.whatsapp || null)) extra.whatsapp = whatsapp || "";
+      await updateProfile(user.id, { nickname: name, ...extra });
       if ("avatar_url" in extra && prevAvatar) deleteAvatarFile(prevAvatar);
-      setProfile((prev) => ({ ...(prev || { id: user.id }), nickname: name, whatsapp: whatsapp || null, ...extra }));
+      setProfile((prev) => ({ ...(prev || { id: user.id }), ...extra, nickname: name, whatsapp: whatsapp || null }));
       if ("avatar_url" in extra) setMyRank((prev) => (prev ? { ...prev, avatar_url: extra.avatar_url } : prev));
-      setLeaderboard((prev) => prev.map((u) => (u.id === user.id ? { ...u, nickname: name, ...extra } : u)));
+      // Al ranking solo los datos públicos (nunca el WhatsApp).
+      const { whatsapp: _privado, ...publico } = extra;
+      setLeaderboard((prev) => prev.map((u) => (u.id === user.id ? { ...u, nickname: name, ...publico } : u)));
       setNickname(name);
       setEditingProfile(false);
       pushToast("success", "Perfil actualizado.");
