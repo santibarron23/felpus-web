@@ -54,6 +54,12 @@ export default async function sitemap() {
       changeFrequency: "yearly",
       priority: 0.3,
     },
+    {
+      url: `${SITE_URL}/eliminar-cuenta`,
+      lastModified: new Date("2026-10-23"),
+      changeFrequency: "yearly",
+      priority: 0.2,
+    },
     ...reports.map((r) => ({
       url: `${SITE_URL}/r/${r.id}`,
       lastModified: r.creado_en ? new Date(r.creado_en) : new Date(),
