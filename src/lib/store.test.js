@@ -540,11 +540,32 @@ describe("fetchProfile", () => {
     expect(supabaseMock.from).not.toHaveBeenCalled();
   });
 
-  it("devuelve la fila de contributors del usuario", async () => {
-    supabaseMock.from.mockReturnValueOnce(
-      makeBuilder({ data: { id: "user-1", nickname: "Ana", whatsapp: "5493875885427", points: 30 }, error: null })
-    );
+  it("devuelve la fila pública + el WhatsApp propio vía get_my_whatsapp (nunca select *)", async () => {
+    const builder = makeBuilder({ data: { id: "user-1", nickname: "Ana", points: 30 }, error: null });
+    supabaseMock.from.mockReturnValueOnce(builder);
+    supabaseMock.rpc.mockResolvedValueOnce({ data: "5493875885427", error: null });
     expect(await fetchProfile("user-1")).toMatchObject({ nickname: "Ana", whatsapp: "5493875885427" });
+    expect(supabaseMock.rpc).toHaveBeenCalledWith("get_my_whatsapp");
+    const cols = builder.select.mock.calls[0][0];
+    expect(cols).not.toBe("*");
+    expect(cols.split(",")).not.toContain("whatsapp");
+  });
+
+  it("si la migración de get_my_whatsapp no se corrió, lee la columna como antes", async () => {
+    supabaseMock.from
+      .mockReturnValueOnce(makeBuilder({ data: { id: "user-1", nickname: "Ana" }, error: null }))
+      .mockReturnValueOnce(makeBuilder({ data: { whatsapp: "5493875885427" }, error: null }));
+    supabaseMock.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: "PGRST202", message: "Could not find the function public.get_my_whatsapp" },
+    });
+    expect(await fetchProfile("user-1")).toMatchObject({ whatsapp: "5493875885427" });
+  });
+
+  it("si get_my_whatsapp falla por otro motivo, el perfil carga igual sin número", async () => {
+    supabaseMock.from.mockReturnValueOnce(makeBuilder({ data: { id: "user-1", nickname: "Ana" }, error: null }));
+    supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: { code: "500", message: "boom" } });
+    expect(await fetchProfile("user-1")).toMatchObject({ nickname: "Ana", whatsapp: null });
   });
 
   it("sin fila todavía (nunca reportó ni confirmó nada), devuelve null — no es un error", async () => {
