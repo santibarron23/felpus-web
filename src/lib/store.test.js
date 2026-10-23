@@ -580,26 +580,40 @@ describe("updateProfile", () => {
     expect(supabaseMock.from).not.toHaveBeenCalled();
   });
 
-  it("hace upsert con id/nickname/whatsapp, sin tocar points/reportes/etc", async () => {
-    const builder = makeBuilder({ error: null });
-    supabaseMock.from.mockReturnValueOnce(builder);
+  it("hace upsert con id/nickname (sin whatsapp ni points) y guarda el WhatsApp con un update aparte", async () => {
+    const upsertB = makeBuilder({ error: null });
+    const updateB = makeBuilder({ error: null });
+    supabaseMock.from.mockReturnValueOnce(upsertB).mockReturnValueOnce(updateB);
     await updateProfile("user-1", { nickname: "Ana", whatsapp: "+5493875885427" });
-    const upserted = builder.upsert.mock.calls[0][0];
-    expect(upserted).toMatchObject({ id: "user-1", nickname: "Ana", whatsapp: "+5493875885427" });
+    const upserted = upsertB.upsert.mock.calls[0][0];
+    expect(upserted).toMatchObject({ id: "user-1", nickname: "Ana" });
+    // whatsapp dentro del upsert hacía fallar TODO el guardado (42501): la
+    // columna no se puede leer con la clave pública desde 20261023_01.
+    expect("whatsapp" in upserted).toBe(false);
     expect(upserted.points).toBeUndefined();
+    expect(updateB.update).toHaveBeenCalledWith({ whatsapp: "+5493875885427" });
+    expect(updateB.eq).toHaveBeenCalledWith("id", "user-1");
   });
 
   it("whatsapp vacío se guarda como null, no como string vacío", async () => {
-    const builder = makeBuilder({ error: null });
-    supabaseMock.from.mockReturnValueOnce(builder);
+    const updateB = makeBuilder({ error: null });
+    supabaseMock.from.mockReturnValueOnce(makeBuilder({ error: null })).mockReturnValueOnce(updateB);
     await updateProfile("user-1", { nickname: "Ana", whatsapp: "" });
-    expect(builder.upsert.mock.calls[0][0].whatsapp).toBeNull();
+    expect(updateB.update).toHaveBeenCalledWith({ whatsapp: null });
+  });
+
+  it("cambiar solo nombre o foto no toca el WhatsApp", async () => {
+    const upsertB = makeBuilder({ error: null });
+    supabaseMock.from.mockReturnValueOnce(upsertB);
+    await updateProfile("user-1", { nickname: "Ana", avatar_url: "https://x/a.jpg" });
+    expect(supabaseMock.from).toHaveBeenCalledTimes(1);
+    expect(upsertB.upsert.mock.calls[0][0]).toMatchObject({ nickname: "Ana", avatar_url: "https://x/a.jpg" });
   });
 
   it("si la columna whatsapp todavía no existe (migración no corrida), da un mensaje claro", async () => {
-    supabaseMock.from.mockReturnValueOnce(
-      makeBuilder({ error: { code: "PGRST204", message: "Could not find the 'whatsapp' column of 'contributors'" } })
-    );
+    supabaseMock.from
+      .mockReturnValueOnce(makeBuilder({ error: null }))
+      .mockReturnValueOnce(makeBuilder({ error: { code: "PGRST204", message: "Could not find the 'whatsapp' column of 'contributors'" } }));
     await expect(updateProfile("user-1", { nickname: "Ana", whatsapp: "+54" })).rejects.toThrow(/todavía no está disponible/i);
   });
 });

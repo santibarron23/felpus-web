@@ -543,19 +543,33 @@ export async function fetchMyWhatsapp(userId) {
 // aunque la migración 20261022_01 todavía no se haya corrido.
 export async function updateProfile(userId, { nickname, whatsapp, ...extra }) {
   if (!userId) throw new Error("Necesitás iniciar sesión para editar tu perfil.");
-  const row = { id: userId, nickname, whatsapp: whatsapp || null, updated_at: new Date().toISOString() };
+  // Sin "whatsapp" en el upsert (2026-10-23): desde la migración
+  // 20261023_01 esa columna no se puede LEER con la clave pública, y un
+  // upsert (INSERT ... ON CONFLICT DO UPDATE) exige poder leer cada columna
+  // que actualiza. Con whatsapp adentro, Supabase rechazaba TODO el guardado
+  // (42501) y no se podía cambiar ni el nombre ni la foto. El WhatsApp se
+  // guarda aparte con un UPDATE común, que escribe sin necesitar leerlo.
+  const row = { id: userId, nickname, updated_at: new Date().toISOString() };
   for (const key of ["avatar_url", "pais", "provincia", "ciudad"]) {
     if (key in extra) row[key] = extra[key] || null;
   }
   const { error } = await supabase.from(CONTRIBUTORS_TABLE).upsert(row);
   if (error) {
-    if (isMissingColumnError(error, "whatsapp")) {
-      throw new Error("Guardar el WhatsApp del perfil todavía no está disponible. Probá de nuevo más tarde.");
-    }
-    if (["avatar_url", "pais", "provincia", "ciudad"].some((c) => isMissingColumnError(error, c)) || String(error.code) === "42501") {
+    if (["avatar_url", "pais", "provincia", "ciudad"].some((c) => isMissingColumnError(error, c))) {
       throw new Error("La foto y la ubicación del perfil todavía no están disponibles. Probá de nuevo más tarde.");
     }
     throw error;
+  }
+  if (whatsapp === undefined) return;
+  const { error: waError } = await supabase
+    .from(CONTRIBUTORS_TABLE)
+    .update({ whatsapp: whatsapp || null })
+    .eq("id", userId);
+  if (waError) {
+    if (isMissingColumnError(waError, "whatsapp")) {
+      throw new Error("Guardar el WhatsApp del perfil todavía no está disponible. Probá de nuevo más tarde.");
+    }
+    throw waError;
   }
 }
 
