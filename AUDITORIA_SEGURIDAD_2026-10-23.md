@@ -129,7 +129,7 @@ seguridad dependía de una sola capa. Sección 3 de `20261023_02`.
 | M6 | `/api/push/subscribe` reasigna una suscripción a quien conozca su `endpoint` (URL secreta del navegador, no expuesta) | Baja | — |
 | M7 | El admin se define por email fijo en código y SQL | Baja | Pasar a un claim `app_metadata.role = admin` |
 | M8 | `net.http_*` (pg_net) es ejecutable por anon, pero el esquema `net` no está expuesto por la API (comprobado, PGRST106) | Info | — |
-| M9 | Backups: la organización está en plan Free; no se verificó si hay copias descargables | **Revisar** | Supabase → Database → Backups, o `supabase db dump` antes de cada migración |
+| M9 | **Sin backups (comprobado):** Supabase → Database → Backups dice "Free Plan does not include project backups". Si algo borra datos, no hay de dónde recuperarlos | **Alta** (continuidad) | Pasar a Pro (7 días de backups diarios) o hacer `supabase db dump` periódico |
 | M10 | Una migración mergeada (20261022_02) nunca llegó a producción y nadie se enteró | Media (proceso) | Registrar en `supabase/migrations/README.md` qué migración se corrió y cuándo |
 
 ## 4. Pruebas realizadas
@@ -181,5 +181,5 @@ no usan SQL dinámico (`execute`). No se encontró inyección.
    Solo cambia permisos, una policy, la config del bucket y una función;
    no toca datos. Copia de respaldo: el estado previo de permisos está
    capturado y `scripts/audit-rls/rollback_20261023_02.sql` lo restaura
-   (probado). Recomendado además: verificar M9 (backups) antes.
+   (probado). No hay backup de datos (M9), pero esta migración no los toca.
 3. **Manual en Supabase:** desactivar el provider Email (M1) si no se usa.
