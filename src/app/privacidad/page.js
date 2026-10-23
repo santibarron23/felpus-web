@@ -149,6 +149,13 @@ export default function PrivacidadPage() {
           rectificación, actualización o eliminación de sus datos personales.
         </p>
         <p>Las solicitudes podrán realizarse mediante los canales de contacto publicados por Felpus.</p>
+        <p>
+          Para pedir la eliminación de la cuenta y de los datos asociados, seguí los pasos de{" "}
+          <a href="/eliminar-cuenta" className="underline underline-offset-2 font-semibold">
+            felpus.com/eliminar-cuenta
+          </a>
+          .
+        </p>
       </LegalSection>
 
       <LegalSection n={12} title="Modificaciones">

@@ -5267,6 +5267,11 @@ export default function FelpusMatcher() {
           <Link href="/terminos" className="inline-block py-2.5 whitespace-nowrap underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded">
             Términos y Condiciones
           </Link>
+          {/* Requisito de Google Play: la eliminación de cuenta tiene que
+              poder pedirse desde adentro de la app. */}
+          <Link href="/eliminar-cuenta" className="inline-block py-2.5 whitespace-nowrap underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded">
+            Eliminar mi cuenta
+          </Link>
         </p>
       </footer>
     </div>

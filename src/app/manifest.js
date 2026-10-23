@@ -5,7 +5,15 @@ export default function manifest() {
     name: "Felpus",
     short_name: "Felpus",
     description: "Reportá y buscá mascotas perdidas o encontradas cerca tuyo.",
+    // id/scope explícitos: la app de Android (Trusted Web Activity, ver
+    // docs/PLAY_STORE.md) y PWABuilder los usan para identificar la app y
+    // decidir qué URLs quedan "adentro" de la app y cuáles abren el navegador.
+    id: "/",
     start_url: "/",
+    scope: "/",
+    lang: "es-AR",
+    dir: "ltr",
+    categories: ["lifestyle", "social", "utilities"],
     display: "standalone",
     // Antes "#FBF7F0" (un crema más claro que el fondo real de la página) —
     // en Android eso se ve como un splash screen que "parpadea" a un tono
@@ -19,9 +27,14 @@ export default function manifest() {
       // 512px) para ofrecer "Instalar app"; sin esto el banner de
       // instalación no aparece aunque el resto del manifest esté bien.
       { src: "/assets/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: "/assets/icon-192.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
       { src: "/assets/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-      { src: "/assets/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+      // Maskable aparte (2026-10-23, para la app de Play Store): Android
+      // recorta estos íconos en círculo/gota, y en icon-512 el texto
+      // "Felpus" llegaba al borde de la zona segura (80% central) y quedaba
+      // mordido. Estas versiones tienen el mismo diseño achicado con margen
+      // rojo alrededor.
+      { src: "/assets/icon-maskable-192.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
+      { src: "/assets/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
     // Hace que Felpus aparezca como destino en el selector nativo de
     // "Compartir" del celular cuando alguien comparte una foto desde la
