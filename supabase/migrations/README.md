@@ -36,3 +36,21 @@ Qué lo frena hoy, en tres capas:
 
 Abrí felpus.com y fijate que el contador de mascotas no esté en 0, o abrí
 `https://felpus.com/api/health`: tiene que decir `"ok": true`.
+
+## Regla: datos personales nunca legibles con la clave pública
+
+La clave `anon` de Supabase es **pública por diseño** (va en el JS del
+sitio, cualquiera la ve). Por eso la seguridad depende de qué deja leer.
+Nunca legibles con ella: contacto de reportes, `contributors.whatsapp`,
+tokens de push y el listado del bucket de fotos.
+
+- `contributors` tiene el SELECT **por columna**, sin `whatsapp`
+  (migración `20261023_01`). En el código, usá `CONTRIBUTOR_PUBLIC_COLUMNS`
+  (nunca `select("*")`); el WhatsApp propio se lee con `get_my_whatsapp()`.
+- `src/lib/contributorsGrants.test.js` y `src/lib/secrets.test.js` lo frenan
+  en el CI; gitleaks (en `ci.yml`) frena claves reales en commits.
+- `/api/health` prueba cada 30 minutos esas lecturas con la clave pública
+  (`src/lib/privacyProbes.js`); si alguna anda, salud.yml te avisa por email.
+- La clave `service_role` va **solo** en Vercel (sin `NEXT_PUBLIC_`) y en
+  `.env.local` (que no está en git). Si alguna vez llega a un commit, a un
+  chat o a una captura: rotarla en Supabase → Settings → API Keys.

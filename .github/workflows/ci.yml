@@ -36,3 +36,16 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+
+  # Escaneo de secretos (2026-10-23): falla el PR si algún commit trae una
+  # clave real (service_role de Supabase, tokens de IA, etc.). El repo es
+  # público: una clave que llega a GitHub hay que darla por filtrada.
+  secretos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

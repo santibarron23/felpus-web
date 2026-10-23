@@ -5,6 +5,13 @@ import { marcarDudosas } from "./matching";
 
 const REPORTS_TABLE = "reports";
 const CONTRIBUTORS_TABLE = "contributors";
+// Columnas de contributors que se pueden leer en público (ranking, perfil).
+// NUNCA "*" ni whatsapp: desde la migración 20261023_01 el SELECT de
+// contributors es por columna (el WhatsApp de perfil se podía leer en bloque
+// con la anon key) y pedir "*" haría fallar la consulta entera. El WhatsApp
+// propio se lee con fetchMyWhatsapp(). contributorsGrants.test.js lo verifica.
+export const CONTRIBUTOR_PUBLIC_COLUMNS =
+  "id,nickname,points,reportes,reencuentros,hearts,streak_days,last_active_date,streak_updated_at,updated_at,avatar_url,pais,provincia,ciudad";
 const PHOTOS_BUCKET = "felpus-photos";
 
 function rowToReport(row) {
@@ -463,7 +470,7 @@ export async function resolveReports(ids, resolverUserId, resolverDisplayName) {
 export async function fetchLeaderboard() {
   const { data, error } = await supabase
     .from(CONTRIBUTORS_TABLE)
-    .select("*")
+    .select(CONTRIBUTOR_PUBLIC_COLUMNS)
     .neq("id", "__seed_lock__")
     .order("points", { ascending: false })
     .limit(50);
@@ -478,7 +485,7 @@ export async function fetchMyRank(userId) {
   if (!userId) return null;
   const { data: me, error: meError } = await supabase
     .from(CONTRIBUTORS_TABLE)
-    .select("*")
+    .select(CONTRIBUTOR_PUBLIC_COLUMNS)
     .eq("id", userId)
     .maybeSingle();
   if (meError) throw meError;
@@ -505,9 +512,23 @@ export async function fetchMyRank(userId) {
 // válido, no un error (ver updateProfile, que lo crea recién al guardar).
 export async function fetchProfile(userId) {
   if (!userId) return null;
-  const { data, error } = await supabase.from(CONTRIBUTORS_TABLE).select("*").eq("id", userId).maybeSingle();
+  const { data, error } = await supabase.from(CONTRIBUTORS_TABLE).select(CONTRIBUTOR_PUBLIC_COLUMNS).eq("id", userId).maybeSingle();
   if (error) throw error;
-  return data;
+  if (!data) return null;
+  return { ...data, whatsapp: await fetchMyWhatsapp(userId) };
+}
+
+// El WhatsApp de perfil ya no viene en el SELECT público de contributors
+// (ver CONTRIBUTOR_PUBLIC_COLUMNS): get_my_whatsapp() devuelve solo el de
+// quien está logueado. Si la migración todavía no se corrió, la columna
+// sigue abierta y se lee directo, como antes. Nunca rompe el perfil: si
+// falla, el perfil carga igual sin el número guardado.
+export async function fetchMyWhatsapp(userId) {
+  const { data, error } = await supabase.rpc("get_my_whatsapp");
+  if (!error) return data || null;
+  if (!isMissingFunctionError(error)) return null;
+  const legacy = await supabase.from(CONTRIBUTORS_TABLE).select("whatsapp").eq("id", userId).maybeSingle();
+  return legacy.error ? null : legacy.data?.whatsapp || null;
 }
 
 // upsert, no update: cubre tanto a quien ya tiene fila en contributors
@@ -637,7 +658,7 @@ export async function awardPoints(userId, displayName, delta, reason, sourceId) 
   // ya aísla ese caso puntual para que su falla no tumbe el resto del flujo.
   const { data: existing } = await supabase
     .from(CONTRIBUTORS_TABLE)
-    .select("*")
+    .select(CONTRIBUTOR_PUBLIC_COLUMNS)
     .eq("id", userId)
     .maybeSingle();
 
@@ -709,7 +730,7 @@ export async function bumpStreak(userId, displayName) {
   const yesterday = localDateStr(new Date(Date.now() - 24 * 3600 * 1000));
   const { data: existing, error: fetchError } = await supabase
     .from(CONTRIBUTORS_TABLE)
-    .select("*")
+    .select(CONTRIBUTOR_PUBLIC_COLUMNS)
     .eq("id", userId)
     .maybeSingle();
   if (fetchError) throw fetchError;
