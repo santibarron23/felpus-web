@@ -59,7 +59,6 @@ import {
   getTier,
   getTierProgress,
   getBadges,
-  isRecent,
   timeAgo,
   emptyForm,
   MAX_FOTOS,
@@ -2121,7 +2120,12 @@ export default function FelpusMatcher() {
   // simulados) derivados de los reportes ya cargados, para transmitir que
   // hay gente usando la app ahora mismo sin inventar datos. Memoizado por el
   // mismo motivo que lo de arriba.
-  const last24hCount = useMemo(() => reports.filter(isRecent).length, [reports]);
+  // Últimos 7 días (2026-10-24, a pedido): con 24 h el número quedaba en 0
+  // o muy bajo muchos días y no reflejaba la actividad real.
+  const last7dCount = useMemo(() => {
+    const desde = Date.now() - 7 * 24 * 3600 * 1000;
+    return reports.filter((r) => r.creadoEn >= desde).length;
+  }, [reports]);
   // Memoizado: sin esto, esta lista se recalculaba (con una referencia de
   // array NUEVA) en cada render de todo el componente, sin importar si algo
   // relevante había cambiado. Eso hacía que ReportsMap reconstruyera todos
@@ -2605,12 +2609,12 @@ export default function FelpusMatcher() {
                   },
                 },
                 {
-                  value: last24hCount,
-                  label: "Últimas 24hs",
+                  value: last7dCount,
+                  label: "Últimos 7 días",
                   color: C.orangeInk,
                   onClick: () => {
                     setFilterTipo("todos");
-                    setFilterFecha("24h");
+                    setFilterFecha("7d");
                     setExploreView("lista");
                     setShowResueltas(false);
                     goToTab("explorar");

@@ -12,6 +12,7 @@ import { createPortal } from "react-dom";
 import Image from "next/image";
 import { petTitle, petDescriptor, nombreReal } from "../../lib/petTitle";
 import { zonaConCiudad } from "../../lib/zona";
+import ReportLocationMap from "../ReportLocationMap";
 import {
   Cat,
   Dog,
@@ -251,6 +252,9 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
   const [deleteConfirming, setDeleteConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  // Mapa de la ubicación dentro de la app (antes: link a Google Maps).
+  const [locationOpen, setLocationOpen] = useState(false);
+  const locationRef = useRef(null);
   // idle → reasons (eligiendo motivo) → submitting → done | error
   const [flagState, setFlagState] = useState("idle");
   const [flagErrorMsg, setFlagErrorMsg] = useState("");
@@ -265,23 +269,22 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
   // no al modal de atrás — misma lógica que ya usan el botón "X" y el click
   // en el fondo de la lightbox. onEscape se lee de un ref adentro del hook,
   // así que cambiar esta función en cada render no reinscribe el listener.
-  useFocusTrap(!!report, lightboxOpen ? lightboxRef : modalRef, lightboxOpen ? () => setLightboxOpen(false) : onClose);
+  // Lo mismo con el mapa de ubicación: Escape cierra el mapa, no la ficha.
+  useFocusTrap(
+    !!report,
+    lightboxOpen ? lightboxRef : locationOpen ? locationRef : modalRef,
+    lightboxOpen ? () => setLightboxOpen(false) : locationOpen ? () => setLocationOpen(false) : onClose
+  );
   useEffect(() => {
     setActiveIndex(0);
     setDeleteConfirming(false);
     setLightboxOpen(false);
+    setLocationOpen(false);
     setFlagState("idle");
   }, [report?.id]);
   if (!report) return null;
   const fotos = report.fotos?.length ? report.fotos : [{ url: report.foto }];
   const activeFoto = fotos[Math.min(activeIndex, fotos.length - 1)];
-  // Con lat/lng manda directo al pin exacto; si el reporte no tiene
-  // ubicación precisa (no todos la tienen), cae a una búsqueda por nombre
-  // de zona — siempre abre algo útil, nunca un link roto.
-  const mapsUrl =
-    report.lat != null && report.lng != null
-      ? `https://www.google.com/maps?q=${report.lat},${report.lng}`
-      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([report.zona, report.ciudad].filter(Boolean).join(", "))}`;
 
   async function handleDownloadFlyer() {
     setGeneratingFlyer(true);
@@ -391,17 +394,17 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
             </p>
           </div>
           <div className="grid grid-cols-2 gap-2 text-sm">
-            <a
-              href={mapsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="felpus-input bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5 hover:bg-[var(--felpus-surface-muted)] dark:hover:bg-[var(--felpus-dark-muted-surface)] transition-colors focus:outline-none"
+            <button
+              type="button"
+              onClick={() => setLocationOpen(true)}
+              aria-label={`Ver en el mapa: ${zonaConCiudad(report)}`}
+              className="felpus-input text-left bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5 hover:bg-[var(--felpus-surface-muted)] dark:hover:bg-[var(--felpus-dark-muted-surface)] transition-colors focus:outline-none"
             >
-              <p className="text-[11px] uppercase font-bold flex items-center gap-1" style={{ color: C.muted }}>
+              <span className="text-[11px] uppercase font-bold flex items-center gap-1" style={{ color: C.muted }}>
                 <MapPin className="w-3 h-3" /> Zona
-              </p>
-              <p className="underline" style={{ color: C.text }}>{zonaConCiudad(report)}</p>
-            </a>
+              </span>
+              <span className="block underline" style={{ color: C.text }}>{zonaConCiudad(report)}</span>
+            </button>
             <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
               <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>{fechaLabel(report.tipo)}</p>
               <p style={{ color: C.text }}>{formatFechaAR(report.fecha)}</p>
@@ -702,6 +705,13 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
         </div>
       </div>
     </div>
+    {locationOpen &&
+      createPortal(
+        <div ref={locationRef}>
+          <ReportLocationMap report={report} onClose={() => setLocationOpen(false)} />
+        </div>,
+        document.body
+      )}
     {lightboxOpen &&
       createPortal(
         <div
