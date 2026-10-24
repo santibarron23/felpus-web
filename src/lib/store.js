@@ -652,11 +652,26 @@ export async function unsaveReport(userId, reportId) {
 // por el mismo reporte (ver el comentario largo junto a award_points en
 // schema.sql) — sin esto, cualquier cuenta logueada podía pedirle puntos al
 // servidor por cualquier motivo, cuantas veces quisiera.
+// award_points y bump_streak guardan p_display_name como nickname cuando no
+// es null (coalesce en schema.sql). Antes se les mandaba siempre el nombre
+// de Google, así que el nombre que la persona elegía en "Mi Felpus" volvía
+// al de Google al día siguiente (bump_streak corre en cada visita) o al
+// sumar puntos (2026-10-24, reportado por el usuario). Ahora el nombre solo
+// se manda si esa persona todavía no tiene uno: para quien ya lo tiene va
+// null y la base conserva el suyo. Si no se puede averiguar, también va
+// null (mejor no pisar un nombre que pisarlo).
+export async function displayNameForRpc(userId, displayName) {
+  if (!displayName) return null;
+  const { data, error } = await supabase.from(CONTRIBUTORS_TABLE).select("nickname").eq("id", userId).maybeSingle();
+  if (error) return null;
+  return data?.nickname ? null : displayName;
+}
+
 export async function awardPoints(userId, displayName, delta, reason, sourceId) {
   if (!userId) return;
   const rpcResult = await supabase.rpc("award_points", {
     p_user_id: userId,
-    p_display_name: displayName || null,
+    p_display_name: await displayNameForRpc(userId, displayName),
     p_delta: delta,
     p_reason: reason,
     p_source_id: sourceId,
@@ -677,7 +692,7 @@ export async function awardPoints(userId, displayName, delta, reason, sourceId) 
     .maybeSingle();
 
   const current = existing || { id: userId, nickname: displayName, points: 0, reportes: 0, reencuentros: 0 };
-  current.nickname = displayName || current.nickname;
+  current.nickname = current.nickname || displayName;
   current.points = (current.points || 0) + delta;
   if (reason === "reencuentro") current.reencuentros = (current.reencuentros || 0) + 1;
   else if (reason !== "bono-reporte-original") current.reportes = (current.reportes || 0) + 1;
@@ -722,7 +737,7 @@ export async function bumpStreak(userId, displayName) {
 
   const rpcResult = await supabase.rpc("bump_streak", {
     p_user_id: userId,
-    p_display_name: displayName || null,
+    p_display_name: await displayNameForRpc(userId, displayName),
     p_timezone: timezone,
   });
   if (!rpcResult.error) {
@@ -765,7 +780,7 @@ export async function bumpStreak(userId, displayName) {
   }
 
   const continued = current.last_active_date === yesterday;
-  current.nickname = displayName || current.nickname;
+  current.nickname = current.nickname || displayName;
   current.streak_days = continued ? (current.streak_days || 0) + 1 : 1;
   current.last_active_date = today;
   current.updated_at = new Date().toISOString();

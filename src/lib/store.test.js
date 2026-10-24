@@ -416,7 +416,8 @@ describe("awardPoints", () => {
   // y usa (reason, source_id) como clave única para no otorgar puntos dos
   // veces por el mismo reporte. awardPoints() ahora tiene que mandar
   // p_source_id siempre (server-side es quien decide si corresponde o no).
-  it("con la RPC disponible, la llama con los parámetros correctos (incluido p_source_id) y no toca .from()", async () => {
+  it("con la RPC disponible, la llama con los parámetros correctos (incluido p_source_id)", async () => {
+    supabaseMock.from.mockReturnValueOnce(makeBuilder({ data: null, error: null })); // sin perfil todavía
     supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: null });
     await awardPoints("user-1", "Ana", 50, "reencuentro", "report-abc");
     expect(supabaseMock.rpc).toHaveBeenCalledWith("award_points", {
@@ -426,7 +427,15 @@ describe("awardPoints", () => {
       p_reason: "reencuentro",
       p_source_id: "report-abc",
     });
-    expect(supabaseMock.from).not.toHaveBeenCalled();
+    // Solo la consulta del nickname (displayNameForRpc), ninguna escritura directa.
+    expect(supabaseMock.from).toHaveBeenCalledTimes(1);
+  });
+
+  it("si la persona ya tiene nombre en su perfil, no lo pisa (manda null)", async () => {
+    supabaseMock.from.mockReturnValueOnce(makeBuilder({ data: { nickname: "Santi B." }, error: null }));
+    supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: null });
+    await awardPoints("user-1", "Santiago Barron", 10, "reporte", "report-1");
+    expect(supabaseMock.rpc).toHaveBeenCalledWith("award_points", expect.objectContaining({ p_display_name: null }));
   });
 
   it("sin userId, no llama a nada (guest sin cuenta)", async () => {
@@ -436,6 +445,7 @@ describe("awardPoints", () => {
   });
 
   it("si la RPC todavía no existe (migración no corrida), cae al lee-y-escribe de siempre", async () => {
+    supabaseMock.from.mockReturnValueOnce(makeBuilder({ data: { nickname: "Ana" }, error: null }));
     supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: missingFunctionError() });
     supabaseMock.from.mockReturnValueOnce(
       makeBuilder({ data: { id: "user-1", nickname: "Ana", points: 100, reportes: 2, reencuentros: 1 }, error: null })
@@ -443,19 +453,21 @@ describe("awardPoints", () => {
     const upsertBuilder = makeBuilder({ error: null });
     supabaseMock.from.mockReturnValueOnce(upsertBuilder);
 
-    await awardPoints("user-1", "Ana", 50, "reencuentro", "report-abc");
+    await awardPoints("user-1", "Otro Nombre", 50, "reencuentro", "report-abc");
 
-    expect(supabaseMock.from).toHaveBeenCalledTimes(2);
+    expect(supabaseMock.from).toHaveBeenCalledTimes(3);
     const upserted = upsertBuilder.upsert.mock.calls[0][0];
     expect(upserted.points).toBe(150);
     expect(upserted.reencuentros).toBe(2);
+    expect(upserted.nickname).toBe("Ana"); // conserva el nombre elegido
   });
 
   it("un error real de la RPC (no 'función no existe') se propaga, sin caer al lee-y-escribe", async () => {
     const realError = { code: "P0001", message: "Solo podés sumarte puntos por tus propios reencuentros." };
+    supabaseMock.from.mockReturnValueOnce(makeBuilder({ data: null, error: null })); // sin perfil todavía
     supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: realError });
     await expect(awardPoints("otro-user", "X", 20, "reencuentro", "report-abc")).rejects.toBe(realError);
-    expect(supabaseMock.from).not.toHaveBeenCalled();
+    expect(supabaseMock.from).toHaveBeenCalledTimes(1);
   });
 
   it("un intento de doble otorgamiento (mismo evento) es rechazado del lado del servidor, no silencioso en el cliente", async () => {
@@ -466,6 +478,7 @@ describe("awardPoints", () => {
     // que awardPoints() no haga NINGÚN chequeo propio de "ya se lo di" —
     // toda la idempotencia vive server-side, awardPoints() solo pasa los
     // datos tal cual.
+    supabaseMock.from.mockReturnValueOnce(makeBuilder({ data: null, error: null })); // sin perfil todavía
     supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: null });
     await awardPoints("user-1", "Ana", 10, "reporte", "report-ya-premiado");
     expect(supabaseMock.rpc).toHaveBeenCalledWith(
@@ -489,7 +502,8 @@ describe("bumpStreak", () => {
   // arbitraria. bumpStreak() solo tiene que mandar el nombre IANA del
   // timezone real del navegador (Intl.DateTimeFormat().resolvedOptions()),
   // nunca una fecha.
-  it("con la RPC disponible, la llama con el timezone real (no fechas) y no toca .from()", async () => {
+  it("con la RPC disponible, la llama con el timezone real (no fechas)", async () => {
+    supabaseMock.from.mockReturnValueOnce(makeBuilder({ data: null, error: null })); // sin perfil todavía
     supabaseMock.rpc.mockResolvedValueOnce({ data: [{ streak_days: 3, is_new_today: true }], error: null });
     const result = await bumpStreak("user-1", "Ana");
     expect(supabaseMock.rpc).toHaveBeenCalledWith("bump_streak", {
@@ -500,8 +514,24 @@ describe("bumpStreak", () => {
     const callArgs = supabaseMock.rpc.mock.calls[0][1];
     expect(callArgs).not.toHaveProperty("p_today");
     expect(callArgs).not.toHaveProperty("p_yesterday");
-    expect(supabaseMock.from).not.toHaveBeenCalled();
+    expect(supabaseMock.from).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ streakDays: 3, isNewToday: true });
+  });
+
+  // Bug del 2026-10-24: bump_streak corre en cada visita y guardaba el
+  // nombre de Google como nickname, deshaciendo el nombre elegido en el perfil.
+  it("no pisa el nombre elegido en el perfil con el de Google", async () => {
+    supabaseMock.from.mockReturnValueOnce(makeBuilder({ data: { nickname: "Santi B." }, error: null }));
+    supabaseMock.rpc.mockResolvedValueOnce({ data: [{ streak_days: 1, is_new_today: false }], error: null });
+    await bumpStreak("user-1", "Santiago Barron");
+    expect(supabaseMock.rpc).toHaveBeenCalledWith("bump_streak", expect.objectContaining({ p_display_name: null }));
+  });
+
+  it("si no puede averiguar el nombre actual, tampoco lo pisa", async () => {
+    supabaseMock.from.mockReturnValueOnce(makeBuilder({ data: null, error: { code: "500", message: "x" } }));
+    supabaseMock.rpc.mockResolvedValueOnce({ data: [{ streak_days: 1, is_new_today: false }], error: null });
+    await bumpStreak("user-1", "Santiago Barron");
+    expect(supabaseMock.rpc).toHaveBeenCalledWith("bump_streak", expect.objectContaining({ p_display_name: null }));
   });
 
   it("sin userId, no llama a nada (invitado sin cuenta)", async () => {
@@ -511,6 +541,7 @@ describe("bumpStreak", () => {
   });
 
   it("si la RPC todavía no existe (migración no corrida), cae al lee-y-escribe de siempre", async () => {
+    supabaseMock.from.mockReturnValueOnce(makeBuilder({ data: { nickname: "Ana" }, error: null }));
     supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: missingFunctionError() });
     supabaseMock.from.mockReturnValueOnce(
       makeBuilder({ data: { id: "user-1", nickname: "Ana", streak_days: 2, last_active_date: null }, error: null })
@@ -520,7 +551,7 @@ describe("bumpStreak", () => {
 
     const result = await bumpStreak("user-1", "Ana");
 
-    expect(supabaseMock.from).toHaveBeenCalledTimes(2);
+    expect(supabaseMock.from).toHaveBeenCalledTimes(3);
     const upserted = upsertBuilder.upsert.mock.calls[0][0];
     expect(upserted.streak_days).toBe(1);
     expect(result.isNewToday).toBe(true);
@@ -528,9 +559,10 @@ describe("bumpStreak", () => {
 
   it("un error real de la RPC (no 'función no existe') se propaga, sin caer al lee-y-escribe", async () => {
     const realError = { code: "P0001", message: "Solo podés actualizar tu propia racha." };
+    supabaseMock.from.mockReturnValueOnce(makeBuilder({ data: null, error: null })); // sin perfil todavía
     supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: realError });
     await expect(bumpStreak("user-1", "Ana")).rejects.toBe(realError);
-    expect(supabaseMock.from).not.toHaveBeenCalled();
+    expect(supabaseMock.from).toHaveBeenCalledTimes(1);
   });
 });
 
