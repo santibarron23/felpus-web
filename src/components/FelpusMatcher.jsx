@@ -1254,9 +1254,12 @@ export default function FelpusMatcher() {
     }
   }, [reportProgressPct]);
 
+  // El nombre elegido en "Mi Felpus" gana sobre el de Google (antes el de
+  // Google lo pisaba en cada carga y el cambio "volvía atrás").
   useEffect(() => {
-    if (googleDisplayName) setNickname(googleDisplayName);
-  }, [googleDisplayName]);
+    const nombre = profile?.nickname || googleDisplayName;
+    if (nombre) setNickname(nombre);
+  }, [profile?.nickname, googleDisplayName]);
 
   async function handleGoogleLogin() {
     await signInWithGoogle();
@@ -1552,7 +1555,7 @@ export default function FelpusMatcher() {
       setResolvingId(null);
       return;
     }
-    const resolverDisplayName = googleDisplayName || user.email || "Colaborador";
+    const resolverDisplayName = profile?.nickname || googleDisplayName || user.email || "Colaborador";
     try {
       const ids = ownedRepObjs.map((r) => r.id);
       await resolveReports(ids, user.id, resolverDisplayName);
@@ -2015,7 +2018,7 @@ export default function FelpusMatcher() {
       if (user) {
         await awardPointsRemote(
           user.id,
-          googleDisplayName || user.email,
+          profile?.nickname || googleDisplayName || user.email,
           reportKind === "perdida" ? PUNTOS_PERDIDA : PUNTOS_ENCONTRADA,
           "reporte",
           savedReport.id
@@ -2431,7 +2434,7 @@ export default function FelpusMatcher() {
                   className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-white text-xs font-bold"
                   style={{ background: C.redSolid }}
                 >
-                  {(googleDisplayName || "?").charAt(0).toUpperCase()}
+                  {(profile?.nickname || googleDisplayName || "?").charAt(0).toUpperCase()}
                 </span>
               )}
               <span className="flex-1 min-w-0">
@@ -2439,7 +2442,7 @@ export default function FelpusMatcher() {
                   Colaborador
                 </span>
                 <span className="block text-sm font-semibold truncate" style={{ color: C.text }}>
-                  {googleDisplayName}
+                  {profile?.nickname || googleDisplayName}
                 </span>
               </span>
             </>
