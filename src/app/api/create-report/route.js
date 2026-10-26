@@ -95,6 +95,16 @@ export async function POST(request) {
     }
   }
 
+  // Cuentas baneadas por el admin (ver admin_set_baneado en la migración
+  // 20261026_02): no pueden publicar. Si la columna todavía no existe, se
+  // sigue como antes.
+  if (realUserId) {
+    const { data: contrib, error: banError } = await supabase.from("contributors").select("baneado").eq("id", realUserId).maybeSingle();
+    if (!banError && contrib?.baneado) {
+      return Response.json({ error: "Tu cuenta está suspendida por incumplir las reglas de Felpus." }, { status: 403 });
+    }
+  }
+
   const ip = getClientIp(request);
   if (ip) {
     try {

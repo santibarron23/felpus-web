@@ -109,6 +109,7 @@ import {
   adminFetchUsers,
   fetchProfile,
   updateProfile,
+  fetchMySupport,
   uploadAvatar,
   deleteAvatarFile,
   fetchSavedReportIds,
@@ -143,6 +144,9 @@ import Mascot from "./Mascot";
 import ZonaAutocomplete from "./ZonaAutocomplete";
 import MatchScorecard from "./felpus/MatchScorecard";
 import ReportGrid from "./felpus/ReportGrid";
+import SupportModal from "./felpus/SupportModal";
+import AdminUsers from "./felpus/AdminUsers";
+import { normalizeAlias } from "../lib/support";
 import { checkPhotoKind } from "../lib/photoCheckClient";
 import { Avatar, RankingList, RankingMeCard, RankingStatTiles } from "./felpus/Ranking";
 import { PAIS_DEFAULT, PAISES, PROVINCIAS_AR, UBICACION_MAX, cleanUbicacion, cropAvatarDataUrl, formatUbicacion } from "../lib/profile";
@@ -521,6 +525,11 @@ export default function FelpusMatcher() {
   const [visionStatus, setVisionStatus] = useState("idle"); // idle | analyzing | ai | basic
   const [nickname, setNickname] = useState("");
   const [leaderboard, setLeaderboard] = useState([]);
+  // Colaborador al que se está por apoyar (ventana SupportModal).
+  const [supportTarget, setSupportTarget] = useState(null);
+  // Mis datos de apoyo (alias + acepto), y el borrador al editar el perfil.
+  const [mySupport, setMySupport] = useState(null);
+  const [supportDraft, setSupportDraft] = useState(null);
   const [myRank, setMyRank] = useState(null);
   const [confirmingId, setConfirmingId] = useState(null);
   // Auditoría integral (2026-08-09): el botón "Sí, confirmar"/"Sí, ya está
@@ -666,6 +675,14 @@ export default function FelpusMatcher() {
 
   function openEditProfile() {
     setProfileNameDraft(profile?.nickname || googleDisplayName || "");
+    // Apoyos: el alias no viene con el perfil (no es legible por SELECT).
+    setSupportDraft(null);
+    fetchMySupport()
+      .then((sup) => {
+        setMySupport(sup);
+        setSupportDraft(sup ? { acepta: sup.acepta, alias: sup.alias } : null);
+      })
+      .catch((e) => logError("No se pudieron leer los datos de apoyo", e));
     setProfilePhoneText("");
     setProfilePhoneParsed({ isValid: false, reason: null, e164: "", digits: "" });
     if (profile?.whatsapp) {
@@ -727,12 +744,26 @@ export default function FelpusMatcher() {
       // El WhatsApp va solo si cambió: si no se pudo leer el guardado (ver
       // fetchMyWhatsapp), cambiar el nombre o la foto no lo borra.
       if ((whatsapp || null) !== (profile?.whatsapp || null)) extra.whatsapp = whatsapp || "";
+      // Apoyos: solo si cambió algo (y si la migración ya está: supportDraft
+      // queda en null si get_my_support no existe).
+      if (supportDraft) {
+        const alias = normalizeAlias(supportDraft.alias);
+        if (!alias.ok) throw new Error(alias.error);
+        if (supportDraft.acepta && !alias.alias) throw new Error("Para aceptar apoyos, cargá tu alias o CBU/CVU.");
+        if ((alias.alias || "") !== (mySupport?.alias || "")) extra.alias_pago = alias.alias;
+        if (supportDraft.acepta !== !!mySupport?.acepta) extra.acepta_apoyos = supportDraft.acepta;
+      }
       await updateProfile(user.id, { nickname: name, ...extra });
+      if ("alias_pago" in extra || "acepta_apoyos" in extra) {
+        setMySupport({ alias: "alias_pago" in extra ? extra.alias_pago || "" : mySupport?.alias || "", acepta: "acepta_apoyos" in extra ? extra.acepta_apoyos : !!mySupport?.acepta });
+      }
       if ("avatar_url" in extra && prevAvatar) deleteAvatarFile(prevAvatar);
-      setProfile((prev) => ({ ...(prev || { id: user.id }), ...extra, nickname: name, whatsapp: whatsapp || null }));
+      const { alias_pago: _aliasPerfil, ...extraPerfil } = extra;
+      setProfile((prev) => ({ ...(prev || { id: user.id }), ...extraPerfil, nickname: name, whatsapp: whatsapp || null }));
       if ("avatar_url" in extra) setMyRank((prev) => (prev ? { ...prev, avatar_url: extra.avatar_url } : prev));
-      // Al ranking solo los datos públicos (nunca el WhatsApp).
-      const { whatsapp: _privado, ...publico } = extra;
+      if ("acepta_apoyos" in extra) setMyRank((prev) => (prev ? { ...prev, acepta_apoyos: extra.acepta_apoyos } : prev));
+      // Al ranking solo los datos públicos (nunca el WhatsApp ni el alias).
+      const { whatsapp: _privado, alias_pago: _alias, ...publico } = extra;
       setLeaderboard((prev) => prev.map((u) => (u.id === user.id ? { ...u, nickname: name, ...publico } : u)));
       setNickname(name);
       setEditingProfile(false);
@@ -4219,7 +4250,9 @@ export default function FelpusMatcher() {
               heartedIds={heartedIds}
               poppingHeartId={poppingHeartId}
               onSendHeart={handleSendHeart}
+              onSupport={setSupportTarget}
             />
+            {supportTarget && <SupportModal contributor={supportTarget} onClose={() => setSupportTarget(null)} />}
 
             <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-xl p-3.5 border text-[12px] space-y-1.5" style={{ borderColor: C.border, color: C.muted }}>
               <p className="font-bold text-xs mb-1" style={{ color: C.text }}>Cómo se suman huellitas</p>
@@ -4299,6 +4332,7 @@ export default function FelpusMatcher() {
                 { id: "metricas", label: "Métricas" },
                 { id: "denuncias", label: `Denuncias${adminFlags.length ? ` (${adminFlags.length})` : ""}` },
                 { id: "reportes", label: "Reportes" },
+                { id: "usuarios", label: "Usuarios" },
               ].map((s) => (
                 <button
                   key={s.id}
@@ -4332,6 +4366,17 @@ export default function FelpusMatcher() {
                   Reintentar
                 </button>
               </div>
+            )}
+
+            {/* Antifraude (2026-10-26): señales por cuenta y banear. Carga sus
+                propios datos al abrirse (ver AdminUsers). */}
+            {adminSection === "usuarios" && (
+              <AdminUsers
+                onChanged={() => {
+                  loadAdminData(true);
+                  loadAll();
+                }}
+              />
             )}
 
             {!adminLoading && !adminError && adminSection === "metricas" && (
@@ -4964,6 +5009,14 @@ export default function FelpusMatcher() {
                         <p className="text-sm" style={{ color: C.muted }}>No agregaste un WhatsApp de perfil.</p>
                       )}
                     </div>
+                    <div>
+                      <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>Apoyos</p>
+                      <p className="text-sm" style={{ color: myRank?.acepta_apoyos ? C.text : C.muted }}>
+                        {myRank?.acepta_apoyos
+                          ? "Activados: aparecés con el botón “Apoyar” en Colaboradores."
+                          : "Desactivados. Podés activarlos en Editar perfil."}
+                      </p>
+                    </div>
                     <button
                       type="button"
                       onClick={openEditProfile}
@@ -5101,6 +5154,48 @@ export default function FelpusMatcher() {
                         Se usa como contacto por defecto al publicar una mascota.
                       </p>
                     </div>
+                    {supportDraft && (
+                      <fieldset className="rounded-xl border p-3 space-y-2" style={{ borderColor: C.border }}>
+                        <legend className="px-1 text-[12px] font-semibold" style={{ color: C.muted }}>Apoyos (opcional)</legend>
+                        <label className="flex items-start gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={supportDraft.acepta}
+                            onChange={(e) => setSupportDraft((d) => ({ ...d, acepta: e.target.checked }))}
+                            className="mt-0.5 w-5 h-5 accent-[var(--felpus-focus)]"
+                          />
+                          <span className="text-sm" style={{ color: C.text }}>
+                            Aceptar apoyos de la comunidad
+                            <span className="block text-[12px]" style={{ color: C.muted }}>
+                              Aparecés con el botón “Apoyar” en Colaboradores y quien quiera te puede transferir. Es por
+                              fuera de Felpus: no cobramos nada y no da ventajas en la app.
+                            </span>
+                          </span>
+                        </label>
+                        {supportDraft.acepta && (
+                          <div>
+                            <label htmlFor="profile-alias" className="text-[12px] font-semibold mb-1 block" style={{ color: C.muted }}>
+                              Alias o CBU/CVU
+                            </label>
+                            <input
+                              id="profile-alias"
+                              type="text"
+                              value={supportDraft.alias}
+                              onChange={(e) => setSupportDraft((d) => ({ ...d, alias: e.target.value }))}
+                              maxLength={30}
+                              placeholder="mi.alias.mp"
+                              autoCapitalize="none"
+                              autoComplete="off"
+                              className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
+                              style={{ borderColor: C.border, color: C.text }}
+                            />
+                            <p className="text-[12px] mt-1" style={{ color: C.muted }}>
+                              Ojo: al transferir, el banco le muestra a la otra persona el nombre del titular del alias.
+                            </p>
+                          </div>
+                        )}
+                      </fieldset>
+                    )}
                     <div className="flex gap-2 pt-1">
                       <button
                         type="button"

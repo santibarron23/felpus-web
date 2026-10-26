@@ -6,7 +6,7 @@
 // una sola lista con divisores. El ranking sigue siendo general (sin
 // filtros por provincia/ciudad); la ubicación del perfil solo se muestra.
 import Image from "next/image";
-import { Crown, Flame, Heart, PartyPopper, Camera } from "lucide-react";
+import { Crown, Flame, Heart, HeartHandshake, PartyPopper, Camera } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
 import { getBadges, getTier, getTierProgress } from "../../lib/matching";
 import { formatUbicacion } from "../../lib/profile";
@@ -116,7 +116,7 @@ export function RankingStatTiles({ me }) {
   );
 }
 
-export function RankingList({ items, myId, myAvatarUrl, heartedIds, poppingHeartId, onSendHeart }) {
+export function RankingList({ items, myId, myAvatarUrl, heartedIds, poppingHeartId, onSendHeart, onSupport }) {
   const C = useTheme();
   if (!items?.length) return null;
   return (
@@ -143,6 +143,18 @@ export function RankingList({ items, myId, myAvatarUrl, heartedIds, poppingHeart
               <p className="text-[12px] truncate" style={{ color: C.muted }}>
                 {[tier.label, ubicacion].filter(Boolean).join(" · ")}
               </p>
+              {/* Apoyos (2026-10-26): solo si la persona los activó en su
+                  perfil. El alias no viene acá: se pide al abrir la ventana. */}
+              {u.acepta_apoyos && !isMe && onSupport && (
+                <button
+                  type="button"
+                  onClick={() => onSupport(u)}
+                  className="mt-1 inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[12px] font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                  style={{ borderColor: C.border, color: C.red, background: C.brandTintBg }}
+                >
+                  <HeartHandshake className="w-3.5 h-3.5" aria-hidden="true" /> Apoyar
+                </button>
+              )}
             </div>
             {!isMe && (
               <button

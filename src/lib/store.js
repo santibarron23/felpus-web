@@ -467,13 +467,25 @@ export async function resolveReports(ids, resolverUserId, resolverDisplayName) {
   if (error) throw error;
 }
 
+// Columnas de apoyos/antifraude (migración 20261026_02). Si todavía no se
+// corrió, el ranking se pide como antes (sin ellas y sin filtrar baneados).
+const CONTRIBUTOR_SUPPORT_COLUMNS = "acepta_apoyos,baneado";
+function isSupportColumnsError(error) {
+  return ["acepta_apoyos", "baneado"].some((c) => isMissingColumnError(error, c)) || String(error?.code) === "42501";
+}
+
 export async function fetchLeaderboard() {
-  const { data, error } = await supabase
-    .from(CONTRIBUTORS_TABLE)
-    .select(CONTRIBUTOR_PUBLIC_COLUMNS)
-    .neq("id", "__seed_lock__")
-    .order("points", { ascending: false })
-    .limit(50);
+  const query = (withSupport) => {
+    let q = supabase
+      .from(CONTRIBUTORS_TABLE)
+      .select(withSupport ? `${CONTRIBUTOR_PUBLIC_COLUMNS},${CONTRIBUTOR_SUPPORT_COLUMNS}` : CONTRIBUTOR_PUBLIC_COLUMNS)
+      .neq("id", "__seed_lock__");
+    // Las cuentas baneadas por el admin no aparecen en el ranking.
+    if (withSupport) q = q.eq("baneado", false);
+    return q.order("points", { ascending: false }).limit(50);
+  };
+  let { data, error } = await query(true);
+  if (error && isSupportColumnsError(error)) ({ data, error } = await query(false));
   if (error) throw error;
   return data || [];
 }
@@ -483,19 +495,28 @@ export async function fetchLeaderboard() {
 // cuántos tienen más puntos que él en vez de traer toda la tabla.
 export async function fetchMyRank(userId) {
   if (!userId) return null;
-  const { data: me, error: meError } = await supabase
-    .from(CONTRIBUTORS_TABLE)
-    .select(CONTRIBUTOR_PUBLIC_COLUMNS)
-    .eq("id", userId)
-    .maybeSingle();
+  const meQuery = (withSupport) =>
+    supabase
+      .from(CONTRIBUTORS_TABLE)
+      .select(withSupport ? `${CONTRIBUTOR_PUBLIC_COLUMNS},${CONTRIBUTOR_SUPPORT_COLUMNS}` : CONTRIBUTOR_PUBLIC_COLUMNS)
+      .eq("id", userId)
+      .maybeSingle();
+  let withSupport = true;
+  let { data: me, error: meError } = await meQuery(true);
+  if (meError && isSupportColumnsError(meError)) {
+    withSupport = false;
+    ({ data: me, error: meError } = await meQuery(false));
+  }
   if (meError) throw meError;
   if (!me) return null;
 
-  const { count, error: countError } = await supabase
+  let countQuery = supabase
     .from(CONTRIBUTORS_TABLE)
     .select("id", { count: "exact", head: true })
     .neq("id", "__seed_lock__")
     .gt("points", me.points || 0);
+  if (withSupport) countQuery = countQuery.eq("baneado", false);
+  const { count, error: countError } = await countQuery;
   if (countError) throw countError;
 
   return { ...me, rank: (count || 0) + 1 };
@@ -559,6 +580,22 @@ export async function updateProfile(userId, { nickname, whatsapp, ...extra }) {
       throw new Error("La foto y la ubicación del perfil todavía no están disponibles. Probá de nuevo más tarde.");
     }
     throw error;
+  }
+  // Alias y "acepto apoyos": igual que el WhatsApp, con un UPDATE aparte —
+  // alias_pago no se puede leer con la clave pública (ver la migración
+  // 20261026_02) y el upsert de arriba lo rechazaría.
+  if ("alias_pago" in extra || "acepta_apoyos" in extra) {
+    const patch = {};
+    if ("alias_pago" in extra) patch.alias_pago = extra.alias_pago || null;
+    if ("acepta_apoyos" in extra) patch.acepta_apoyos = !!extra.acepta_apoyos;
+    const { error: supError } = await supabase.from(CONTRIBUTORS_TABLE).update(patch).eq("id", userId);
+    if (supError) {
+      if (isSupportColumnsError(supError) || isMissingColumnError(supError, "alias_pago")) {
+        throw new Error("Los apoyos todavía no están disponibles. Probá de nuevo más tarde.");
+      }
+      if (String(supError.code) === "23514") throw new Error("Revisá el alias: tiene que ser un CBU/CVU de 22 números o un alias de 6 a 20 caracteres.");
+      throw supError;
+    }
   }
   if (whatsapp === undefined) return;
   const { error: waError } = await supabase
@@ -820,3 +857,60 @@ export async function sendHeart(contributorId) {
 // hacerse server-side con la service role key (mismo patrón que
 // create-report), no desde un cliente anónimo — la RLS ya no lo permite.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Apoyos entre personas y antifraude (migración 20261026_02)
+// ---------------------------------------------------------------------------
+
+// Mi alias y si acepto apoyos (el alias no es legible por SELECT). null si
+// la migración todavía no se corrió.
+export async function fetchMySupport() {
+  const { data, error } = await supabase.rpc("get_my_support");
+  if (error) {
+    if (isMissingFunctionError(error)) return null;
+    throw error;
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  return { alias: row?.alias_pago || "", acepta: !!row?.acepta_apoyos };
+}
+
+async function postJson(url, body) {
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || "No se pudo completar. Probá de nuevo.");
+  return data;
+}
+
+// Alias de alguien para apoyarle (pasa por el servidor, con límite por IP).
+export function fetchSupportAlias(contributorId) {
+  return postJson("/api/support-alias", { contributorId });
+}
+
+export function flagSupport(contributorId, reason) {
+  return postJson("/api/support-flag", { contributorId, reason });
+}
+
+export async function adminFetchUserSignals() {
+  const { data, error } = await supabase.rpc("admin_user_signals");
+  if (error) {
+    if (isMissingFunctionError(error)) throw new Error(ADMIN_RPC_MISSING_MSG);
+    throw error;
+  }
+  return data || [];
+}
+
+export async function adminSetBaneado(userId, baneado, motivo) {
+  const { error } = await supabase.rpc("admin_set_baneado", { p_user_id: userId, p_baneado: baneado, p_motivo: motivo || null });
+  if (error) {
+    if (isMissingFunctionError(error)) throw new Error(ADMIN_RPC_MISSING_MSG);
+    throw error;
+  }
+}
+
+export async function adminMarkSupportReviewed(userId) {
+  const { error } = await supabase.rpc("admin_mark_support_reviewed", { p_user_id: userId });
+  if (error) {
+    if (isMissingFunctionError(error)) throw new Error(ADMIN_RPC_MISSING_MSG);
+    throw error;
+  }
+}
