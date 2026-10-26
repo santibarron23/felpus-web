@@ -6,7 +6,7 @@
 // mano es exactamente el tipo de trabajo que ya está resuelto — y muy bien
 // probado — en una librería madura.
 //
-// Import dinámico (como loadGoogleMaps en googleMaps.js): la metadata de
+// Import dinámico (como loadLeaflet en osmMap.js): la metadata de
 // todos los países pesa lo suyo, y el 100% de quienes visitan Felpus no
 // necesitan que se cargue hasta que entran a "Reportar" y tocan el campo de
 // WhatsApp — cargarla en el bundle principal penalizaría a todo el mundo
@@ -16,7 +16,7 @@ let phoneLibPromise = null;
 export function loadPhoneLib() {
   if (phoneLibPromise) return phoneLibPromise;
   phoneLibPromise = import("libphonenumber-js/min").catch((e) => {
-    // Mismo motivo que loadGoogleMaps: un fallo de carga (red, ad-blocker)
+    // Mismo motivo que loadLeaflet: un fallo de carga (red, ad-blocker)
     // no debe quedar cacheado para siempre — la próxima vez que alguien
     // toque el campo, se reintenta desde cero en vez de fallar para
     // siempre hasta recargar la página.

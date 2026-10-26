@@ -55,7 +55,7 @@ const csp = [
   // @next/third-parties/google, a pedido del usuario): ese paquete carga
   // gtag.js desde ese dominio — sin esto acá se repite el mismo bloqueo
   // silencioso que ya se documentó para accounts.google.com más arriba.
-  `script-src 'self' 'unsafe-inline' ${isDev ? "'unsafe-eval' " : ""}https://maps.googleapis.com https://accounts.google.com https://www.googletagmanager.com`,
+  `script-src 'self' 'unsafe-inline' ${isDev ? "'unsafe-eval' " : ""}https://accounts.google.com https://www.googletagmanager.com`,
   // La app usa mucho style={{...}} inline (atributos style="..."), así que
   // style-src necesita 'unsafe-inline' — si no, se rompe todo el diseño.
   // accounts.google.com: hoja de estilos que carga el propio script de
@@ -68,12 +68,13 @@ const csp = [
   "font-src 'self' https://fonts.gstatic.com",
   // data:/blob: para las fotos redimensionadas en canvas y los placeholders
   // SVG generados en el cliente; googleusercontent.com para el avatar de Google.
-  `img-src 'self' data: blob: ${supabaseCspSource} https://maps.gstatic.com https://maps.googleapis.com https://*.googleusercontent.com https://*.google-analytics.com https://www.googletagmanager.com`,
-  // places.googleapis.com es un dominio DISTINTO de maps.googleapis.com: lo
-  // usa el autocompletado de zona (PlaceAutocompleteElement, API nueva de
-  // Places) para sus pedidos de sugerencias — sin esto en connect-src, el
-  // CSP bloquea esos pedidos en silencio (queda como "xhr error" genérico,
-  // sin ningún mensaje de CSP explícito en la consola).
+  // tile.openstreetmap.org: las teselas de los mapas (2026-10-26, los mapas
+  // pasaron de Google Maps a OpenStreetMap + Leaflet, ver src/lib/osmMap.js).
+  `img-src 'self' data: blob: ${supabaseCspSource} https://tile.openstreetmap.org https://*.googleusercontent.com https://*.google-analytics.com https://www.googletagmanager.com`,
+  // photon.komoot.io (sugerencias de zona mientras se escribe) y
+  // nominatim.openstreetmap.org (punto ↔ barrio): las búsquedas de
+  // direcciones desde que los mapas son de OpenStreetMap (ver osmMap.js) —
+  // sin esto en connect-src el CSP las bloquea en silencio.
   // data: hace falta porque uploadPhoto() (src/lib/store.js) convierte la
   // foto ya redimensionada con fetch(dataUrl) antes de subirla a Storage —
   // sin "data:" acá, el navegador bloquea ESE fetch puntual (no el de
@@ -91,7 +92,7 @@ const csp = [
   // region1.google-analytics.com (subdominio regional), no a www. — con
   // solo "www." el CSP bloqueaba TODOS los page_view (visto en consola), así
   // que GA4 no estaba midiendo nada.
-  `connect-src 'self' data: ${supabaseCspSource} https://maps.googleapis.com https://maps.gstatic.com https://places.googleapis.com https://accounts.google.com https://www.google-analytics.com https://*.google-analytics.com https://www.googletagmanager.com${isDev ? " ws://localhost:* http://localhost:*" : ""}`,
+  `connect-src 'self' data: ${supabaseCspSource} https://photon.komoot.io https://nominatim.openstreetmap.org https://accounts.google.com https://www.google-analytics.com https://*.google-analytics.com https://www.googletagmanager.com${isDev ? " ws://localhost:* http://localhost:*" : ""}`,
   "frame-src 'self' https://accounts.google.com",
   "object-src 'none'",
   "base-uri 'self'",

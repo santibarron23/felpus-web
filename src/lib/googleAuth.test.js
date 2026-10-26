@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { loadGoogleIdentity, generateNonce } from "./googleAuth";
 
 describe("loadGoogleIdentity", () => {
-  it("rechaza fuera del navegador (sin window) — mismo guard que loadGoogleMaps", async () => {
+  it("rechaza fuera del navegador (sin window) — mismo guard que loadLeaflet", async () => {
     // vitest.config.mjs corre estos tests en environment "node" (sin DOM),
     // así que "typeof window === 'undefined'" es real acá, no simulado.
     await expect(loadGoogleIdentity()).rejects.toThrow("no window");

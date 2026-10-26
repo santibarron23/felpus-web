@@ -1,8 +1,8 @@
 let identityLoadingPromise = null;
 
 // Carga el script de Google Identity Services (accounts.google.com/gsi/client)
-// una sola vez y lo comparte — mismo patrón que loadGoogleMaps() en
-// googleMaps.js. Lo usa useAuth.js para el login con Google vía ID token:
+// una sola vez y lo comparte — mismo patrón que loadLeaflet() en
+// osmMap.js. Lo usa useAuth.js para el login con Google vía ID token:
 // a diferencia del flujo clásico con redirect (signInWithOAuth), que rebota
 // por el dominio propio del proyecto de Supabase (ej. "xxxx.supabase.co" —
 // lo que ve el usuario en la pantalla "Elige una cuenta" de Google), este
@@ -24,7 +24,7 @@ export function loadGoogleIdentity() {
       else reject(new Error("Google Identity Services no expuso window.google.accounts.id"));
     };
     script.onerror = () => {
-      // Mismo motivo que en loadGoogleMaps(): sin este reset, un fallo de
+      // Mismo motivo que en loadLeaflet() (osmMap.js): sin este reset, un fallo de
       // carga puntual (bloqueador de anuncios, corte de red) dejaría la
       // promesa cacheada como rechazada para siempre en esta sesión de la
       // SPA — useAuth.js necesita poder reintentar más adelante.

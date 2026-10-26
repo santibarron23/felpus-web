@@ -299,8 +299,15 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
 
 // Encuadra el mapa en los reportes con ubicación (sin acercarse de más si
 // hay uno solo o están todos juntos).
+// Solo reportes dentro de Argentina: uno con coordenadas mal cargadas (visto
+// en producción: un punto en Norteamérica) alejaba el mapa hasta mostrar
+// medio continente.
+const ARGENTINA = { latMin: -56, latMax: -21, lngMin: -74, lngMax: -53 };
+const enArgentina = (r) =>
+  r.lat >= ARGENTINA.latMin && r.lat <= ARGENTINA.latMax && r.lng >= ARGENTINA.lngMin && r.lng <= ARGENTINA.lngMax;
+
 function fitToReports(L, map, reports) {
-  const conPunto = (reports || []).filter((r) => r.lat != null && r.lng != null);
+  const conPunto = (reports || []).filter((r) => r.lat != null && r.lng != null && enArgentina(r));
   if (!conPunto.length) return;
   const bounds = L.latLngBounds(conPunto.map((r) => [r.lat, r.lng]));
   map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });

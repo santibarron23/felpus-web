@@ -27,7 +27,7 @@ import { COLOR_OPTIONS, TAMANO_OPTIONS, EDAD_OPTIONS, MAX_FOTOS, resizeImageFile
 import { logError } from "../../lib/log";
 import { zonaConCiudad } from "../../lib/zona";
 import { petTitle } from "../../lib/petTitle";
-import { loadGoogleMaps, reverseGeocodeLatLng } from "../../lib/googleMaps";
+import { reverseGeocode } from "../../lib/osmMap";
 import { requestLocation, geolocationErrorMessage, MAP_GEOLOCATION_OPTIONS } from "../../lib/geolocation";
 
 // El mapa (y el script de Google Maps) recién se carga cuando la persona
@@ -315,7 +315,7 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
 
   // "📍 Usar mi ubicación actual": marca el punto en el borrador (igual que
   // el mapa de la vista previa) y le cuenta al asistente el barrio/ciudad —
-  // nunca la dirección exacta (ver reverseGeocodeLatLng).
+  // nunca la dirección exacta (ver reverseGeocode en osmMap.js).
   function shareMyLocation() {
     if (locating) return;
     setLocating(true);
@@ -323,11 +323,8 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
       async ({ lat, lng }) => {
         let zona = "";
         try {
-          const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-          if (apiKey) {
-            const place = await reverseGeocodeLatLng(await loadGoogleMaps(apiKey), lat, lng);
-            if (place) zona = [place.zona, place.ciudad && place.ciudad !== place.zona ? place.ciudad : ""].filter(Boolean).join(", ");
-          }
+          const place = await reverseGeocode(lat, lng);
+          if (place) zona = [place.zona, place.ciudad && place.ciudad !== place.zona ? place.ciudad : ""].filter(Boolean).join(", ");
         } catch (e) {
           logError("No se pudo geocodificar la ubicación del asistente", e);
         }
@@ -440,14 +437,11 @@ export default function FelpusAssistant({ section = "inicio", openReport = null,
 
   // Punto marcado en el mapa de la vista previa. Si la zona todavía está
   // vacía, se completa sola con el barrio/ciudad de ese punto (nunca la
-  // dirección exacta, ver reverseGeocodeLatLng) — no pisa lo ya escrito.
+  // dirección exacta, ver reverseGeocode en osmMap.js) — no pisa lo ya escrito.
   function handleLocation(lat, lng) {
     setDraft((d) => normalizeDraft({ ...d, lat, lng }));
     track("asistente_mapa_marcado");
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-    if (!apiKey) return;
-    loadGoogleMaps(apiKey)
-      .then((maps) => reverseGeocodeLatLng(maps, lat, lng))
+    reverseGeocode(lat, lng)
       .then((place) => {
         if (!place) return;
         const zona = [place.zona, place.ciudad && place.ciudad !== place.zona ? place.ciudad : ""].filter(Boolean).join(", ");

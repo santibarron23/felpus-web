@@ -1,16 +1,24 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { loadGoogleMaps } from "../lib/googleMaps";
+import { useEffect, useId, useRef, useState } from "react";
+import { searchPlaces } from "../lib/osmMap";
+import { CITIES } from "../lib/cities";
 import { logError } from "../lib/log";
+import { useTheme } from "./felpus/ThemeProvider";
 
-// Campo de "Zona / barrio" con autocompletado de Google Places — usa
-// PlaceAutocompleteElement, la API nueva que Google recomienda desde 2025
-// (requiere "Places API (New)" habilitada en el proyecto de Google Cloud).
-// Si esa API no está habilitada o falla por cualquier motivo, se queda con
-// un <input> de texto plano — a diferencia de la Autocomplete legacy vieja,
-// acá una falla nunca se lleva puesta el resto de la sesión de Maps
-// compartida (el mapa de abajo sigue funcionando pase lo que pase acá).
+// Campo de "Zona / barrio" con sugerencias mientras se escribe.
+//
+// 2026-10-26: antes usaba el autocompletado de Google Places; al pasar los
+// mapas a OpenStreetMap (ver osmMap.js) las sugerencias salen de Photon
+// (gratis, sin key). Es un input común con una lista debajo: escribir a mano
+// sigue funcionando igual, y si Photon no responde simplemente no aparecen
+// sugerencias. Elegir una completa zona, ciudad, provincia y el punto exacto
+// (lat/lng), igual que antes.
+//
+// Accesible como combobox (ARIA 1.2): flechas para moverse, Enter para
+// elegir, Escape para cerrar.
+const DEBOUNCE_MS = 350;
+
 export default function ZonaAutocomplete({
   id,
   value,
@@ -20,108 +28,134 @@ export default function ZonaAutocomplete({
   style,
   placeholder,
   maxLength,
+  near = CITIES.salta.geo,
 }) {
-  const containerRef = useRef(null);
-  const elRef = useRef(null);
-  const [ready, setReady] = useState(false);
-  // Antes se cargaba el script de Google Maps apenas se montaba este campo,
-  // es decir, apenas se entraba al tab "Reportar" — aunque la persona solo
-  // quisiera tipear la zona a mano. Ahora se difiere hasta el primer foco
-  // real del campo (el contenedor sigue siempre visible desde el montaje,
-  // solo se posterga instanciar el PlaceAutocompleteElement de Google).
-  const [interacted, setInteracted] = useState(false);
+  const C = useTheme();
+  const listId = useId();
+  const [options, setOptions] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  // Último texto que escribió la persona: solo eso dispara la búsqueda (no
+  // la zona que se completa sola al marcar el punto en el mapa o con el GPS).
+  const [typedValue, setTypedValue] = useState(null);
+  const abortRef = useRef(null);
 
   useEffect(() => {
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-    if (!apiKey || !interacted) return;
-    let cancelled = false;
-
-    loadGoogleMaps(apiKey)
-      .then((maps) => {
-        if (cancelled || !containerRef.current || elRef.current) return;
-        if (!maps.places?.PlaceAutocompleteElement) return;
-
-        const el = new maps.places.PlaceAutocompleteElement({
-          includedRegionCodes: ["AR"],
-        });
-        el.style.width = "100%";
-        // El elemento de Google trae un ancho mínimo propio (~320 px): en un
-        // celular, al lado del botón "Ubicación", ensanchaba la página y
-        // empujaba ese botón fuera de la pantalla (visto en iPhone,
-        // 2026-10-22). Con min-width 0 se achica al espacio que le queda.
-        el.style.minWidth = "0";
-        if (id) el.setAttribute("aria-label", "Zona / barrio");
-        containerRef.current.appendChild(el);
-        elRef.current = el;
-
-        el.addEventListener("gmp-select", async (event) => {
-          try {
-            const place = event.placePrediction.toPlace();
-            await place.fetchFields({
-              fields: ["displayName", "formattedAddress", "location", "addressComponents"],
-            });
-            const zona = place.displayName || place.formattedAddress;
-            if (!zona) return;
-            const lat = place.location?.lat();
-            const lng = place.location?.lng();
-            // Ciudad/provincia, cuando Google las devuelve como parte de la
-            // dirección elegida (no todas las sugerencias las traen, ej. un
-            // punto de interés muy específico) — se usan para completar la
-            // línea de zona del flyer imprimible (ver composeZonaDisplay en
-            // flyer.js). "locality" es el tipo que Google usa para "ciudad"
-            // en la gran mayoría de direcciones argentinas.
-            const components = place.addressComponents || [];
-            const findComponent = (type) => components.find((c) => c.types?.includes(type))?.longText || "";
-            const ciudad = findComponent("locality");
-            const provincia = findComponent("administrative_area_level_1");
-            onSelectPlace(zona, lat, lng, ciudad, provincia);
-          } catch (e) {
-            logError("No se pudo leer el lugar seleccionado", e);
-          }
-        });
-
-        setReady(true);
-      })
-      .catch(() => {
-        // Se queda con el input de texto plano — no bloquea nada más.
-      });
-
-    return () => {
-      cancelled = true;
-      if (elRef.current) {
-        elRef.current.remove();
-        elRef.current = null;
+    // Solo busca lo que la persona escribe (no el valor que se completa solo
+    // al elegir una sugerencia o al marcar el punto en el mapa).
+    if (typedValue == null || value !== typedValue) {
+      abortRef.current?.abort();
+      setOpen(false);
+      return undefined;
+    }
+    const q = (value || "").trim();
+    if (q.length < 3) {
+      setOptions([]);
+      setOpen(false);
+      return undefined;
+    }
+    const t = setTimeout(async () => {
+      abortRef.current?.abort();
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      try {
+        const results = await searchPlaces(q, { near, signal: ctrl.signal });
+        if (ctrl.signal.aborted) return;
+        setOptions(results);
+        setActive(-1);
+        setOpen(results.length > 0);
+      } catch (e) {
+        if (e?.name !== "AbortError") logError("No se pudieron buscar sugerencias de zona (Photon)", e);
       }
-    };
+    }, DEBOUNCE_MS);
+    return () => clearTimeout(t);
+    // near es estable (un objeto de CITIES o de la ubicación de la persona).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [interacted]);
+  }, [value, typedValue]);
 
-  // El contenedor del elemento de Google se renderiza SIEMPRE visible y en
-  // flujo normal, desde el primer render — nunca con display:none. Si se le
-  // hace appendChild mientras está oculto, el componente de Google mide mal
-  // su tamaño al conectarse (connectedCallback) y el desplegable de
-  // sugerencias queda roto para siempre, aunque después se muestre. Mientras
-  // no está listo, el input de texto plano se superpone encima (position:
-  // absolute) tapándolo — así solo se ve una cosa a la vez, pero el
-  // contenedor de abajo nunca estuvo escondido.
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  function choose(opt) {
+    setTypedValue(null);
+    setOpen(false);
+    setOptions([]);
+    setActive(-1);
+    onSelectPlace(opt.zona, opt.lat, opt.lng, opt.ciudad, opt.provincia);
+  }
+
+  function onKeyDown(e) {
+    if (!open || !options.length) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive((i) => (i + 1) % options.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((i) => (i <= 0 ? options.length - 1 : i - 1));
+    } else if (e.key === "Enter" && active >= 0) {
+      e.preventDefault();
+      choose(options[active]);
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  }
+
   return (
-    // min-w-0: sin esto, como ítem flex, este wrapper no puede ser más
-    // angosto que su contenido (el elemento de Google, ver arriba).
     <div className="relative flex-1 min-w-0" style={{ minHeight: 40 }}>
-      <div ref={containerRef} className={className} style={{ ...style, padding: 0, width: "100%", minWidth: 0 }} />
-      {!ready && (
-        <input
-          id={id}
-          type="text"
-          value={value}
-          onChange={(e) => onManualChange(e.target.value)}
-          onFocus={() => setInteracted(true)}
-          maxLength={maxLength}
-          placeholder={placeholder}
-          className={className}
-          style={{ ...style, position: "absolute", inset: 0 }}
-          autoComplete="off"
-        />
+      <input
+        id={id}
+        type="text"
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        aria-activedescendant={open && active >= 0 ? `${listId}-${active}` : undefined}
+        value={value}
+        onChange={(e) => {
+          setTypedValue(e.target.value);
+          onManualChange(e.target.value);
+        }}
+        onKeyDown={onKeyDown}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onFocus={() => options.length && setOpen(true)}
+        maxLength={maxLength}
+        placeholder={placeholder}
+        className={className}
+        style={{ ...style, width: "100%", minWidth: 0 }}
+        autoComplete="off"
+      />
+      {open && (
+        <ul
+          id={listId}
+          role="listbox"
+          className="absolute left-0 right-0 top-full mt-1 z-30 rounded-xl border shadow-lg overflow-hidden"
+          style={{ background: C.surface, borderColor: C.border }}
+        >
+          {options.map((opt, i) => (
+            <li
+              key={`${opt.label}-${i}`}
+              id={`${listId}-${i}`}
+              role="option"
+              aria-selected={i === active}
+              // mousedown (no click): se elige antes de que el blur cierre la lista.
+              onMouseDown={(e) => {
+                e.preventDefault();
+                choose(opt);
+              }}
+              className="px-3 py-2.5 text-sm cursor-pointer border-b last:border-b-0"
+              style={{ borderColor: C.border, color: C.text, background: i === active ? C.surfaceSubtle : undefined }}
+            >
+              <span className="font-semibold">{opt.zona}</span>
+              {opt.label !== opt.zona && (
+                <span className="block text-[12px] truncate" style={{ color: C.muted }}>
+                  {opt.label.slice(opt.zona.length + 3)}
+                </span>
+              )}
+            </li>
+          ))}
+          <li role="presentation" className="px-3 py-1 text-[10px] text-right" style={{ color: C.muted }}>
+            Sugerencias: © OpenStreetMap
+          </li>
+        </ul>
       )}
     </div>
   );
