@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { Bell, Loader2, LocateFixed, Maximize2, X } from "lucide-react";
-import { loadGoogleMaps, observeMapResize } from "../lib/googleMaps";
+import { loadLeaflet, createMap, observeMapResize, photoIcon, setMapInteractive } from "../lib/osmMap";
 import { logError } from "../lib/log";
 import { requestLocation, geolocationErrorMessage, MAP_GEOLOCATION_OPTIONS } from "../lib/geolocation";
 import { CITIES } from "../lib/cities";
@@ -16,14 +16,13 @@ import { useTheme } from "./felpus/ThemeProvider";
 // círculo — rojo para perdidas, naranja para encontradas — en vez de un
 // punto de color genérico, para poder reconocer a la mascota de un vistazo
 // sin tener que abrir cada reporte. Tocar un marcador abre el detalle
-// (mismo modal que la lista).
+// (mismo modal que la lista). OpenStreetMap + Leaflet (ver osmMap.js).
 export default function ReportsMap({ reports, onSelectReport, center }) {
   const C = useTheme();
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   // Pantallas táctiles (2026-10-22, igual que MapPicker): el mapa de la
   // página es solo vista y al tocarlo pasa a pantalla completa, donde se
-  // mueve con un dedo. Es el MISMO mapa (no se crea otro: Google cobra cada
-  // carga, ver exploreVisited en FelpusMatcher): su <div> se crea a mano y
+  // mueve con un dedo. Es el MISMO mapa (no se crea otro: se conservan la
+  // vista y los pines cargados): su <div> se crea a mano y
   // se mueve entre el lugar de la página y el de pantalla completa. Esos dos
   // lugares no tienen hijos de React, así React nunca se cruza con él.
   const mapElRef = useRef(null);
@@ -39,41 +38,34 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
   reportsRef.current = reports;
   // Si la persona ya movió el mapa a mano, no se lo recentramos encima.
   const userMovedRef = useRef(false);
-  const [status, setStatus] = useState(apiKey ? "loading" : "no-key");
+  const [status, setStatus] = useState("loading");
+  const leafletRef = useRef(null);
 
   useEffect(() => {
     onSelectRef.current = onSelectReport;
   }, [onSelectReport]);
 
   useEffect(() => {
-    if (!apiKey) return;
     let cancelled = false;
     let stopResizeObserver = null;
-    loadGoogleMaps(apiKey)
-      .then((maps) => {
+    let mapToRemove = null;
+    loadLeaflet()
+      .then((L) => {
         if (cancelled || !inlineHostRef.current) return;
         const isTouch = !!window.matchMedia?.("(pointer: coarse)").matches;
         setTouch(isTouch);
         const el = document.createElement("div");
         el.style.cssText = "width: 100%; height: 100%;";
+        el.className = "felpus-map";
         inlineHostRef.current.appendChild(el);
         mapElRef.current = el;
-        const map = new maps.Map(el, {
-          // Mientras llega la ubicación: Salta (antes, Buenos Aires).
-          center: center || CITIES.salta.geo,
-          zoom: center ? 13 : 12,
-          streetViewControl: false,
-          mapTypeControl: false,
-          fullscreenControl: false,
-          clickableIcons: false,
-          // Los AdvancedMarkerElement (foto de la mascota) necesitan un Map ID
-          // para renderizarse — "DEMO_MAP_ID" es el ID público de Google para
-          // desarrollo/uso sin configuración extra, no requiere Cloud Console.
-          mapId: "DEMO_MAP_ID",
-          ...(isTouch ? { gestureHandling: "none", zoomControl: false, keyboardShortcuts: false } : {}),
-        });
+        // Mientras llega la ubicación: Salta (antes, Buenos Aires).
+        const start = center || CITIES.salta.geo;
+        const map = createMap(L, el, { center: start, zoom: center ? 13 : 12, interactive: !isTouch });
+        mapToRemove = map;
+        leafletRef.current = L;
         mapObjRef.current = map;
-        map.addListener("dragstart", () => {
+        map.on("dragstart", () => {
           userMovedRef.current = true;
         });
         stopResizeObserver = observeMapResize(map, el);
@@ -85,12 +77,11 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
           requestLocation(
             (pos) => {
               if (cancelled || userMovedRef.current) return;
-              map.setCenter(pos);
-              map.setZoom(13);
+              map.setView([pos.lat, pos.lng], 13);
             },
             () => {
               if (cancelled || userMovedRef.current) return;
-              fitToReports(maps, map, reportsRef.current);
+              fitToReports(L, map, reportsRef.current);
             },
             MAP_GEOLOCATION_OPTIONS
           );
@@ -100,11 +91,12 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
     return () => {
       cancelled = true;
       if (stopResizeObserver) stopResizeObserver();
+      mapToRemove?.remove();
       mapElRef.current?.remove();
     };
-    // Sólo se inicializa una vez con la key disponible.
+    // Se inicializa una sola vez.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey]);
+  }, []);
 
   // Mueve el mapa al lugar que corresponda y ajusta cómo responde al dedo.
   // Mientras está a pantalla completa, la página de atrás no scrollea.
@@ -114,7 +106,8 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
     if (status !== "ready" || !el || !map) return;
     const host = fullscreen ? fullHostRef.current : inlineHostRef.current;
     if (host && el.parentNode !== host) host.appendChild(el);
-    map.setOptions({ gestureHandling: fullscreen ? "greedy" : touch ? "none" : "auto", zoomControl: !touch });
+    setMapInteractive(map, fullscreen || !touch);
+    map.invalidateSize();
     if (!fullscreen) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -133,73 +126,27 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
   // ignoraba.
   useEffect(() => {
     if (status !== "ready" || !mapObjRef.current || !center) return;
-    mapObjRef.current.panTo(center);
-    mapObjRef.current.setZoom(13);
+    mapObjRef.current.setView([center.lat, center.lng], 13);
   }, [center, status]);
 
   // Repinta los marcadores cada vez que cambia la lista filtrada de reportes.
   useEffect(() => {
-    if (status !== "ready" || !mapObjRef.current || !window.google) return;
-    markersRef.current.forEach((m) => {
-      // Mismo motivo que el try/catch de abajo: con el mapa roto, sacar un
-      // pin también puede tirar (visto en local con RefererNotAllowedMapError
-      // al cambiar el filtro a "Solo reencontradas": tumbaba toda la página).
-      try {
-        m.map = null;
-      } catch (e) {
-        logError("No se pudo quitar un marcador del mapa", e);
-      }
-    });
+    const L = leafletRef.current;
+    const map = mapObjRef.current;
+    if (status !== "ready" || !map || !L) return;
+    markersRef.current.forEach((m) => m.remove());
     markersRef.current = reports
       .filter((r) => r.lat != null && r.lng != null)
       .map((r) => {
-        // Si el mapa quedó en un estado internamente roto (ej. la key
-        // rechazada por dominio no autorizado) aunque nuestro propio status
-        // diga "ready", instanciar un AdvancedMarkerElement puede tirar una
-        // excepción interna de la librería de Google. Se aísla por marcador
-        // para que un pin roto no tumbe el resto del mapa ni la página.
         try {
-          // Antes usaba "#E36525" para "encontrada" — el mismo naranja que ya
-          // se había reemplazado en theme.js por no pasar contraste AA (ver
-          // C.orangeInk). Este mapa tenía su propia copia suelta del valor
-          // viejo, sin importar el tema, así que el fix nunca le llegó.
           // Encontrada en azul (C.mapFound): el naranja de antes se confundía
           // con el rojo de "perdida" en los pines chicos.
           const color = r.tipo === "perdida" ? C.redSolid : C.mapFound;
           const label = `${r.tipo === "perdida" ? "Perdida" : "Encontrada"} · ${zonaConCiudad(r)}`;
-          const pin = document.createElement("div");
-          pin.style.cssText = `
-            width: 40px; height: 40px; border-radius: 9999px; overflow: hidden;
-            border: 4px solid ${color}; background: #fff; cursor: pointer;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.35);
-          `;
-          // role="button" + tabIndex para que el pin sea alcanzable y
-          // activable por teclado — antes solo respondía al click del mouse.
-          pin.setAttribute("role", "button");
-          pin.setAttribute("tabindex", "0");
-          pin.setAttribute("aria-label", label);
-          pin.addEventListener("keydown", (e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              onSelectRef.current?.(r);
-            }
-          });
-          const img = document.createElement("img");
-          img.src = r.foto;
-          img.alt = "";
-          img.style.cssText = "width: 100%; height: 100%; object-fit: cover; display: block;";
-          img.onerror = () => {
-            pin.style.background = color;
-          };
-          pin.appendChild(img);
-
-          const marker = new window.google.maps.marker.AdvancedMarkerElement({
-            position: { lat: r.lat, lng: r.lng },
-            map: mapObjRef.current,
-            title: label,
-            content: pin,
-          });
-          marker.addListener("gmp-click", () => onSelectRef.current?.(r));
+          // keyboard: true + title: el pin se puede alcanzar y activar con el
+          // teclado (Leaflet lo hace foco y responde a Enter).
+          const marker = L.marker([r.lat, r.lng], { icon: photoIcon(L, { foto: r.foto, color }), title: label, alt: label, keyboard: true }).addTo(map);
+          marker.on("click", () => onSelectRef.current?.(r));
           return marker;
         } catch (e) {
           logError("No se pudo crear el marcador del mapa para un reporte", e);
@@ -207,25 +154,14 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
         }
       })
       .filter(Boolean);
-    // `C` en las deps: sin esto, si el usuario cambia de tema mientras el
-    // mapa está montado, los pines ya dibujados quedan con los colores del
-    // tema anterior hasta el próximo cambio de `reports`.
+    // `C` en las deps: si cambia el tema, los pines se repintan con sus colores.
   }, [reports, status, C]);
-
-  if (!apiKey) {
-    return (
-      <div className="text-xs rounded-lg border p-3" style={{ borderColor: C.border, color: C.muted }}>
-        El mapa no está configurado (falta <code className="felpus-mono">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code>).
-        Mientras tanto podés seguir explorando con la vista de lista.
-      </div>
-    );
-  }
 
   if (status === "error") {
     return (
       <div className="text-xs rounded-lg border p-3" style={{ borderColor: C.border, color: C.redDark }}>
-        No se pudo cargar Google Maps. Revisá que la clave sea válida y que la Maps JavaScript API esté
-        habilitada en tu proyecto de Google Cloud.
+        No se pudo cargar el mapa. Probá recargar la página; mientras tanto podés seguir explorando con la
+        vista de lista.
       </div>
     );
   }
@@ -236,7 +172,7 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
     const c = mapObjRef.current?.getCenter();
     if (!c) return;
     e.preventDefault();
-    window.location.href = `/configuracion/alertas?lat=${c.lat().toFixed(5)}&lng=${c.lng().toFixed(5)}`;
+    window.location.href = `/configuracion/alertas?lat=${c.lat.toFixed(5)}&lng=${c.lng.toFixed(5)}`;
   };
 
   function locate() {
@@ -245,8 +181,7 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
       (pos) => {
         setGeoState("idle");
         userMovedRef.current = true;
-        mapObjRef.current?.panTo(pos);
-        mapObjRef.current?.setZoom(14);
+        mapObjRef.current?.setView([pos.lat, pos.lng], 14);
       },
       (err) => setGeoState(geolocationErrorMessage(err)),
       MAP_GEOLOCATION_OPTIONS
@@ -364,13 +299,9 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
 
 // Encuadra el mapa en los reportes con ubicación (sin acercarse de más si
 // hay uno solo o están todos juntos).
-function fitToReports(maps, map, reports) {
+function fitToReports(L, map, reports) {
   const conPunto = (reports || []).filter((r) => r.lat != null && r.lng != null);
   if (!conPunto.length) return;
-  const bounds = new maps.LatLngBounds();
-  conPunto.forEach((r) => bounds.extend({ lat: r.lat, lng: r.lng }));
-  map.fitBounds(bounds, 40);
-  maps.event.addListenerOnce(map, "idle", () => {
-    if (map.getZoom() > 14) map.setZoom(14);
-  });
+  const bounds = L.latLngBounds(conPunto.map((r) => [r.lat, r.lng]));
+  map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
 }

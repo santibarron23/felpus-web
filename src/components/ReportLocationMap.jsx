@@ -10,7 +10,7 @@
 // Queda un link chico a Google Maps para quien quiera cómo llegar.
 import { useEffect, useRef, useState } from "react";
 import { MapPin, Navigation, X } from "lucide-react";
-import { loadGoogleMaps, observeMapResize } from "../lib/googleMaps";
+import { loadLeaflet, createMap, observeMapResize, photoIcon, geocodeText } from "../lib/osmMap";
 import { CITIES } from "../lib/cities";
 import { logError } from "../lib/log";
 import { zonaConCiudad } from "../lib/zona";
@@ -26,11 +26,10 @@ export function externalMapsUrl(report) {
 
 export default function ReportLocationMap({ report, onClose }) {
   const C = useTheme();
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const containerRef = useRef(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
-  const [status, setStatus] = useState(apiKey ? "loading" : "no-key"); // loading | ready | approx | not-found | error | no-key
+  const [status, setStatus] = useState("loading"); // loading | ready | approx | not-found | error
   const hasPoint = report.lat != null && report.lng != null;
   const color = report.tipo === "perdida" ? C.redSolid : C.mapFound;
 
@@ -46,60 +45,42 @@ export default function ReportLocationMap({ report, onClose }) {
   }, []);
 
   useEffect(() => {
-    if (!apiKey) return undefined;
     let cancelled = false;
     let stopResize = null;
-    loadGoogleMaps(apiKey)
-      .then((maps) => {
+    let map = null;
+    loadLeaflet()
+      .then(async (L) => {
         if (cancelled || !containerRef.current) return;
-        const map = new maps.Map(containerRef.current, {
-          center: hasPoint ? { lat: report.lat, lng: report.lng } : CITIES.salta.geo,
-          zoom: hasPoint ? 16 : 13,
-          streetViewControl: false,
-          mapTypeControl: false,
-          fullscreenControl: false,
-          clickableIcons: false,
-          mapId: "DEMO_MAP_ID",
-        });
+        const start = hasPoint ? { lat: report.lat, lng: report.lng } : CITIES.salta.geo;
+        map = createMap(L, containerRef.current, { center: start, zoom: hasPoint ? 16 : 13 });
         stopResize = observeMapResize(map, containerRef.current);
         if (hasPoint) {
-          const pin = document.createElement("div");
-          pin.style.cssText = `width: 52px; height: 52px; border-radius: 9999px; overflow: hidden; border: 4px solid ${color}; background: ${color}; box-shadow: 0 2px 8px rgba(0,0,0,0.35);`;
-          if (report.foto) {
-            const img = document.createElement("img");
-            img.src = report.foto;
-            img.alt = "";
-            img.style.cssText = "width: 100%; height: 100%; object-fit: cover; display: block;";
-            pin.appendChild(img);
-          }
-          new maps.marker.AdvancedMarkerElement({ position: { lat: report.lat, lng: report.lng }, map, content: pin, title: zonaConCiudad(report) });
+          L.marker([report.lat, report.lng], {
+            icon: photoIcon(L, { foto: report.foto, color, size: 52 }),
+            title: zonaConCiudad(report),
+            keyboard: false,
+          }).addTo(map);
           setStatus("ready");
           return;
         }
         // Sin punto marcado: se ubica la zona escrita (aproximado).
-        const address = [report.zona, report.ciudad, report.provincia, "Argentina"].filter(Boolean).join(", ");
-        new maps.Geocoder().geocode({ address, region: "ar" }, (results, geoStatus) => {
-          if (cancelled) return;
-          if (geoStatus !== "OK" || !results?.[0]) {
-            setStatus("not-found");
-            return;
-          }
-          const loc = results[0].geometry.location;
-          map.setCenter(loc);
-          map.setZoom(15);
-          new maps.Circle({
-            map,
-            center: loc,
-            radius: APPROX_RADIUS_M,
-            strokeColor: color,
-            strokeOpacity: 0.9,
-            strokeWeight: 2,
-            fillColor: color,
-            fillOpacity: 0.15,
-            clickable: false,
-          });
-          setStatus("approx");
-        });
+        const loc = await geocodeText([report.zona, report.ciudad, report.provincia, "Argentina"].filter(Boolean).join(", "));
+        if (cancelled) return;
+        if (!loc) {
+          setStatus("not-found");
+          return;
+        }
+        map.setView([loc.lat, loc.lng], 15);
+        L.circle([loc.lat, loc.lng], {
+          radius: APPROX_RADIUS_M,
+          color,
+          opacity: 0.9,
+          weight: 2,
+          fillColor: color,
+          fillOpacity: 0.15,
+          interactive: false,
+        }).addTo(map);
+        setStatus("approx");
       })
       .catch((e) => {
         logError("No se pudo cargar el mapa de la publicación", e);
@@ -108,8 +89,9 @@ export default function ReportLocationMap({ report, onClose }) {
     return () => {
       cancelled = true;
       if (stopResize) stopResize();
+      map?.remove();
     };
-  }, [apiKey, hasPoint, report, color]);
+  }, [hasPoint, report, color]);
 
   return (
     <div className="fixed inset-0 z-[75] bg-black/50 flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
@@ -147,14 +129,12 @@ export default function ReportLocationMap({ report, onClose }) {
         </header>
 
         <div className="relative" style={{ height: "min(60dvh, 420px)", background: C.surfaceMuted }}>
-          <div ref={containerRef} className="absolute inset-0" role="region" aria-label={`Mapa de ${zonaConCiudad(report)}`} />
+          <div ref={containerRef} className="felpus-map absolute inset-0" role="region" aria-label={`Mapa de ${zonaConCiudad(report)}`} />
           {status !== "loading" && status !== "ready" && status !== "approx" && (
             <div className="absolute inset-0 flex items-center justify-center p-6 text-center text-sm" style={{ color: C.muted, background: C.surfaceMuted }}>
               {status === "not-found"
                 ? "No pudimos ubicar esta zona en el mapa."
-                : status === "no-key"
-                  ? "El mapa no está disponible en este momento."
-                  : "No se pudo cargar el mapa."}
+                : "No se pudo cargar el mapa."}
             </div>
           )}
         </div>

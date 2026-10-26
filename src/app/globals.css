@@ -460,3 +460,15 @@ button:not(:disabled):active {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* Mapas (Leaflet, ver src/lib/osmMap.js). Leaflet usa z-index de 400 a 1000
+   en sus capas internas: con "isolation" quedan encerradas en el mapa, así
+   los botones y carteles que van encima (y la barra de abajo de la app) se
+   siguen viendo. */
+.felpus-map {
+  isolation: isolate;
+  z-index: 0;
+}
+.felpus-map .leaflet-control-attribution {
+  font-size: 10px;
+}

@@ -4,17 +4,17 @@
 // (2026-10-22, a pedido del usuario: "desde el móvil el mapa es
 // complicado"). En vez de tocar el lugar justo o arrastrar un pin chico,
 // el pin queda FIJO en el centro y se mueve el mapa debajo, con un dedo
-// (gestureHandling "greedy": acá no compite con el scroll de la página).
+// (acá no compite con el scroll de la página). OpenStreetMap + Leaflet.
 // "Usar esta ubicación" confirma el centro y cierra. Lo abre MapPicker solo
 // en pantallas táctiles; en compu sigue el mapa de siempre.
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, LocateFixed, MapPin, X } from "lucide-react";
-import { loadGoogleMaps } from "../lib/googleMaps";
+import { loadLeaflet, createMap } from "../lib/osmMap";
 import { requestLocation, geolocationErrorMessage, MAP_GEOLOCATION_OPTIONS } from "../lib/geolocation";
 import { useTheme } from "./felpus/ThemeProvider";
 
-export default function FullscreenMapPicker({ apiKey, center, zoom, radiusM = null, onConfirm, onClose }) {
+export default function FullscreenMapPicker({ center, zoom, radiusM = null, onConfirm, onClose }) {
   const C = useTheme();
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -37,44 +37,32 @@ export default function FullscreenMapPicker({ apiKey, center, zoom, radiusM = nu
 
   useEffect(() => {
     let cancelled = false;
-    let circle = null;
-    loadGoogleMaps(apiKey)
-      .then((maps) => {
+    let map = null;
+    loadLeaflet()
+      .then((L) => {
         if (cancelled || !containerRef.current) return;
-        const map = new maps.Map(containerRef.current, {
-          center,
-          zoom,
-          gestureHandling: "greedy",
-          streetViewControl: false,
-          mapTypeControl: false,
-          fullscreenControl: false,
-          clickableIcons: false,
-          zoomControl: false,
-        });
+        map = createMap(L, containerRef.current, { center, zoom, interactive: true, zoomControl: false });
         mapRef.current = map;
         // Alertas: el círculo del radio acompaña al centro mientras se mueve.
         if (radiusM) {
-          circle = new maps.Circle({
-            map,
-            center,
+          const circle = L.circle([center.lat, center.lng], {
             radius: radiusM,
-            strokeColor: C.red,
-            strokeOpacity: 0.8,
-            strokeWeight: 2,
+            color: C.red,
+            opacity: 0.8,
+            weight: 2,
             fillColor: C.red,
             fillOpacity: 0.08,
-            clickable: false,
-          });
-          map.addListener("center_changed", () => circle.setCenter(map.getCenter()));
-          const bounds = circle.getBounds();
-          if (bounds) map.fitBounds(bounds, 32);
+            interactive: false,
+          }).addTo(map);
+          map.on("move", () => circle.setLatLng(map.getCenter()));
+          map.fitBounds(circle.getBounds(), { padding: [32, 32] });
         }
         setReady(true);
       })
       .catch(() => {});
     return () => {
       cancelled = true;
-      circle?.setMap(null);
+      map?.remove();
     };
     // Se crea una sola vez al abrir.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -85,8 +73,8 @@ export default function FullscreenMapPicker({ apiKey, center, zoom, radiusM = nu
     requestLocation(
       (pos) => {
         setGeoState("idle");
-        mapRef.current?.panTo(pos);
-        if (!radiusM) mapRef.current?.setZoom(17);
+        if (radiusM) mapRef.current?.panTo([pos.lat, pos.lng]);
+        else mapRef.current?.setView([pos.lat, pos.lng], 17);
       },
       (err) => setGeoState(geolocationErrorMessage(err)),
       MAP_GEOLOCATION_OPTIONS
@@ -96,7 +84,7 @@ export default function FullscreenMapPicker({ apiKey, center, zoom, radiusM = nu
   function confirm() {
     const c = mapRef.current?.getCenter();
     if (!c) return;
-    onConfirm(c.lat(), c.lng());
+    onConfirm(c.lat, c.lng);
   }
 
   // Portal al body: si algún contenedor de arriba tiene transform (las
@@ -129,7 +117,7 @@ export default function FullscreenMapPicker({ apiKey, center, zoom, radiusM = nu
       </div>
 
       <div className="relative flex-1">
-        <div ref={containerRef} className="absolute inset-0" style={{ background: C.surfaceMuted }} />
+        <div ref={containerRef} className="felpus-map absolute inset-0" style={{ background: C.surfaceMuted }} />
         {/* Pin fijo: la punta queda exactamente en el centro del mapa. */}
         <div className="pointer-events-none absolute left-1/2 top-1/2" aria-hidden="true">
           <span className="absolute w-2.5 h-2.5 rounded-full -translate-x-1/2 -translate-y-1/2" style={{ background: "rgba(0,0,0,0.3)" }} />

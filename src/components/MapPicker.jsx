@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { loadGoogleMaps, observeMapResize, onMapsAuthFailure } from "../lib/googleMaps";
+import { loadLeaflet, createMap, observeMapResize, pinIcon } from "../lib/osmMap";
 import {
   requestLocation,
   geolocationErrorMessage,
@@ -18,8 +18,9 @@ const FALLBACK_CENTER = CITIES.salta.geo;
 import { useTheme } from "./felpus/ThemeProvider";
 
 // Mapa con un pin arrastrable/tocable para marcar la ubicación exacta de un
-// reporte. Si no hay API key configurada, muestra un aviso y la app sigue
-// funcionando igual con el botón "Ubicación" (geolocalización del navegador).
+// reporte. OpenStreetMap + Leaflet (ver osmMap.js): sin key ni facturación.
+// Si el mapa no carga, la app sigue funcionando con el botón "Ubicación"
+// (geolocalización del navegador).
 // radiusM (opcional): dibuja un círculo con ese radio alrededor del punto
 // confirmado — lo usa /configuracion/alertas para mostrar la zona.
 // fallbackActions (opcional): si el mapa no carga, ofrece igual marcar el
@@ -37,13 +38,12 @@ export default function MapPicker({
   defaultCenterLabel = null,
 }) {
   const C = useTheme();
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const containerRef = useRef(null);
   const mapObjRef = useRef(null);
   const markerObjRef = useRef(null);
   const circleObjRef = useRef(null);
   const onChangeRef = useRef(onChange);
-  const [status, setStatus] = useState(apiKey ? "loading" : "no-key");
+  const [status, setStatus] = useState("loading");
   // Tocar el mapa o arrastrar el pin no mueve la ubicación del reporte todavía
   // — deja el pin en una posición "propuesta" (semitransparente) hasta que el
   // usuario la confirma explícitamente. Así se evita que un toque accidental
@@ -73,19 +73,12 @@ export default function MapPicker({
   }, [onChange]);
 
   useEffect(() => {
-    if (!apiKey) return;
     let cancelled = false;
     let stopResizeObserver = null;
+    let mapToRemove = null;
 
-    // Key rechazada por Google (dominio no autorizado, API apagada…): el
-    // script carga igual, así que el mapa llega a "ready" y recién después
-    // falla. Se pasa a "error" para mostrar el aviso propio con alternativas.
-    const stopAuthFailure = onMapsAuthFailure(() => {
-      if (!cancelled) setStatus("error");
-    });
-
-    loadGoogleMaps(apiKey)
-      .then((maps) => {
+    loadLeaflet()
+      .then((L) => {
         if (cancelled || !containerRef.current) return;
         const isTouch = !!window.matchMedia?.("(pointer: coarse)").matches;
         setTouch(isTouch);
@@ -93,32 +86,21 @@ export default function MapPicker({
           lat: lat ?? defaultCenter?.lat ?? FALLBACK_CENTER.lat,
           lng: lng ?? defaultCenter?.lng ?? FALLBACK_CENTER.lng,
         };
-        const map = new maps.Map(containerRef.current, {
-          center,
-          zoom: lat != null ? 15 : 12,
-          streetViewControl: false,
-          mapTypeControl: false,
-          fullscreenControl: false,
-          clickableIcons: false,
-          ...(isTouch ? { gestureHandling: "none", zoomControl: false, keyboardShortcuts: false } : {}),
-        });
-        const marker = new maps.Marker({
-          position: center,
-          map,
-          draggable: !isTouch,
-        });
-        marker.addListener("dragend", () => {
+        const map = createMap(L, containerRef.current, { center, zoom: lat != null ? 15 : 12, interactive: !isTouch });
+        mapToRemove = map;
+        const marker = L.marker([center.lat, center.lng], { draggable: !isTouch, icon: pinIcon(L, C.redSolid), keyboard: false }).addTo(map);
+        marker.on("dragend", () => {
           userMovedRef.current = true;
-          const pos = marker.getPosition();
+          const pos = marker.getLatLng();
           marker.setOpacity(0.55);
-          setPending({ lat: pos.lat(), lng: pos.lng() });
+          setPending({ lat: pos.lat, lng: pos.lng });
         });
-        map.addListener("click", (e) => {
+        map.on("click", (e) => {
           if (isTouch) return;
           userMovedRef.current = true;
-          marker.setPosition(e.latLng);
+          marker.setLatLng(e.latlng);
           marker.setOpacity(0.55);
-          setPending({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+          setPending({ lat: e.latlng.lat, lng: e.latlng.lng });
         });
         mapObjRef.current = map;
         markerObjRef.current = marker;
@@ -132,9 +114,8 @@ export default function MapPicker({
               if (cancelled || userMovedRef.current) return;
               locatedRef.current = true;
               startCenterRef.current = pos;
-              map.setCenter(pos);
-              map.setZoom(15);
-              marker.setPosition(pos);
+              map.setView([pos.lat, pos.lng], 15);
+              marker.setLatLng([pos.lat, pos.lng]);
             },
             () => {},
             MAP_GEOLOCATION_OPTIONS
@@ -145,12 +126,13 @@ export default function MapPicker({
 
     return () => {
       cancelled = true;
-      stopAuthFailure();
       if (stopResizeObserver) stopResizeObserver();
+      circleObjRef.current = null;
+      mapToRemove?.remove();
     };
-    // Sólo se inicializa una vez con la key disponible.
+    // Se inicializa una sola vez.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey]);
+  }, []);
 
   // Si lat/lng cambian desde afuera (ej. botón "Usar mi ubicación"),
   // recentramos el mapa y movemos el pin sin reinicializar todo. Esto ya
@@ -158,41 +140,38 @@ export default function MapPicker({
   // propuesta pendiente de tocar/arrastrar el mapa.
   useEffect(() => {
     if (status === "ready" && markerObjRef.current && mapObjRef.current && lat != null && lng != null) {
-      const pos = { lat, lng };
-      markerObjRef.current.setPosition(pos);
+      markerObjRef.current.setLatLng([lat, lng]);
       markerObjRef.current.setOpacity(1);
-      mapObjRef.current.panTo(pos);
+      mapObjRef.current.panTo([lat, lng]);
       setPending(null);
     }
   }, [lat, lng, status]);
 
   useEffect(() => {
     const map = mapObjRef.current;
-    if (status !== "ready" || !map || !window.google?.maps) return;
+    if (status !== "ready" || !map) return;
     if (!radiusM || lat == null || lng == null) {
-      circleObjRef.current?.setMap(null);
+      circleObjRef.current?.remove();
+      circleObjRef.current = null;
       return;
     }
-    const center = { lat, lng };
-    if (!circleObjRef.current) {
-      circleObjRef.current = new window.google.maps.Circle({
-        map,
-        center,
-        radius: radiusM,
-        strokeColor: C.red,
-        strokeOpacity: 0.8,
-        strokeWeight: 2,
-        fillColor: C.red,
-        fillOpacity: 0.08,
-        clickable: false,
-      });
-    } else {
-      circleObjRef.current.setMap(map);
-      circleObjRef.current.setCenter(center);
-      circleObjRef.current.setRadius(radiusM);
-    }
-    const bounds = circleObjRef.current.getBounds();
-    if (bounds) map.fitBounds(bounds, 24);
+    loadLeaflet().then((L) => {
+      if (!circleObjRef.current) {
+        circleObjRef.current = L.circle([lat, lng], {
+          radius: radiusM,
+          color: C.red,
+          opacity: 0.8,
+          weight: 2,
+          fillColor: C.red,
+          fillOpacity: 0.08,
+          interactive: false,
+        }).addTo(map);
+      } else {
+        circleObjRef.current.setLatLng([lat, lng]);
+        circleObjRef.current.setRadius(radiusM);
+      }
+      map.fitBounds(circleObjRef.current.getBounds(), { padding: [24, 24] });
+    });
   }, [status, lat, lng, radiusM, C.red]);
 
   function confirmPending() {
@@ -212,9 +191,8 @@ export default function MapPicker({
         setGeoState("idle");
         userMovedRef.current = true;
         startCenterRef.current = pos;
-        mapObjRef.current?.setCenter(pos);
-        mapObjRef.current?.setZoom(16);
-        markerObjRef.current?.setPosition(pos);
+        mapObjRef.current?.setView([pos.lat, pos.lng], 16);
+        markerObjRef.current?.setLatLng([pos.lat, pos.lng]);
         markerObjRef.current?.setOpacity(0.55);
         setPending(pos);
       },
@@ -245,7 +223,7 @@ export default function MapPicker({
         lat: lat ?? start?.lat ?? defaultCenter?.lat ?? FALLBACK_CENTER.lat,
         lng: lng ?? start?.lng ?? defaultCenter?.lng ?? FALLBACK_CENTER.lng,
       };
-      markerObjRef.current.setPosition(fallback);
+      markerObjRef.current.setLatLng([fallback.lat, fallback.lng]);
       markerObjRef.current.setOpacity(1);
     }
   }
@@ -255,16 +233,6 @@ export default function MapPicker({
       {geoState}
     </p>
   );
-
-  if (!apiKey) {
-    return (
-      <div className="text-xs rounded-lg border p-3" style={{ borderColor: C.border, color: C.muted }}>
-        El mapa interactivo no está configurado (falta{" "}
-        <code className="felpus-mono">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code>). Mientras tanto podés usar el
-        botón &ldquo;Ubicación&rdquo; para capturar tu posición actual.
-      </div>
-    );
-  }
 
   if (status === "error") {
     const inApp = isInAppBrowser();
@@ -323,7 +291,7 @@ export default function MapPicker({
           ref={containerRef}
           role="region"
           aria-label="Mapa interactivo para marcar la ubicación exacta. Si usás teclado, el botón Ubicación hace lo mismo sin necesidad del mapa."
-          className="w-full rounded-xl overflow-hidden border"
+          className="felpus-map w-full rounded-xl overflow-hidden border"
           style={{ height: 220, borderColor: C.border, background: C.surfaceMuted }}
         />
         {touch && status === "ready" && (
@@ -341,7 +309,6 @@ export default function MapPicker({
       </div>
       {fullscreen && (
         <FullscreenMapPicker
-          apiKey={apiKey}
           center={fullscreenCenter}
           zoom={hasPoint || locatedRef.current ? 16 : 13}
           radiusM={radiusM}
