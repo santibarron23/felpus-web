@@ -1,5 +1,5 @@
 import { logError } from "../../../lib/log";
-import { isJsonRequest, getClientIp, isRateLimitMessage } from "../../../lib/httpGuards";
+import { isJsonRequest, getClientIp, isRateLimitMessage, publicRpcError } from "../../../lib/httpGuards";
 
 // Corre en el servidor — nunca en el navegador, así que la service role key
 // nunca queda expuesta al público.
@@ -42,7 +42,7 @@ export async function POST(request) {
   } catch (e) {
     return Response.json({ error: "Body inválido." }, { status: 400 });
   }
-  if (!reportId || typeof reportId !== "string") {
+  if (typeof reportId !== "string" || !/^[A-Za-z0-9-]{1,64}$/.test(reportId)) {
     return Response.json({ error: "Falta reportId." }, { status: 400 });
   }
 
@@ -70,7 +70,8 @@ export async function POST(request) {
       // queda mal si el día de mañana se agrega otra, así que se aplica el
       // mismo criterio acá por consistencia con flag-report.
       const status = res.status === 400 && isRateLimitMessage(errBody?.message) ? 429 : res.status;
-      return Response.json({ error: errBody?.message || "No se pudo obtener el contacto." }, { status });
+      if (status !== 429) logError("get_report_contact rechazó el pedido", errBody);
+      return Response.json({ error: publicRpcError(res.status, errBody, "No se pudo obtener el contacto.") }, { status });
     }
 
     const rows = await res.json();

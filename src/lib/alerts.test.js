@@ -11,6 +11,7 @@ import {
   inactivityAction,
   normalizeZoneInput,
   normalizePushSubscription,
+  isAllowedPushEndpoint,
 } from "./alerts";
 import { dispatchNewReport, flushPending } from "./alertsServer";
 
@@ -134,6 +135,28 @@ describe("validación de entradas", () => {
     expect(normalizePushSubscription({ endpoint: "http://inseguro", keys: { p256dh: "a", auth: "b" } })).toBeNull();
     expect(normalizePushSubscription(null)).toBeNull();
   });
+  it("suscripción push: solo servicios de push reales (no SSRF)", () => {
+    const keys = { p256dh: "a", auth: "b" };
+    for (const ok of [
+      "https://fcm.googleapis.com/fcm/send/abc",
+      "https://updates.push.services.mozilla.com/wpush/v2/abc",
+      "https://web.push.apple.com/abc",
+      "https://wns2-par02p.notify.windows.com/w/?token=abc",
+    ]) {
+      expect(normalizePushSubscription({ endpoint: ok, keys })?.endpoint).toBe(ok);
+    }
+    for (const bad of [
+      "https://evil.example/hook",
+      "https://fcm.googleapis.com.evil.example/x",
+      "https://fcm.googleapis.com:8443/x",
+      "https://user@fcm.googleapis.com/x",
+      "https://169.254.169.254/latest/meta-data",
+      "https://localhost/x",
+    ]) {
+      expect(normalizePushSubscription({ endpoint: bad, keys })).toBeNull();
+      expect(isAllowedPushEndpoint(bad)).toBe(false);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -182,7 +205,7 @@ function fakeDeps({ candidates = [], zones = [], subs = {}, zoneCount = 0, exist
   return { db, push, log, sent, deleted, matches, deps: { db, push, now: NOW, thresholds: { high: 0.8, mid: 0.65 }, siteUrl: "https://felpus.com", log: () => {} } };
 }
 
-const sub = (name) => ({ endpoint: `https://push.example/${name}`, p256dh: "k", auth: "a" });
+const sub = (name) => ({ endpoint: `https://fcm.googleapis.com/fcm/send/${name}`, p256dh: "k", auth: "a" });
 // Encontrado casi idéntico al perdido nuevo (score alto) y del mismo barrio.
 const gemelo = report({ id: "r-encontrado", tipo: "encontrada", user_id: "u-otro", nombre: "", lat: -24.771, lng: -65.401 });
 
@@ -192,7 +215,7 @@ describe("dispatchNewReport", () => {
     const r = await dispatchNewReport(report(), f.deps);
     expect(r.matches).toBe(1);
     expect(f.matches.has("r-nuevo|r-encontrado")).toBe(true);
-    expect(f.sent.map((s) => s.endpoint).sort()).toEqual(["https://push.example/autor-cel", "https://push.example/autor-pc", "https://push.example/otro-cel"]);
+    expect(f.sent.map((s) => s.endpoint).sort()).toEqual(["https://fcm.googleapis.com/fcm/send/autor-cel", "https://fcm.googleapis.com/fcm/send/autor-pc", "https://fcm.googleapis.com/fcm/send/otro-cel"]);
     const toOtro = f.sent.find((s) => s.endpoint.endsWith("otro-cel")).payload;
     expect(toOtro.title).toBe("🐾 Puede ser tu mascota");
     expect(toOtro.url).toBe("https://felpus.com/r/r-nuevo");
@@ -205,10 +228,10 @@ describe("dispatchNewReport", () => {
   });
 
   it("invitado: avisa por la suscripción del propio reporte", async () => {
-    const invitado = { ...gemelo, user_id: null, push_subscription: { endpoint: "https://push.example/invitado", keys: { p256dh: "k", auth: "a" } } };
+    const invitado = { ...gemelo, user_id: null, push_subscription: { endpoint: "https://fcm.googleapis.com/fcm/send/invitado", keys: { p256dh: "k", auth: "a" } } };
     const f = fakeDeps({ candidates: [invitado] });
     await dispatchNewReport(report(), f.deps);
-    expect(f.sent.map((s) => s.endpoint)).toContain("https://push.example/invitado");
+    expect(f.sent.map((s) => s.endpoint)).toContain("https://fcm.googleapis.com/fcm/send/invitado");
   });
 
   it("match medio: se guarda sin push", async () => {
@@ -249,7 +272,7 @@ describe("dispatchNewReport", () => {
   it("suscripción vencida (410) se borra", async () => {
     const f = fakeDeps({ zones: [{ user_id: "u-vecino", distance_m: 1800 }], subs: { "u-vecino": [sub("vencida")] } });
     await dispatchNewReport(report(), f.deps);
-    expect(f.deleted).toEqual(["https://push.example/vencida"]);
+    expect(f.deleted).toEqual(["https://fcm.googleapis.com/fcm/send/vencida"]);
   });
 
   it("un reporte reencontrado, oculto o inactivo no genera alertas", async () => {

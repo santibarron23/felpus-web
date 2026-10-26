@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isJsonRequest, getClientIp, isRateLimitMessage } from "./httpGuards";
+import { isJsonRequest, getClientIp, isRateLimitMessage, publicRpcError } from "./httpGuards";
 
 function makeRequest(headers) {
   return { headers: new Map(Object.entries(headers)) };
@@ -71,5 +71,20 @@ describe("isRateLimitMessage", () => {
     expect(isRateLimitMessage("")).toBe(false);
     expect(isRateLimitMessage(null)).toBe(false);
     expect(isRateLimitMessage(undefined)).toBe(false);
+  });
+});
+
+// publicRpcError (revisión de seguridad, 2026-10-26): solo los RAISE
+// EXCEPTION de schema.sql llegan al navegador; el resto de los errores de
+// PostgREST trae nombres internos.
+describe("publicRpcError", () => {
+  it("pasa el texto de un RAISE EXCEPTION (400 + P0001)", () => {
+    expect(publicRpcError(400, { code: "P0001", message: "Demasiadas consultas." }, "x")).toBe("Demasiadas consultas.");
+  });
+  it("oculta errores internos de Postgres/PostgREST", () => {
+    expect(publicRpcError(400, { code: "22P02", message: 'invalid input syntax for type uuid: "a"' }, "Genérico")).toBe("Genérico");
+    expect(publicRpcError(404, { code: "PGRST202", message: "Could not find the function public.flag_report" }, "Genérico")).toBe("Genérico");
+    expect(publicRpcError(401, { code: "42501", message: "permission denied for function flag_report" }, "Genérico")).toBe("Genérico");
+    expect(publicRpcError(400, null, "Genérico")).toBe("Genérico");
   });
 });

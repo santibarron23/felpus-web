@@ -1,5 +1,5 @@
 import { logError } from "../../../lib/log";
-import { isJsonRequest, getClientIp, isRateLimitMessage } from "../../../lib/httpGuards";
+import { isJsonRequest, getClientIp, isRateLimitMessage, publicRpcError } from "../../../lib/httpGuards";
 
 // Corre en el servidor — nunca en el navegador, así que la service role key
 // nunca queda expuesta al público.
@@ -37,7 +37,7 @@ export async function POST(request) {
   } catch (e) {
     return Response.json({ error: "Body inválido." }, { status: 400 });
   }
-  if (!reportId || typeof reportId !== "string") {
+  if (typeof reportId !== "string" || !/^[A-Za-z0-9-]{1,64}$/.test(reportId)) {
     return Response.json({ error: "Falta reportId." }, { status: 400 });
   }
   if (!VALID_REASONS.includes(reason)) {
@@ -64,7 +64,7 @@ export async function POST(request) {
       // completo. flag_report también devuelve 400 para "no se encontró
       // ese reporte", que no es rate limit.
       const status = res.status === 400 && isRateLimitMessage(errBody?.message) ? 429 : res.status;
-      return Response.json({ error: errBody?.message || "No se pudo enviar la denuncia." }, { status });
+      return Response.json({ error: publicRpcError(res.status, errBody, "No se pudo enviar la denuncia.") }, { status });
     }
 
     return Response.json({ ok: true });

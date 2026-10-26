@@ -33,6 +33,12 @@ const supabasePhotosPattern = supabaseHost
   ? { protocol: "https", hostname: supabaseHost, pathname: "/storage/v1/object/public/felpus-photos/**" }
   : { protocol: "https", hostname: "**.supabase.co" };
 
+// Revisión de seguridad (2026-10-26): mismo criterio para el CSP. Con
+// https://*.supabase.co, si alguna vez se colara un script, podría mandar
+// datos (sesión, contactos que se ven en pantalla) a un proyecto de Supabase
+// del atacante sin que el CSP lo frene. La app solo habla con el suyo.
+const supabaseCspSource = supabaseHost ? `https://${supabaseHost}` : "https://*.supabase.co";
+
 const csp = [
   "default-src 'self'",
   // Google Maps inyecta sus propios <script> dinámicamente; los fonts de
@@ -62,7 +68,7 @@ const csp = [
   "font-src 'self' https://fonts.gstatic.com",
   // data:/blob: para las fotos redimensionadas en canvas y los placeholders
   // SVG generados en el cliente; googleusercontent.com para el avatar de Google.
-  "img-src 'self' data: blob: https://*.supabase.co https://maps.gstatic.com https://maps.googleapis.com https://*.googleusercontent.com https://*.google-analytics.com https://www.googletagmanager.com",
+  `img-src 'self' data: blob: ${supabaseCspSource} https://maps.gstatic.com https://maps.googleapis.com https://*.googleusercontent.com https://*.google-analytics.com https://www.googletagmanager.com`,
   // places.googleapis.com es un dominio DISTINTO de maps.googleapis.com: lo
   // usa el autocompletado de zona (PlaceAutocompleteElement, API nueva de
   // Places) para sus pedidos de sugerencias — sin esto en connect-src, el
@@ -85,7 +91,7 @@ const csp = [
   // region1.google-analytics.com (subdominio regional), no a www. — con
   // solo "www." el CSP bloqueaba TODOS los page_view (visto en consola), así
   // que GA4 no estaba midiendo nada.
-  `connect-src 'self' data: https://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://places.googleapis.com https://accounts.google.com https://www.google-analytics.com https://*.google-analytics.com https://www.googletagmanager.com${isDev ? " ws://localhost:* http://localhost:*" : ""}`,
+  `connect-src 'self' data: ${supabaseCspSource} https://maps.googleapis.com https://maps.gstatic.com https://places.googleapis.com https://accounts.google.com https://www.google-analytics.com https://*.google-analytics.com https://www.googletagmanager.com${isDev ? " ws://localhost:* http://localhost:*" : ""}`,
   "frame-src 'self' https://accounts.google.com",
   "object-src 'none'",
   "base-uri 'self'",

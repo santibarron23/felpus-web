@@ -56,3 +56,17 @@ export function isRateLimitMessage(message) {
   if (!message) return false;
   return /demasiad|límite|limite/i.test(message);
 }
+
+// Revisión de seguridad (2026-10-26): report-contact, flag-report y
+// subscribe-push le pasaban al navegador el .message de CUALQUIER error de
+// la RPC. Los textos pensados para la persona son los RAISE EXCEPTION de
+// schema.sql (PostgREST los devuelve como 400 con code "P0001"); el resto
+// (tipos inválidos, funciones que no existen, permisos) trae nombres de
+// funciones, columnas y tipos internos — mismo criterio que H5 en
+// create-report. Esos quedan solo en el log y la persona ve el genérico.
+export function publicRpcError(status, body, fallback) {
+  if (status === 400 && body?.code === "P0001" && typeof body.message === "string" && body.message) {
+    return body.message;
+  }
+  return fallback;
+}
