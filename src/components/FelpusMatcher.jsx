@@ -372,6 +372,10 @@ export default function FelpusMatcher() {
   // al tab "Reportar", aunque terminara usando el botón "Ubicación" (GPS) o
   // escribiendo la zona a mano, que cubren la mayoría de los casos.
   const [showMapPicker, setShowMapPicker] = useState(false);
+  // Última zona que se completó sola a partir de coordenadas (GPS o pin del
+  // mapa) — si la persona después mueve el pin, se puede reemplazar por la
+  // del lugar nuevo; lo que escribió a mano nunca se pisa.
+  const zonaAutoRef = useRef("");
   // Auditoría UX mobile: el formulario mostraba ~12 campos en fila, todos
   // con el mismo peso visual, aunque el propio checklist de la app (más
   // abajo) ya sabe que solo Foto/Zona/Sexo/Color/Contacto son necesarios
@@ -1224,7 +1228,10 @@ export default function FelpusMatcher() {
     return [
       { id: "apodo", label: "Apodo", done: !!nickname.trim() },
       { id: "fotos", label: "Foto", done: form.fotos.length > 0 },
-      { id: "zona", label: "Zona", done: !!form.zona.trim() },
+      // Marcar el lugar en el mapa (o con GPS) cuenta como zona completa
+      // aunque el texto quede vacío — antes el checklist seguía mostrando
+      // "Zona" pendiente con el pin ya puesto.
+      { id: "zona", label: "Zona", done: !!form.zona.trim() || (form.lat != null && form.lng != null) },
       { id: "color", label: "Color", done: !!colorOk },
       // "Detalles" (chip/texto extra más allá de la descripción automática)
       // NO va acá: es explícitamente opcional en el copy de esa sección
@@ -1235,7 +1242,7 @@ export default function FelpusMatcher() {
       { id: "sexo", label: "Sexo", done: !!form.sexo },
       { id: "contacto", label: "Contacto", done: whatsappOk || !!form.contactoEmail.trim() },
     ];
-  }, [nickname, form.fotos.length, form.zona, form.color, form.colorOtro, form.sexo, whatsappUsingSaved, whatsappParsed.isValid, form.contactoEmail]);
+  }, [nickname, form.fotos.length, form.zona, form.lat, form.lng, form.color, form.colorOtro, form.sexo, whatsappUsingSaved, whatsappParsed.isValid, form.contactoEmail]);
   const reportProgressDone = reportChecklist.filter((s) => s.done).length;
   const reportProgressPct = Math.round((reportProgressDone / reportChecklist.length) * 100);
 
@@ -1765,31 +1772,49 @@ export default function FelpusMatcher() {
   // habilitar "Places API (New)" en Google Cloud y un componente propio,
   // no un simple input).
 
+  // Coordenadas nuevas (GPS o pin del mapa): las guarda, da la zona por
+  // completa y, best-effort, completa Zona/ciudad/provincia a partir de
+  // ellas sin bloquear nada (lat/lng ya quedaron guardadas pase lo que pase).
+  // Nunca pisa lo que la persona escribió a mano; sí reemplaza una zona que
+  // se había completado sola con un pin anterior.
+  function setUbicacionDesdeCoordenadas(lat, lng) {
+    setForm((f) => ({ ...f, lat, lng }));
+    setGeoStatus("done");
+    setFieldErrors((prev) => (prev.zona ? { ...prev, zona: undefined } : prev));
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return;
+    loadGoogleMaps(apiKey)
+      .then((maps) => reverseGeocodeLatLng(maps, lat, lng))
+      .then((place) => {
+        if (!place) return;
+        setForm((f) => {
+          // El pin se movió de nuevo mientras se resolvía esta dirección.
+          if (f.lat !== lat || f.lng !== lng) return f;
+          const zonaEsAuto = !f.zona.trim() || f.zona === zonaAutoRef.current;
+          if (!zonaEsAuto) {
+            return {
+              ...f,
+              ciudad: f.ciudad?.trim() ? f.ciudad : place.ciudad || "",
+              provincia: f.provincia?.trim() ? f.provincia : place.provincia || "",
+            };
+          }
+          const zona = (place.zona || f.zona).slice(0, 100);
+          zonaAutoRef.current = zona;
+          return {
+            ...f,
+            zona,
+            ciudad: (place.ciudad || "").slice(0, 80),
+            provincia: (place.provincia || "").slice(0, 80),
+          };
+        });
+      })
+      .catch((e) => logError("No se pudo geocodificar la ubicación capturada", e));
+  }
+
   function handleUseLocation() {
     setGeoStatus("locating");
     requestLocation(
-      ({ lat, lng }) => {
-        setForm((f) => ({ ...f, lat, lng }));
-        setGeoStatus("done");
-        // Best-effort: completar Zona/ciudad/provincia automáticamente a
-        // partir de las coordenadas, sin bloquear ni condicionar lo de
-        // arriba (lat/lng ya quedaron guardadas pase lo que pase acá).
-        // Nunca pisa lo que la persona ya haya escrito a mano.
-        const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-        if (!apiKey) return;
-        loadGoogleMaps(apiKey)
-          .then((maps) => reverseGeocodeLatLng(maps, lat, lng))
-          .then((place) => {
-            if (!place) return;
-            setForm((f) => ({
-              ...f,
-              zona: f.zona.trim() ? f.zona : place.zona || f.zona,
-              ciudad: f.ciudad?.trim() ? f.ciudad : place.ciudad || f.ciudad || "",
-              provincia: f.provincia?.trim() ? f.provincia : place.provincia || f.provincia || "",
-            }));
-          })
-          .catch((e) => logError("No se pudo geocodificar la ubicación capturada", e));
-      },
+      ({ lat, lng }) => setUbicacionDesdeCoordenadas(lat, lng),
       (err) => {
         setGeoErrorMessage(geolocationErrorMessage(err));
         setGeoStatus("error");
@@ -1873,14 +1898,17 @@ export default function FelpusMatcher() {
     // pueda "dejar vacío" — se arma solo a partir de especie/tamaño (que
     // siempre tienen un valor por defecto) apenas monta el formulario, ver
     // el useEffect que la recompone más arriba.
-    if (!form.zona.trim() || !form.color.trim()) {
+    // Un pin en el mapa (o el GPS) alcanza como zona, aunque el texto haya
+    // quedado vacío (ej. falló la búsqueda de la dirección).
+    const zonaOk = !!form.zona.trim() || (form.lat != null && form.lng != null);
+    if (!zonaOk || !form.color.trim()) {
       const msg = "Completá zona y color — son clave para el matching.";
       setFormError(msg);
       setFieldErrors({
-        ...(!form.zona.trim() ? { zona: msg } : {}),
+        ...(!zonaOk ? { zona: msg } : {}),
         ...(!form.color.trim() ? { color: msg } : {}),
       });
-      focusField(!form.zona.trim() ? "form-zona" : "form-color");
+      focusField(!zonaOk ? "form-zona" : "form-color");
       return;
     }
     if (!form.sexo) {
@@ -1948,7 +1976,9 @@ export default function FelpusMatcher() {
         sexo: form.sexo,
         edad: form.edad,
         peso: form.peso,
-        zona: form.zona.trim(),
+        // zona es NOT NULL en la base: con solo el pin y sin texto, se guarda
+        // la ciudad si se pudo averiguar, o una leyenda genérica.
+        zona: form.zona.trim() || form.ciudad.trim() || "Ubicación marcada en el mapa",
         ciudad: form.ciudad.trim(),
         provincia: form.provincia.trim(),
         lat: form.lat,
@@ -3066,7 +3096,7 @@ export default function FelpusMatcher() {
                     <MapPicker
                       lat={form.lat}
                       lng={form.lng}
-                      onChange={(lat, lng) => setForm((f) => ({ ...f, lat, lng }))}
+                      onChange={setUbicacionDesdeCoordenadas}
                     />
                   ) : (
                     <button
