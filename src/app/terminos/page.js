@@ -158,6 +158,18 @@ export default function TerminosPage() {
           garantizan funcionalidades adicionales ni aumentan las probabilidades de encontrar una mascota.
         </p>
         <p>Las condiciones y disponibilidad de los medios de pago utilizados también estarán sujetas a las reglas del correspondiente proveedor.</p>
+        <p>
+          <strong>Apoyos entre personas.</strong> Los colaboradores pueden mostrar voluntariamente un alias o CBU/CVU
+          para recibir apoyos de otras personas. Esos apoyos son regalos opcionales que se hacen por fuera de Felpus:
+          Felpus no participa en el pago, no cobra comisión, no verifica la titularidad del alias y no otorga
+          huellitas, niveles ni ninguna ventaja por dar o recibir apoyos. Al activar los apoyos, el colaborador acepta
+          que al transferirle se muestre el nombre del titular de la cuenta.
+        </p>
+        <p>
+          Felpus puede ocultar un alias denunciado y suspender cuentas que publiquen reportes falsos, pidan dinero a
+          cambio de una mascota, se hagan pasar por otras personas o incumplan estas reglas. Una cuenta suspendida no
+          puede publicar, no aparece en el ranking y sus publicaciones quedan ocultas.
+        </p>
       </LegalSection>
 
       <LegalSection n={13} title="Limitación de responsabilidad">
