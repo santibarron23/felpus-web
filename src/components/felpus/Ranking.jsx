@@ -116,7 +116,7 @@ export function RankingStatTiles({ me }) {
   );
 }
 
-export function RankingList({ items, myId, myAvatarUrl, heartedIds, poppingHeartId, onSendHeart, onSupport }) {
+export function RankingList({ items, myId, myAvatarUrl, heartedIds, poppingHeartId, onSendHeart, onOpenProfile }) {
   const C = useTheme();
   if (!items?.length) return null;
   return (
@@ -135,6 +135,14 @@ export function RankingList({ items, myId, myAvatarUrl, heartedIds, poppingHeart
             <span className="w-6 text-center felpus-mono text-sm shrink-0" style={{ color: i < 3 ? C.text : C.muted }}>
               {i + 1}
             </span>
+            {/* Toda la parte de la persona (foto + nombre) abre su ficha,
+                donde está el botón "Apoyar" si acepta apoyos. */}
+            <button
+              type="button"
+              onClick={() => onOpenProfile?.(u, i + 1)}
+              aria-label={`Ver el perfil de ${u.nickname}`}
+              className="flex items-center gap-3 min-w-0 flex-1 text-left rounded-xl -my-1 py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+            >
             <Avatar url={u.avatar_url || (isMe ? myAvatarUrl : null)} name={u.nickname} size={40} bg={tier.bg} />
             <div className="min-w-0 flex-1">
               <p className="text-[15px] truncate" style={{ color: C.text, fontWeight: isMe ? 700 : 500 }}>
@@ -143,19 +151,18 @@ export function RankingList({ items, myId, myAvatarUrl, heartedIds, poppingHeart
               <p className="text-[12px] truncate" style={{ color: C.muted }}>
                 {[tier.label, ubicacion].filter(Boolean).join(" · ")}
               </p>
-              {/* Apoyos (2026-10-26): solo si la persona los activó en su
-                  perfil. El alias no viene acá: se pide al abrir la ventana. */}
-              {u.acepta_apoyos && !isMe && onSupport && (
-                <button
-                  type="button"
-                  onClick={() => onSupport(u)}
-                  className="mt-1 inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[12px] font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+              {/* Apoyos: marca que la persona los recibe; el botón "Apoyar"
+                  está en su ficha. El alias no viene acá. */}
+              {u.acepta_apoyos && !isMe && (
+                <span
+                  className="mt-1 inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[12px] font-bold"
                   style={{ borderColor: C.border, color: C.red, background: C.brandTintBg }}
                 >
                   <HeartHandshake className="w-3.5 h-3.5" aria-hidden="true" /> Apoyar
-                </button>
+                </span>
               )}
             </div>
+            </button>
             {!isMe && (
               <button
                 type="button"
