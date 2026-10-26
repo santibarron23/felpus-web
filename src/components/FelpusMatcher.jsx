@@ -145,6 +145,7 @@ import ZonaAutocomplete from "./ZonaAutocomplete";
 import MatchScorecard from "./felpus/MatchScorecard";
 import ReportGrid from "./felpus/ReportGrid";
 import SupportModal from "./felpus/SupportModal";
+import ContributorSheet from "./felpus/ContributorSheet";
 import AdminUsers from "./felpus/AdminUsers";
 import { normalizeAlias } from "../lib/support";
 import { checkPhotoKind } from "../lib/photoCheckClient";
@@ -527,6 +528,8 @@ export default function FelpusMatcher() {
   const [leaderboard, setLeaderboard] = useState([]);
   // Colaborador al que se está por apoyar (ventana SupportModal).
   const [supportTarget, setSupportTarget] = useState(null);
+  // Ficha del colaborador tocado en el ranking ({ u, rank }).
+  const [profileTarget, setProfileTarget] = useState(null);
   // Mis datos de apoyo (alias + acepto), y el borrador al editar el perfil.
   const [mySupport, setMySupport] = useState(null);
   const [supportDraft, setSupportDraft] = useState(null);
@@ -4250,8 +4253,21 @@ export default function FelpusMatcher() {
               heartedIds={heartedIds}
               poppingHeartId={poppingHeartId}
               onSendHeart={handleSendHeart}
-              onSupport={setSupportTarget}
+              onOpenProfile={(u, rank) => setProfileTarget({ u, rank })}
             />
+            {profileTarget && (
+              <ContributorSheet
+                contributor={profileTarget.u}
+                rank={profileTarget.rank}
+                isMe={!!user && profileTarget.u.id === user.id}
+                avatarUrl={profileTarget.u.avatar_url || (user && profileTarget.u.id === user.id ? myAvatarUrl : null)}
+                onClose={() => setProfileTarget(null)}
+                onSupport={(u) => {
+                  setProfileTarget(null);
+                  setSupportTarget(u);
+                }}
+              />
+            )}
             {supportTarget && <SupportModal contributor={supportTarget} onClose={() => setSupportTarget(null)} />}
 
             <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-xl p-3.5 border text-[12px] space-y-1.5" style={{ borderColor: C.border, color: C.muted }}>
