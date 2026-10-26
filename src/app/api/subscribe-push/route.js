@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { logError } from "../../../lib/log";
-import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
+import { isJsonRequest, getClientIp, publicRpcError } from "../../../lib/httpGuards";
+import { normalizePushSubscription } from "../../../lib/alerts";
 
 // Corre en el servidor — nunca en el navegador, así que la service role key
 // nunca queda expuesta al público.
@@ -43,10 +44,14 @@ export async function POST(request) {
   } catch (e) {
     return Response.json({ error: "Body inválido." }, { status: 400 });
   }
-  if (!reportId || typeof reportId !== "string") {
+  if (typeof reportId !== "string" || !/^[A-Za-z0-9-]{1,64}$/.test(reportId)) {
     return Response.json({ error: "Falta reportId." }, { status: 400 });
   }
-  if (!subscription || typeof subscription !== "object") {
+  // Mismo filtro que /api/push/subscribe (ver isAllowedPushEndpoint en
+  // alerts.js): solo endpoints de servicios de push reales, y se guarda
+  // únicamente endpoint + claves, no el objeto entero que mande el cliente.
+  const sub = normalizePushSubscription(subscription);
+  if (!sub) {
     return Response.json({ error: "Falta la suscripción." }, { status: 400 });
   }
 
@@ -105,7 +110,7 @@ export async function POST(request) {
       },
       body: JSON.stringify({
         p_report_id: reportId,
-        p_subscription: subscription,
+        p_subscription: { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
         p_push_token: pushToken,
         p_caller_user_id: realUserId,
       }),
@@ -113,7 +118,7 @@ export async function POST(request) {
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
       const status = res.status === 400 ? 403 : res.status;
-      return Response.json({ error: errBody?.message || "No se pudo activar las notificaciones." }, { status });
+      return Response.json({ error: publicRpcError(res.status, errBody, "No se pudo activar las notificaciones.") }, { status });
     }
     return Response.json({ ok: true });
   } catch (e) {

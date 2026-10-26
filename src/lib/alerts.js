@@ -184,12 +184,32 @@ export function normalizeZoneInput(body) {
   return { zone: { lat, lng, radius_m: radius, species, report_types: types, active: b.active !== false } };
 }
 
+// Revisión de seguridad (2026-10-26): el endpoint de una suscripción es la
+// URL a la que el SERVIDOR le hace un POST (web-push) cada vez que manda una
+// alerta. Antes se aceptaba cualquier https://, así que cualquiera podía
+// registrar una URL propia (o de un tercero) y usar a felpus.com para
+// mandarle pedidos (SSRF a ciegas). Los navegadores solo generan endpoints
+// de estos servicios de push: Chrome/Edge/Android (FCM), Firefox (Mozilla),
+// Safari (Apple) y Edge viejo (Windows/WNS).
+const PUSH_HOST_RE =
+  /^(fcm\.googleapis\.com|android\.googleapis\.com|updates\.push\.services\.mozilla\.com|push\.services\.mozilla\.com|web\.push\.apple\.com|[a-z0-9-]+\.push\.apple\.com|[a-z0-9-]+\.notify\.windows\.com)$/;
+
+export function isAllowedPushEndpoint(endpoint) {
+  if (typeof endpoint !== "string" || endpoint.length > 1000) return false;
+  try {
+    const u = new URL(endpoint);
+    return u.protocol === "https:" && !u.port && !u.username && !u.password && PUSH_HOST_RE.test(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
 // Suscripción push que manda el navegador (PushSubscription.toJSON()).
 export function normalizePushSubscription(sub) {
   const s = sub && typeof sub === "object" ? sub : {};
   const endpoint = typeof s.endpoint === "string" ? s.endpoint : "";
   const p256dh = typeof s.keys?.p256dh === "string" ? s.keys.p256dh : "";
   const auth = typeof s.keys?.auth === "string" ? s.keys.auth : "";
-  if (!/^https:\/\//.test(endpoint) || endpoint.length > 1000 || !p256dh || !auth || p256dh.length > 200 || auth.length > 100) return null;
+  if (!isAllowedPushEndpoint(endpoint) || !p256dh || !auth || p256dh.length > 200 || auth.length > 100) return null;
   return { endpoint, p256dh, auth };
 }

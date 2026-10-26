@@ -14,6 +14,7 @@ import {
   reportCanAlert,
   lostAndFound,
   inactivityAction,
+  isAllowedPushEndpoint,
   userRecipient,
   reportRecipient,
   ZONE_DAILY_CAP,
@@ -134,8 +135,10 @@ export async function makePusher(env = process.env) {
   };
 }
 
+// Filas guardadas antes de validar el endpoint (o escritas por otro camino)
+// tampoco salen: ver isAllowedPushEndpoint en alerts.js.
 function toWebPushSub(s) {
-  if (!s) return null;
+  if (!s || !isAllowedPushEndpoint(s.endpoint)) return null;
   if (s.endpoint && s.keys) return s; // formato PushSubscription.toJSON()
   if (s.endpoint && s.p256dh && s.auth) return { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } };
   return null;
