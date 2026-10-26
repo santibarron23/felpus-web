@@ -1,6 +1,7 @@
 import { Inter, Baloo_2, JetBrains_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { GoogleAnalytics } from "@next/third-parties/google";
+import "leaflet/dist/leaflet.css";
 import "./globals.css";
 import ServiceWorkerRegister from "../components/felpus/ServiceWorkerRegister";
 import InstallBanner from "../components/felpus/InstallBanner";

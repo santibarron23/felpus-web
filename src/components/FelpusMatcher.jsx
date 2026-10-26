@@ -121,7 +121,7 @@ import { zonaConCiudad } from "../lib/zona";
 import { ADMIN_EMAIL } from "../lib/adminEdit";
 import AdminEditReport from "./felpus/AdminEditReport";
 import { playTap, playSuccess } from "../lib/sound";
-import { loadGoogleMaps, reverseGeocodeLatLng } from "../lib/googleMaps";
+import { reverseGeocode } from "../lib/osmMap";
 import { requestLocation, geolocationErrorMessage } from "../lib/geolocation";
 import { dictationErrorMessage } from "../lib/dictation";
 import {
@@ -1759,19 +1759,6 @@ export default function FelpusMatcher() {
     setForm((f) => ({ ...f, fotos: [f.fotos[index], ...f.fotos.filter((_, i) => i !== index)] }));
   }
 
-  // Nota: este campo usaba antes google.maps.places.Autocomplete (legacy)
-  // para sugerir zonas mientras se escribe. Se sacó por completo — Google
-  // dejó de habilitar esa API a proyectos nuevos desde marzo 2025, y cuando
-  // no está disponible, la falla de autenticación se lleva puesta toda la
-  // sesión de Maps compartida (rompía el mapa de abajo apenas se tipeaba
-  // acá, aunque el mapa en sí no tenía ningún problema). El campo sigue
-  // funcionando 100% escribiendo a mano, con el botón "Ubicación", o
-  // tocando el pin en el mapa. Si algún día se quiere retomar el
-  // autocompletado, la reemplazante oficial es
-  // google.maps.places.PlaceAutocompleteElement (API nueva, requiere
-  // habilitar "Places API (New)" en Google Cloud y un componente propio,
-  // no un simple input).
-
   // Coordenadas nuevas (GPS o pin del mapa): las guarda, da la zona por
   // completa y, best-effort, completa Zona/ciudad/provincia a partir de
   // ellas sin bloquear nada (lat/lng ya quedaron guardadas pase lo que pase).
@@ -1781,10 +1768,7 @@ export default function FelpusMatcher() {
     setForm((f) => ({ ...f, lat, lng }));
     setGeoStatus("done");
     setFieldErrors((prev) => (prev.zona ? { ...prev, zona: undefined } : prev));
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-    if (!apiKey) return;
-    loadGoogleMaps(apiKey)
-      .then((maps) => reverseGeocodeLatLng(maps, lat, lng))
+    reverseGeocode(lat, lng)
       .then((place) => {
         if (!place) return;
         setForm((f) => {
@@ -3042,7 +3026,7 @@ export default function FelpusMatcher() {
                       setForm((f) => ({ ...f, zona, ciudad: "", provincia: "" }))
                     }
                     onSelectPlace={(zona, lat, lng, ciudad, provincia) => {
-                      // El widget de Google no respeta el maxLength del input
+                      // Las sugerencias no pasan por el maxLength del input
                       // (ese límite solo aplica al fallback de texto plano) —
                       // sin este recorte, una dirección larga puede superar el
                       // límite de 100 caracteres de la base y tirar abajo la

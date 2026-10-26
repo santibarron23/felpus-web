@@ -137,31 +137,17 @@ color (histograma) — no se rompe nada, solo es menos preciso.
 
 ---
 
-## 2.3 Activar el mapa interactivo con pin (opcional)
+## 2.3 Mapas (no hay que configurar nada)
 
-Por defecto, para marcar la ubicación se usa el botón "Usar mi ubicación"
-(la posición GPS del dispositivo). Para que además se pueda tocar/arrastrar
-un pin en un mapa real de Google:
+Los mapas usan **OpenStreetMap + Leaflet** (desde 2026-10-26; antes eran de
+Google Maps): no necesitan key, cuenta ni facturación. Las búsquedas de
+direcciones salen de **Photon** (sugerencias mientras se escribe la zona) y
+**Nominatim** (punto ↔ barrio). Todo está en `src/lib/osmMap.js`.
 
-1. Entrá a [console.cloud.google.com](https://console.cloud.google.com).
-2. Creá un proyecto (o usá uno existente).
-3. Andá a **APIs & Services → Library**, buscá **"Maps JavaScript API"** y activala.
-4. Andá a **APIs & Services → Credentials → Create Credentials → API key**.
-5. **Importante:** editá esa key y restringila ("Application restrictions" →
-   "HTTP referrers") a tu dominio (y a `localhost:3000` para probar local).
-   Sin esta restricción, cualquiera podría usar tu clave desde otro sitio.
-6. Copiá la key y pegala en `.env.local`:
-   ```
-   NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=tu-clave-de-google-maps
-   ```
-7. Reiniciá `npm run dev`.
-
-Google exige una cuenta de facturación para usar Maps, pero regala ~$200
-USD de crédito mensual — para un piloto con tráfico bajo no vas a pagar nada.
-
-Si no configurás esto, el formulario de reporte muestra un aviso y la gente
-igual puede marcar su ubicación con el botón de geolocalización — el mapa es
-un plus, no un requisito.
+Las políticas de uso de OpenStreetMap y Nominatim piden atribución visible
+(ya está en cada mapa) y un uso moderado. Si algún día el tráfico crece
+mucho, se puede cambiar `TILE_URL` en `osmMap.js` por un proveedor de
+teselas propio o pago sin tocar el resto.
 
 ---
 
@@ -258,23 +244,20 @@ de mañana cambiás de proveedor, sólo tocás ese archivo.
 
 Felpus depende de 4 servicios con algún componente pago: Vercel (hosting,
 incluido el cálculo de embeddings de imagen para el matching por IA),
-Supabase (base de datos + storage + auth), Google Maps Platform (mapa,
-autocompletado de zona, geocodificación inversa) y Resend (email de
-"posible coincidencia").
+Supabase (base de datos + storage + auth) y Resend (email de "posible
+coincidencia"). Los mapas son de OpenStreetMap (gratis, sin key: ver 2.3).
 El dominio (felpus.com) es aparte y se paga anual, no mensual.
 
-**Por lejos el que más pesa a escala es Google Maps Platform** — es el único
-de los cinco con precio por llamada sin ningún tope automático (Google cobra
-lo que se use salvo que vos mismo configures una alerta/límite de
-presupuesto en Cloud Console — no viene activado por default). Los otros
-cuatro tienen un tier gratuito real que aguanta bastante antes de cobrar
-nada.
+Antes, el que más pesaba a escala era Google Maps Platform (precio por
+llamada y sin tope automático); desde 2026-10-26 los mapas son de
+OpenStreetMap y ese costo desapareció. Los servicios que quedan tienen un
+tier gratuito real que aguanta bastante antes de cobrar nada.
 
 | Servicio | Qué paga | Tier gratis | Primer escalón pago |
 |---|---|---|---|
 | Vercel | Hosting del sitio | 100GB banda ancha, 1M invocaciones/mes (uso NO comercial) | Pro: $20/mes por asiento |
 | Supabase | DB + Storage de fotos + Auth | 500MB DB, 1GB storage, 5GB egreso, 50k usuarios activos/mes | Pro: $25/mes + excedentes |
-| Google Maps Platform | Mapa, autocompletado de zona, geocodificación al usar "Ubicación" | ~10.000 llamadas/mes por API (varía por SKU) | Pago por uso, sin tope automático |
+| OpenStreetMap / Photon / Nominatim | Mapa, sugerencias de zona, barrio a partir del GPS o del pin | Gratis, sin key (uso moderado, con atribución) | — |
 | (IA visual) | Embedding DINOv2 de cada foto subida: corre dentro de la función de Vercel, sin servicio aparte | Entra en el cómputo de Vercel (~1 s por foto) | — |
 | Resend | Email de "posible coincidencia" | 3.000 emails/mes (100/día) | Pro: $20/mes → 50.000 emails |
 
@@ -294,22 +277,16 @@ mobile) — ver nota al final, es el mayor "leak" de costo evitable.
 | Visitas/mes | ~2.000 | ~20.000 | ~150.000 |
 | **Vercel** | $0 (Hobby) | $0–20 | $20+ |
 | **Supabase** | $0 (Free) | ~$25 (Pro, storage de fotos ya no entra en el tier gratis) | ~$25–50 |
-| **Google Maps** | $0–5 | ~$15–50 | **~$250–350** |
 | **Resend** | $0 | $0 | $0–20 |
-| **Total aprox./mes** | **$0–10** | **$40–95** | **$350–420** |
+| **Total aprox./mes** | **$0–5** | **$25–45** | **$45–90** |
 
 *(Estimado en dólares, con precios públicos vigentes de cada proveedor al
-2026 — no una cotización real. Google Maps es la variable más incierta:
-depende muchísimo de cuánta gente entra a "Explorar" desde computadora y de
-cuántas veces se use el botón "Ubicación".)*
+2026 — no una cotización real.)*
 
 ### Cómo controlar el costo si el uso crece
 
-1. **Configurá una alerta de presupuesto en Google Cloud Console** para el
-   proyecto de Maps Platform — es el único de los cuatro servicios sin techo
-   automático; un pico de tráfico (o abuso/scraping) ahí sí puede doler. Esto
-   es un paso tuyo en la consola de Google, no algo que se resuelva en el
-   código.
+1. ✅ **Resuelto**: los mapas ya no dependen de Google Maps (el único
+   servicio sin techo automático de costo): son de OpenStreetMap, gratis.
 2. ✅ **Resuelto**: el mapa de "Explorar" en desktop se cargaba de nuevo
    —y facturaba una carga nueva de Google Maps— cada vez que alguien salía
    de esa pestaña y volvía a entrar, aunque fuera la misma visita. Ahora la
