@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { shareCardData, fechaCorta, buildShareMessage } from "./shareCard";
+import { shareCardData, fechaCorta, buildShareMessage, whatsappUrl } from "./shareCard";
 
 const NOW = new Date("2026-10-27T12:00:00-03:00");
 
@@ -61,5 +61,19 @@ describe("buildShareMessage", () => {
   it("corto: qué, dónde, cuándo y qué hacer", () => {
     const m = buildShareMessage({ tipo: "perdida", especie: "perro", nombre: "Toby", zona: "Centro", fecha: "2026-10-20" }, NOW);
     expect(m).toBe("🔴 SE BUSCA: Toby\n📍 Centro\nSe perdió el 20 de octubre\n¿Lo viste? Avisá 👇");
+  });
+});
+
+describe("whatsappUrl", () => {
+  it("usa api.whatsapp.com (wa.me rompe los emojis) y codifica bien los de 4 bytes", () => {
+    const url = whatsappUrl("🔴 SE BUSCA\n📍 San Lorenzo 👇");
+    expect(url.startsWith("https://api.whatsapp.com/send?text=")).toBe(true);
+    expect(url).toContain("%F0%9F%94%B4");
+    expect(url).not.toContain("wa.me");
+    expect(decodeURIComponent(url.split("text=")[1])).toBe("🔴 SE BUSCA\n📍 San Lorenzo 👇");
+  });
+
+  it("con número, solo los dígitos", () => {
+    expect(whatsappUrl("Hola", "+54 9 387 412-3456")).toBe("https://api.whatsapp.com/send?phone=5493874123456&text=Hola");
   });
 });
