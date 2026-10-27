@@ -3,6 +3,7 @@ import { logError } from "../../../lib/log";
 import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
 import { DEFAULT_CHAT_MODEL, sanitizeHistory, sanitizeContext, parseImageDataUrl } from "../../../lib/chatbot";
 import { runChat, makeReportsReader, fetchOpenReport } from "../../../lib/chatService";
+import { makeAiRateLimit } from "../../../lib/serverAiRateLimit";
 
 // Asistente Felpus. Corre solo en el servidor: ANTHROPIC_API_KEY nunca llega
 // al navegador. El modelo no escribe en la base — ver chatService.js.
@@ -15,54 +16,9 @@ export const maxDuration = 60;
 // en el navegador. Esto corta antes de parsear cualquier cosa más grande.
 const MAX_BODY_CHARS = 1_700_000;
 
-// Rate limit real (en la base, vía RPC con service_role — misma razón que
-// /api/embed: la IP la determina Vercel, no quien llama). Cada mensaje del
-// chat cuesta plata de verdad, así que el cupo es chico: ver
-// check_chat_rate_limit en supabase/schema.sql (8 por minuto, 80 por día).
-// Si esa función todavía no existe (no se corrió la migración), se usa la
-// de /api/embed como respaldo, para que nunca quede sin límite.
-async function rpcRateLimit(name, ip) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const res = await fetch(`${supabaseUrl}/rest/v1/rpc/${name}`, {
-    method: "POST",
-    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ client_ip: ip }),
-  });
-  if (res.status === 404) return null; // función inexistente
-  if (!res.ok) return true;
-  return (await res.json()) !== false;
-}
-
-// Respaldo en memoria por instancia: no reemplaza al de la base (cada cold
-// start arranca de cero), pero frena una ráfaga aunque Supabase falle.
-const memoryHits = new Map();
-const MEMORY_MAX_PER_MINUTE = 10;
-function memoryRateLimit(ip) {
-  const now = Date.now();
-  const recent = (memoryHits.get(ip) || []).filter((t) => now - t < 60_000);
-  if (recent.length >= MEMORY_MAX_PER_MINUTE) return false;
-  recent.push(now);
-  memoryHits.set(ip, recent);
-  if (memoryHits.size > 5000) memoryHits.clear();
-  return true;
-}
-
-async function checkRateLimit(ip) {
-  if (!ip) return true;
-  if (!memoryRateLimit(ip)) return false;
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return true;
-  try {
-    const chat = await rpcRateLimit("check_chat_rate_limit", ip);
-    if (chat !== null) return chat;
-    const embed = await rpcRateLimit("check_embed_rate_limit", ip);
-    return embed !== false;
-  } catch {
-    // Mismo criterio que el resto de las rutas: un problema de infra ajeno
-    // no tumba la función (el límite en memoria sigue activo).
-    return true;
-  }
-}
+// Cupo de IA por IP (en la base + respaldo en memoria): ver serverAiRateLimit.js.
+// Cada mensaje del chat cuesta plata de verdad, así que el cupo es chico.
+const checkRateLimit = makeAiRateLimit({ maxPerMinute: 10 });
 
 function logEvent(event, data) {
   // Va a los logs de Vercel. Sin contenido de la conversación ni IP.

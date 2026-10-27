@@ -52,11 +52,11 @@ describe("claves secretas", () => {
 
   it("ninguna variable secreta tiene el prefijo NEXT_PUBLIC_", () => {
     const names = new Set(files.flatMap((f) => [...f.text.matchAll(/NEXT_PUBLIC_[A-Z_]+/g)].map((m) => m[0])));
-    expect([...names].filter((n) => /SECRET|SERVICE_ROLE|PRIVATE|TOKEN|ANTHROPIC|HUGGINGFACE/.test(n))).toEqual([]);
+    expect([...names].filter((n) => /SECRET|SERVICE_ROLE|PRIVATE|TOKEN|ANTHROPIC|HUGGINGFACE|GEMINI/.test(n))).toEqual([]);
   });
 
   it("no hay claves reales escritas en el código", () => {
-    const pattern = /sb_secret_[A-Za-z0-9_-]{10,}|sk-ant-[A-Za-z0-9_-]{10,}|hf_[A-Za-z0-9]{30,}|"role"\s*:\s*"service_role"/;
+    const pattern = /sb_secret_[A-Za-z0-9_-]{10,}|sk-ant-[A-Za-z0-9_-]{10,}|hf_[A-Za-z0-9]{30,}|AIza[0-9A-Za-z_-]{30,}|"role"\s*:\s*"service_role"/;
     expect(files.filter((f) => pattern.test(f.text)).map((f) => f.rel)).toEqual([]);
   });
 
