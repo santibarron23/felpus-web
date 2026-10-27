@@ -84,3 +84,13 @@ export function buildShareMessage(report, now = new Date()) {
     .filter(Boolean)
     .join("\n");
 }
+
+// Link para abrir WhatsApp con un mensaje ya escrito (y, opcional, a un
+// número). Va directo a api.whatsapp.com/send y NO por wa.me: la
+// redirección de wa.me cambia los emojis de 4 bytes (🔴 📍 👇) por "�" —
+// verificado el 2026-10-27, wa.me/?text=%F0%9F%94%B4 redirige a
+// ...?text=%EF%BF%BD.
+export function whatsappUrl(text, phone = "") {
+  const digits = String(phone || "").replace(/\D/g, "");
+  return `https://api.whatsapp.com/send?${digits ? `phone=${digits}&` : ""}text=${encodeURIComponent(text)}`;
+}

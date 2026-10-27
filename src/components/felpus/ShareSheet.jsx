@@ -18,7 +18,7 @@ import { Check, Copy, Download, Facebook, Instagram, Loader2, MessageCircle, Sha
 import { useTheme } from "./ThemeProvider";
 import { useFocusTrap } from "./useFocusTrap";
 import { logError } from "../../lib/log";
-import { buildShareMessage } from "../../lib/shareCard";
+import { buildShareMessage, whatsappUrl } from "../../lib/shareCard";
 
 function canShareFiles() {
   try {
@@ -134,7 +134,7 @@ export default function ShareSheet({ report, onClose }) {
       label: "WhatsApp",
       icon: MessageCircle,
       bg: "#25D366",
-      onClick: () => open(`https://wa.me/?text=${encodeURIComponent(`${message}\n${shareUrl}`)}`),
+      onClick: () => open(whatsappUrl(`${message}\n${shareUrl}`)),
     },
     {
       key: "fb",

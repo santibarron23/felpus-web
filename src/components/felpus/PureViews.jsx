@@ -12,6 +12,7 @@ import { createPortal } from "react-dom";
 import Image from "next/image";
 import { petTitle, petDescriptor, nombreReal } from "../../lib/petTitle";
 import { zonaConCiudad } from "../../lib/zona";
+import { whatsappUrl } from "../../lib/shareCard";
 import ReportLocationMap from "../ReportLocationMap";
 import {
   Cat,
@@ -477,7 +478,7 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
                 <div className="flex gap-2">
                   {report.contactoWhatsapp && (
                     <a
-                      href={`https://wa.me/${report.contactoWhatsapp}?text=${encodeURIComponent(contactMessage(report))}`}
+                      href={whatsappUrl(contactMessage(report), report.contactoWhatsapp)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold text-white"
