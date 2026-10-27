@@ -6,6 +6,8 @@ import Link from "next/link";
 import SocialLinks from "./felpus/SocialLinks";
 import FelpusAssistant from "./felpus/FelpusAssistant";
 import ImportPostCard from "./felpus/ImportPostCard";
+import SightingSheet from "./felpus/SightingSheet";
+import { buildSightingDraft, PUNTOS_AVISTAMIENTO } from "../lib/sighting";
 import { findDuplicates, duplicateMessage } from "../lib/duplicates";
 import { REPORT_DRAFT_KEY, serializeReportDraft, parseReportDraft } from "../lib/reportDraft";
 import { importPost } from "../lib/postImportClient";
@@ -533,6 +535,8 @@ export default function FelpusMatcher() {
   // Candado contra el doble clic en Publicar: el estado (submitting) recién
   // deshabilita el botón en el próximo render; el ref corta en el acto.
   const submittingRef = useRef(false);
+  // Hoja "Lo vi suelto" abierta: { vistaDe: reporte de perdida | null }.
+  const [sighting, setSighting] = useState(null);
   // Sugerencias de la IA a partir de la primera foto (especie, color, tamaño,
   // raza). Solo completan lo que la persona no eligió a mano (tocadosRef) y
   // se marcan como sugeridas hasta que las cambie.
@@ -2138,6 +2142,76 @@ export default function FelpusMatcher() {
     if (photoFile) await processPhotoFile(photoFile);
   }
 
+  // Publica y busca coincidencias: lo comparten el formulario (handleSubmit)
+  // y "Lo vi suelto" (handlePublishSighting). Con navigateFirst se pasa a la
+  // pantalla de resultado con la animación ANTES de publicar (formulario); si
+  // no, recién después (la hoja muestra su propio "publicando" y, si falla,
+  // queda abierta con los datos). Si createReport falla, tira el error.
+  async function publishAndMatch(draft, { puntos, navigateFirst = true }) {
+    const opposite = draft.tipo === "perdida" ? "encontrada" : "perdida";
+    const candidates = reports.filter((r) => r.tipo === opposite && !r.resuelto);
+
+    if (navigateFirst) {
+      goToTab("resultado");
+      setScanning(true);
+      setMatchResult(null);
+      setPushSubState("idle");
+    }
+
+    const savedReport = await createReport(draft);
+    if (navigateFirst) {
+      await new Promise((r) => setTimeout(r, SUBMIT_PERCEIVED_DELAY_MS));
+    } else {
+      setPushSubState("idle");
+      goToTab("resultado");
+    }
+
+    const scored = findMatches(savedReport, candidates, { limit: 6 });
+
+    setMatchResult({ source: savedReport, results: scored, hadCandidates: candidates.length > 0 });
+    rememberReportToken(savedReport.id, savedReport.pushToken);
+    setReports((prev) => [savedReport, ...prev]);
+    playSuccess();
+    if ((isPushSupported() || needsIosInstallForPush()) && pushPermissionState() !== "denied") {
+      setAlertOptIn({ reportId: savedReport.id, pushToken: savedReport.pushToken, tipo: savedReport.tipo });
+    }
+    if (user) {
+      await awardPointsRemote(user.id, profile?.nickname || googleDisplayName || user.email, puntos, "reporte", savedReport.id);
+      await loadLeaderboard();
+    } else {
+      pushToast("success", "Reporte publicado. Iniciá sesión con Google para sumar huellitas por tus aportes.");
+    }
+    return savedReport;
+  }
+
+  // "Lo vi suelto" (SightingSheet): mismo camino de publicación que el
+  // formulario. Si falla, el error vuelve a la hoja, que queda abierta.
+  async function handlePublishSighting(input) {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    try {
+      playTap();
+      const draft = buildSightingDraft({
+        ...input,
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        nickname: nickname.trim(),
+        userId: user?.id || null,
+      });
+      await publishAndMatch(draft, { puntos: draft.detalles.avistamiento ? PUNTOS_AVISTAMIENTO : PUNTOS_ENCONTRADA, navigateFirst: false });
+      setSighting(null);
+      try {
+        window.gtag?.("event", "avistamiento_publicado", { tipo: draft.detalles.avistamiento ? "avistamiento" : "encontrada", desde_ficha: !!input.vistaDe });
+      } catch {
+        // sin analytics no pasa nada
+      }
+    } catch (err) {
+      logError(err);
+      throw new Error(describeSubmitError(err));
+    } finally {
+      submittingRef.current = false;
+    }
+  }
+
   // Formulario en blanco: después de publicar o con "Empezar de nuevo".
   // También borra el borrador guardado en el dispositivo.
   function resetReportForm() {
@@ -2299,26 +2373,7 @@ export default function FelpusMatcher() {
         creadoEn: Date.now(),
       };
 
-      const opposite = reportKind === "perdida" ? "encontrada" : "perdida";
-      const candidates = reports.filter((r) => r.tipo === opposite && !r.resuelto);
-
-      goToTab("resultado");
-      setScanning(true);
-      setMatchResult(null);
-      setPushSubState("idle");
-
-      const savedReport = await createReport(draft);
-      await new Promise((r) => setTimeout(r, SUBMIT_PERCEIVED_DELAY_MS));
-
-      const scored = findMatches(savedReport, candidates, { limit: 6 });
-
-      setMatchResult({ source: savedReport, results: scored, hadCandidates: candidates.length > 0 });
-      rememberReportToken(savedReport.id, savedReport.pushToken);
-      setReports((prev) => [savedReport, ...prev]);
-      playSuccess();
-      if ((isPushSupported() || needsIosInstallForPush()) && pushPermissionState() !== "denied") {
-        setAlertOptIn({ reportId: savedReport.id, pushToken: savedReport.pushToken, tipo: savedReport.tipo });
-      }
+      await publishAndMatch(draft, { puntos: reportKind === "perdida" ? PUNTOS_PERDIDA : PUNTOS_ENCONTRADA });
       if (chatOriginRef.current) {
         try {
           window.gtag?.("event", "asistente_reporte_publicado", {
@@ -2329,18 +2384,6 @@ export default function FelpusMatcher() {
         }
         chatOriginRef.current = null;
         setChatPublishedToken((t) => t + 1);
-      }
-      if (user) {
-        await awardPointsRemote(
-          user.id,
-          profile?.nickname || googleDisplayName || user.email,
-          reportKind === "perdida" ? PUNTOS_PERDIDA : PUNTOS_ENCONTRADA,
-          "reporte",
-          savedReport.id
-        );
-        await loadLeaderboard();
-      } else {
-        pushToast("success", "Reporte publicado. Iniciá sesión con Google para sumar huellitas por tus aportes.");
       }
       resetReportForm();
       // Recordar el contacto DESPUÉS del reset de arriba (setForm(emptyForm()))
@@ -2893,6 +2936,20 @@ export default function FelpusMatcher() {
                     Encontré una mascota
                   </button>
                 </div>
+                {/* "Lo vi suelto": quien solo vio una mascota en la calle no
+                    tiene que pasar por el formulario completo (SightingSheet). */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    playTap();
+                    setSighting({ vistaDe: null });
+                  }}
+                  className="w-full mt-2 min-h-[48px] rounded-xl border text-sm font-bold flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                  style={{ borderColor: C.border, color: C.text, background: C.surface }}
+                >
+                  <Eye className="w-4 h-4" style={{ color: C.orangeInk }} aria-hidden="true" />
+                  Vi una mascota suelta · avisá en 3 toques
+                </button>
               </div>
             </div>
 
@@ -3084,6 +3141,18 @@ export default function FelpusMatcher() {
             </div>
 
             <ImportPostCard onImport={handleImportPost} />
+
+            {reportKind === "encontrada" && (
+              <button
+                type="button"
+                onClick={() => setSighting({ vistaDe: null })}
+                className="w-full min-h-[44px] rounded-xl px-3 text-[13px] font-semibold flex items-center justify-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                style={{ background: C.surfaceMuted, color: C.text }}
+              >
+                <Eye className="w-4 h-4" style={{ color: C.orangeInk }} aria-hidden="true" />
+                ¿Solo la viste suelta? Avisá en 3 toques
+              </button>
+            )}
 
             {borradorRecuperado && (
               <div className="flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-[12px]" style={{ background: C.surfaceMuted, color: C.text }} role="status">
@@ -5727,6 +5796,16 @@ export default function FelpusMatcher() {
         openToken={chatOpenToken}
       />
 
+      {sighting && (
+        <SightingSheet
+          vistaDe={sighting.vistaDe}
+          savedWhatsapp={savedWhatsapp || ""}
+          defaultCountry={form.contactoWhatsappCountry || "AR"}
+          onPublish={handlePublishSighting}
+          onClose={() => setSighting(null)}
+        />
+      )}
+
       <DetailModal
         report={detailReport}
         contactStatus={contactStatus}
@@ -5749,6 +5828,10 @@ export default function FelpusMatcher() {
         isLoggedIn={!!user}
         onDelete={handleDeleteReport}
         onFlagReport={handleFlagReport}
+        onSawIt={(r) => {
+          setDetailReport(null);
+          setSighting({ vistaDe: r });
+        }}
         saved={!!detailReport && savedReportIds.has(detailReport.id)}
         onToggleSaved={handleToggleSaved}
         onAskAssistant={() => setChatOpenToken((t) => t + 1)}
