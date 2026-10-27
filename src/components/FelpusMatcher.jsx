@@ -523,6 +523,10 @@ export default function FelpusMatcher() {
   // campo corregir. Esto marca el/los campos puntuales con error y lleva
   // el foco directo ahí.
   const [fieldErrors, setFieldErrors] = useState({});
+  // El formulario se completó desde una captura (ImportPostCard): se marcan
+  // en naranja los datos obligatorios que el aviso no traía, hasta que la
+  // persona los complete. Aparte de fieldErrors, que se borra con cada cambio.
+  const [fromCapture, setFromCapture] = useState(false);
 
   function focusField(id) {
     const el = document.getElementById(id);
@@ -1307,6 +1311,22 @@ export default function FelpusMatcher() {
     !!form.raza.trim() || !!form.nombre.trim() || !!form.edad || !!form.peso || hasMeaningfulDetails;
   const moreDetailsExpanded = showMoreDetails || hasOptionalFieldsFilled;
 
+  const faltaTrasCaptura = fromCapture
+    ? {
+        fotos: form.fotos.length === 0,
+        zona: !form.zona.trim() && (form.lat == null || form.lng == null),
+        sexo: !form.sexo,
+        color: !form.color.trim(),
+      }
+    : {};
+  const bordeCampo = (key) => (fieldErrors[key] ? C.red : faltaTrasCaptura[key] ? C.orange : C.border);
+  const avisoFalta = (key) =>
+    !fieldErrors[key] && faltaTrasCaptura[key] ? (
+      <p className="text-[12px] mt-1 font-semibold" style={{ color: C.orangeInk }}>
+        {key === "fotos" ? "Falta la foto: el aviso no traía una que sirva." : "Falta este dato."}
+      </p>
+    ) : null;
+
   const reportChecklist = useMemo(() => {
     const colorOk = form.color.trim() && (form.color !== "Otro color" || form.colorOtro.trim());
     // whatsappUsingSaved cuenta como "listo" sin esperar el parseo async del
@@ -1978,8 +1998,21 @@ export default function FelpusMatcher() {
   // "Subir captura del aviso": completa el formulario y suma la foto
   // recortada de la captura por el camino de siempre — histograma, embedding
   // y revisión de flyer incluidos.
+  // Después lleva a la persona al primer dato obligatorio que falta.
   async function handleImportPost({ fields, photoFile }) {
     applyChatDraft(fields, { origin: "captura" });
+    setFromCapture(true);
+    const next = { ...form, ...fields.form };
+    const falta = [
+      ["form-fotos", !photoFile && form.fotos.length === 0],
+      // Sin zona en el aviso se conserva la ubicación que ya estaba (applyChatDraft).
+      ["form-zona", !next.zona?.trim() && (form.lat == null || form.lng == null)],
+      ["form-sexo", !next.sexo],
+      ["form-color", !next.color?.trim()],
+    ].find(([, missing]) => missing);
+    // Después del render con los datos nuevos. Solo scroll, sin foco: en el
+    // celular el foco abre el teclado o el selector.
+    setTimeout(() => document.getElementById(falta ? falta[0] : "form-fotos")?.scrollIntoView({ behavior: "smooth", block: "center" }), 150);
     if (photoFile) await processPhotoFile(photoFile);
   }
 
@@ -2165,6 +2198,7 @@ export default function FelpusMatcher() {
         pushToast("success", "Reporte publicado. Iniciá sesión con Google para sumar huellitas por tus aportes.");
       }
       setForm(emptyForm());
+      setFromCapture(false);
       setAccesorioChips([]);
       setReaccionChips([]);
       setMarcaChips([]);
@@ -2913,7 +2947,7 @@ export default function FelpusMatcher() {
               ))}
             </div>
 
-            <ImportPostCard hasPhotos={form.fotos.length > 0} onImport={handleImportPost} />
+            <ImportPostCard onImport={handleImportPost} />
 
             <div
               className={`relative bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl p-3.5 border sticky top-2 z-10 shadow-sm ${justCompletedChecklist ? "felpus-checklist-pop felpus-checklist-glow" : ""}`}
@@ -2978,6 +3012,7 @@ export default function FelpusMatcher() {
                 {fieldErrors.fotos && (
                   <p className="text-[12px] mb-1.5" style={{ color: C.red }}>{fieldErrors.fotos}</p>
                 )}
+                {avisoFalta("fotos")}
                 {/* Pedido del usuario (2026-08-10): evitar que se suban
                     carteles/flyers ya armados o imágenes generadas en vez de
                     fotos reales — no hay forma confiable de detectar esto
@@ -3164,7 +3199,7 @@ export default function FelpusMatcher() {
                     maxLength={100}
                     placeholder="Ej: Tres Cerritos"
                     className="felpus-input flex-1 min-w-0 border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
-                    style={{ borderColor: fieldErrors.zona ? C.red : C.border, color: C.text }}
+                    style={{ borderColor: bordeCampo("zona"), color: C.text }}
                   />
                   <button
                     type="button"
@@ -3185,6 +3220,7 @@ export default function FelpusMatcher() {
                 {fieldErrors.zona && (
                   <p className="text-[12px] mt-1" style={{ color: C.red }}>{fieldErrors.zona}</p>
                 )}
+                {avisoFalta("zona")}
                 <p className="text-[12px] mt-1" style={{ color: C.muted }}>
                   Cuanto más exacta sea la dirección — escrita o marcada en el mapa — mejor va a ser el match.
                 </p>
@@ -3230,7 +3266,7 @@ export default function FelpusMatcher() {
                     value={form.sexo}
                     onChange={(e) => setForm((f) => ({ ...f, sexo: e.target.value }))}
                     className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
-                    style={{ borderColor: fieldErrors.sexo ? C.red : C.border, color: C.text }}
+                    style={{ borderColor: bordeCampo("sexo"), color: C.text }}
                   >
                     <option value="">Elegir sexo...</option>
                     {SEXO_OPTIONS.map((op) => (
@@ -3240,6 +3276,7 @@ export default function FelpusMatcher() {
                   {fieldErrors.sexo && (
                     <p className="text-[12px] mt-1" style={{ color: C.red }}>{fieldErrors.sexo}</p>
                   )}
+                  {avisoFalta("sexo")}
                 </div>
                 <div>
                   <label htmlFor="form-color" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
@@ -3250,13 +3287,14 @@ export default function FelpusMatcher() {
                     value={form.color}
                     onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
                     className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
-                    style={{ borderColor: fieldErrors.color ? C.red : C.border, color: C.text }}
+                    style={{ borderColor: bordeCampo("color"), color: C.text }}
                   >
                     <option value="">Elegir color...</option>
                     {COLOR_OPTIONS.map((c) => (
                       <option key={c} value={c}>{c}</option>
                     ))}
                   </select>
+                  {avisoFalta("color")}
                 </div>
               </div>
 
