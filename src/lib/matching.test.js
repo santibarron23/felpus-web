@@ -16,6 +16,7 @@ import {
   getTierProgress,
   isRecent,
   getBadges,
+  BADGES,
   timeAgo,
   formatFechaAR,
   buildShareText,
@@ -768,6 +769,15 @@ describe("getBadges", () => {
   it("devuelve solo las insignias que corresponden", () => {
     const ids = getBadges({ reportes: 1, reencuentros: 0, hearts: 0, points: 0 }).map((b) => b.id);
     expect(ids).toEqual(["primera-huella"]);
+  });
+
+  it("Rescatista pide 3 reencuentros; los corazones ya no dan insignia", () => {
+    expect(getBadges({ reencuentros: 2, hearts: 50 }).map((b) => b.id)).toEqual(["heroe-reencuentro"]);
+    expect(getBadges({ reencuentros: 3 }).map((b) => b.id)).toEqual(["heroe-reencuentro", "rescatista"]);
+  });
+
+  it("cada insignia tiene el texto de cómo se gana", () => {
+    for (const b of BADGES) expect(b.requisito, b.id).toBeTruthy();
   });
 
   it("devuelve [] si no hay contribuyente", () => {
