@@ -7,6 +7,7 @@ import {
   interpretExtraction,
   importSummary,
   importToFormFields,
+  photoSuggestion,
   GEMINI_RESPONSE_SCHEMA,
 } from "./postImport";
 import { COLOR_OPTIONS } from "./matching";
@@ -201,5 +202,25 @@ describe("importToFormFields / importSummary", () => {
     const s = importSummary(draft, { hasPhoto: true });
     expect(s.completados).toEqual(["perdida/encontrada", "especie", "color"]);
     expect(s.faltan).toEqual(["zona", 'sexo (puede ser "No sé")']);
+  });
+});
+
+describe("modo foto", () => {
+  it("usa el prompt de foto y no pide texto del aviso", () => {
+    const req = buildGeminiRequest({ image: { media_type: "image/jpeg", data: "AA==" }, modo: "foto" });
+    expect(req.systemInstruction.parts[0].text).toMatch(/foto de un perro o un gato/);
+    expect(req.contents[0].parts[0].text).toBe("Foto de la mascota:");
+    expect(req.generationConfig.responseSchema).toBe(GEMINI_RESPONSE_SCHEMA);
+  });
+
+  it("photoSuggestion se queda solo con lo que se ve", () => {
+    const { draft } = interpretExtraction({ ...ejemplo, raza: "Caniche" });
+    expect(photoSuggestion(draft)).toEqual({
+      especie: "perro",
+      color: "Manchado / bicolor",
+      colorDetalle: "negra con manchas blancas",
+      tamano: "mediano",
+      raza: "Caniche",
+    });
   });
 });

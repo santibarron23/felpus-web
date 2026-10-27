@@ -6,6 +6,9 @@ import Link from "next/link";
 import SocialLinks from "./felpus/SocialLinks";
 import FelpusAssistant from "./felpus/FelpusAssistant";
 import ImportPostCard from "./felpus/ImportPostCard";
+import { findDuplicates, duplicateMessage } from "../lib/duplicates";
+import { REPORT_DRAFT_KEY, serializeReportDraft, parseReportDraft } from "../lib/reportDraft";
+import { importPost } from "../lib/postImportClient";
 import {
   PawPrint,
   Search,
@@ -527,6 +530,19 @@ export default function FelpusMatcher() {
   // en naranja los datos obligatorios que el aviso no traía, hasta que la
   // persona los complete. Aparte de fieldErrors, que se borra con cada cambio.
   const [fromCapture, setFromCapture] = useState(false);
+  // Candado contra el doble clic en Publicar: el estado (submitting) recién
+  // deshabilita el botón en el próximo render; el ref corta en el acto.
+  const submittingRef = useRef(false);
+  // Sugerencias de la IA a partir de la primera foto (especie, color, tamaño,
+  // raza). Solo completan lo que la persona no eligió a mano (tocadosRef) y
+  // se marcan como sugeridas hasta que las cambie.
+  const tocadosRef = useRef(new Set());
+  const sugerenciaPedidaRef = useRef(false);
+  const [aiSugeridos, setAiSugeridos] = useState([]);
+  // Aviso de posible duplicado que la persona descartó ("No es la misma").
+  const [dupDescartado, setDupDescartado] = useState(null);
+  // Se recuperó un borrador guardado en este dispositivo (ver reportDraft.js).
+  const [borradorRecuperado, setBorradorRecuperado] = useState(false);
 
   function focusField(id) {
     const el = document.getElementById(id);
@@ -1315,7 +1331,6 @@ export default function FelpusMatcher() {
     ? {
         fotos: form.fotos.length === 0,
         zona: !form.zona.trim() && (form.lat == null || form.lng == null),
-        sexo: !form.sexo,
         color: !form.color.trim(),
       }
     : {};
@@ -1326,6 +1341,78 @@ export default function FelpusMatcher() {
         {key === "fotos" ? "Falta la foto: el aviso no traía una que sirva." : "Falta este dato."}
       </p>
     ) : null;
+
+  // Último form, para callbacks async (sugerencias de la IA).
+  const formRef = useRef(form);
+  formRef.current = form;
+
+  // Posible duplicado (ver duplicates.js): mismo motor de coincidencias,
+  // contra reportes activos del mismo tipo. Solo con foto, zona y color —
+  // antes no hay con qué comparar en serio. Es un aviso: nunca bloquea.
+  const posibleDuplicado = useMemo(() => {
+    if (!form.fotos.length || !form.color || !(form.zona.trim() || (form.lat != null && form.lng != null))) return null;
+    const draft = {
+      id: "_nuevo",
+      tipo: reportKind,
+      especie: form.especie,
+      raza: form.raza.trim(),
+      color: form.color,
+      colorOtro: form.colorOtro,
+      tamano: form.tamano,
+      sexo: form.sexo,
+      edad: form.edad,
+      zona: form.zona.trim(),
+      provincia: form.provincia,
+      lat: form.lat,
+      lng: form.lng,
+      fecha: form.fecha,
+      descripcion: "",
+      fotos: form.fotos.map((f) => ({ hist: f.hist, embedding: f.embedding, dudosa: !!f.check?.dudosa })),
+      creadoEn: Date.now(),
+    };
+    return findDuplicates(draft, reports, { userId: user?.id || null, nickname })[0] || null;
+  }, [form.fotos, form.color, form.colorOtro, form.zona, form.lat, form.lng, form.especie, form.raza, form.tamano, form.sexo, form.edad, form.provincia, form.fecha, reportKind, reports, user, nickname]);
+  const dupVisible = posibleDuplicado && posibleDuplicado.report.id !== dupDescartado ? posibleDuplicado : null;
+
+  // Borrador en el dispositivo: se recupera una sola vez al montar y se
+  // guarda (sin fotos ni contacto) con cada cambio. Ver reportDraft.js.
+  const borradorListoRef = useRef(false);
+  useEffect(() => {
+    let d = null;
+    try {
+      d = parseReportDraft(localStorage.getItem(REPORT_DRAFT_KEY));
+    } catch {
+      // localStorage no disponible
+    }
+    borradorListoRef.current = true;
+    if (!d) return;
+    setReportKind(d.reportKind);
+    setForm((f) => ({ ...f, ...d.form }));
+    setAccesorioChips(d.accesorioChips);
+    setReaccionChips(d.reaccionChips);
+    setMarcaChips(d.marcaChips);
+    setManchaUbicacion(d.manchaUbicacion);
+    setManchaColor(d.manchaColor);
+    setDetalleLibre(d.detalleLibre);
+    if (d.form.lat != null) setGeoStatus("done");
+    // Lo recuperado lo eligió la persona: la IA no lo pisa.
+    if (d.form.especie) tocadosRef.current.add("especie");
+    if (d.form.tamano) tocadosRef.current.add("tamano");
+    setBorradorRecuperado(true);
+  }, []);
+  useEffect(() => {
+    if (!borradorListoRef.current) return;
+    const id = setTimeout(() => {
+      try {
+        const raw = serializeReportDraft({ reportKind, form, accesorioChips, reaccionChips, marcaChips, manchaUbicacion, manchaColor, detalleLibre });
+        if (parseReportDraft(raw)) localStorage.setItem(REPORT_DRAFT_KEY, raw);
+        else localStorage.removeItem(REPORT_DRAFT_KEY);
+      } catch {
+        // localStorage no disponible o lleno: el formulario sigue igual.
+      }
+    }, 600);
+    return () => clearTimeout(id);
+  }, [reportKind, form, accesorioChips, reaccionChips, marcaChips, manchaUbicacion, manchaColor, detalleLibre]);
 
   const reportChecklist = useMemo(() => {
     const colorOk = form.color.trim() && (form.color !== "Otro color" || form.colorOtro.trim());
@@ -1347,10 +1434,9 @@ export default function FelpusMatcher() {
       // 100% aunque el reporte ya fuera 100% publicable — confuso para
       // alguien angustiado que cree que algo obligatorio le falta. Este
       // checklist ahora refleja 1 a 1 lo que handleSubmit exige de verdad.
-      { id: "sexo", label: "Sexo", done: !!form.sexo },
       { id: "contacto", label: "Contacto", done: whatsappOk || !!form.contactoEmail.trim() },
     ];
-  }, [nickname, form.fotos.length, form.zona, form.lat, form.lng, form.color, form.colorOtro, form.sexo, whatsappUsingSaved, whatsappParsed.isValid, form.contactoEmail]);
+  }, [nickname, form.fotos.length, form.zona, form.lat, form.lng, form.color, form.colorOtro, whatsappUsingSaved, whatsappParsed.isValid, form.contactoEmail]);
   const reportProgressDone = reportChecklist.filter((s) => s.done).length;
   const reportProgressPct = Math.round((reportProgressDone / reportChecklist.length) * 100);
 
@@ -1812,8 +1898,10 @@ export default function FelpusMatcher() {
     try {
       const dataUrl = await resizeImageFile(file);
       const hist = await computeHistogram(dataUrl);
+      const esPrimera = form.fotos.length === 0;
       setForm((f) => ({ ...f, fotos: [...f.fotos, { dataUrl, hist, embedding: null }] }));
       revisarFoto(dataUrl);
+      if (esPrimera) sugerirDesdeFoto(dataUrl);
       setVisionStatus("analyzing");
       const embedding = await getImageEmbedding(dataUrl);
       // Se busca la foto por su dataUrl y no por posición: mientras se
@@ -1852,6 +1940,39 @@ export default function FelpusMatcher() {
       logError("No se pudo activar las notificaciones push", e);
       pushToast("error", e?.message || "No pudimos activar las notificaciones.");
     }
+  }
+
+  // Con la primera foto, la IA (Gemini, /api/import-post modo "foto") sugiere
+  // especie, color, tamaño y raza. Corre en paralelo y nunca frena nada: si
+  // falla o no está configurada, no pasa nada. Una vez por formulario, y no
+  // si los datos vinieron de una captura o del asistente.
+  function sugerirDesdeFoto(dataUrl) {
+    if (sugerenciaPedidaRef.current || fromCapture || chatOriginRef.current) return;
+    sugerenciaPedidaRef.current = true;
+    importPost({ image: dataUrl, modo: "foto" }).then((res) => {
+      const s = res.ok ? res.sugerencia : null;
+      if (!s) return;
+      const f = formRef.current;
+      const tocados = tocadosRef.current;
+      const cambios = {};
+      if ((s.especie === "perro" || s.especie === "gato") && !tocados.has("especie") && s.especie !== f.especie) cambios.especie = s.especie;
+      if (s.tamano && !tocados.has("tamano") && s.tamano !== f.tamano) cambios.tamano = s.tamano;
+      if (s.color && !f.color) {
+        cambios.color = s.color;
+        if (s.color === "Otro color" && s.colorDetalle && !f.colorOtro.trim()) cambios.colorOtro = s.colorDetalle;
+      }
+      if (s.raza && !f.raza.trim()) cambios.raza = s.raza;
+      const keys = Object.keys(cambios).filter((k) => k !== "colorOtro");
+      if (!keys.length) return;
+      setForm((prev) => ({ ...prev, ...cambios }));
+      setAiSugeridos(keys);
+    });
+  }
+
+  // La persona eligió un dato a mano: ya no es una sugerencia de la IA.
+  function marcarTocado(key) {
+    tocadosRef.current.add(key);
+    setAiSugeridos((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : prev));
   }
 
   // ¿Foto real o flyer/captura/ilustración? (ver photoCheck.js). Corre en
@@ -2002,12 +2123,13 @@ export default function FelpusMatcher() {
   async function handleImportPost({ fields, photoFile }) {
     applyChatDraft(fields, { origin: "captura" });
     setFromCapture(true);
+    // Los datos ya vienen del aviso: sin sugerencias aparte por la foto.
+    sugerenciaPedidaRef.current = true;
     const next = { ...form, ...fields.form };
     const falta = [
       ["form-fotos", !photoFile && form.fotos.length === 0],
       // Sin zona en el aviso se conserva la ubicación que ya estaba (applyChatDraft).
       ["form-zona", !next.zona?.trim() && (form.lat == null || form.lng == null)],
-      ["form-sexo", !next.sexo],
       ["form-color", !next.color?.trim()],
     ].find(([, missing]) => missing);
     // Después del render con los datos nuevos. Solo scroll, sin foco: en el
@@ -2016,8 +2138,35 @@ export default function FelpusMatcher() {
     if (photoFile) await processPhotoFile(photoFile);
   }
 
+  // Formulario en blanco: después de publicar o con "Empezar de nuevo".
+  // También borra el borrador guardado en el dispositivo.
+  function resetReportForm() {
+    setForm(emptyForm());
+    setFromCapture(false);
+    setAccesorioChips([]);
+    setReaccionChips([]);
+    setMarcaChips([]);
+    setManchaUbicacion("");
+    setManchaColor("");
+    setDetalleLibre("");
+    setGeoStatus("idle");
+    setVisionStatus("idle");
+    setWhatsappForceTouched(false);
+    setAiSugeridos([]);
+    setDupDescartado(null);
+    setBorradorRecuperado(false);
+    tocadosRef.current = new Set();
+    sugerenciaPedidaRef.current = false;
+    try {
+      localStorage.removeItem(REPORT_DRAFT_KEY);
+    } catch {
+      // localStorage no disponible: no había borrador.
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
+    if (submittingRef.current) return;
     setFormError("");
     setFieldErrors({});
     if (!nickname.trim()) {
@@ -2051,13 +2200,8 @@ export default function FelpusMatcher() {
       focusField(!zonaOk ? "form-zona" : "form-color");
       return;
     }
-    if (!form.sexo) {
-      const msg = "Elegí el sexo de la mascota (o \"No sé\" si no lo sabés).";
-      setFormError(msg);
-      setFieldErrors({ sexo: msg });
-      focusField("form-sexo");
-      return;
-    }
+    // Sexo dejó de ser obligatorio (2026-10-27): vacío = no se sabe, igual
+    // que "No sé" para el matching (ver contradiccionesFactor).
     // Con la pill de "contacto guardado" activa, el número ya fue validado
     // cuando se guardó — no hace falta volver a parsearlo. Si no, se usa el
     // último resultado que reportó PhoneInput (ver onParsed), que es la
@@ -2100,6 +2244,7 @@ export default function FelpusMatcher() {
       return;
     }
     playTap();
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -2197,17 +2342,7 @@ export default function FelpusMatcher() {
       } else {
         pushToast("success", "Reporte publicado. Iniciá sesión con Google para sumar huellitas por tus aportes.");
       }
-      setForm(emptyForm());
-      setFromCapture(false);
-      setAccesorioChips([]);
-      setReaccionChips([]);
-      setMarcaChips([]);
-      setManchaUbicacion("");
-      setManchaColor("");
-      setDetalleLibre("");
-      setGeoStatus("idle");
-      setVisionStatus("idle");
-      setWhatsappForceTouched(false);
+      resetReportForm();
       // Recordar el contacto DESPUÉS del reset de arriba (setForm(emptyForm()))
       // y no antes: applySavedWhatsapp mergea national/país en el form de
       // forma async (splitStoredWhatsapp) — si se llamara antes del reset,
@@ -2233,6 +2368,7 @@ export default function FelpusMatcher() {
     } finally {
       setScanning(false);
       setSubmitting(false);
+      submittingRef.current = false;
     }
   }
 
@@ -2949,6 +3085,19 @@ export default function FelpusMatcher() {
 
             <ImportPostCard onImport={handleImportPost} />
 
+            {borradorRecuperado && (
+              <div className="flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-[12px]" style={{ background: C.surfaceMuted, color: C.text }} role="status">
+                <span>Recuperamos lo que habías cargado{form.fotos.length ? "" : " (las fotos hay que volver a subirlas)"}.</span>
+                <button
+                  type="button"
+                  onClick={resetReportForm}
+                  className="shrink-0 min-h-[32px] px-2 font-bold underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50 rounded"
+                >
+                  Empezar de nuevo
+                </button>
+              </div>
+            )}
+
             <div
               className={`relative bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl p-3.5 border sticky top-2 z-10 shadow-sm ${justCompletedChecklist ? "felpus-checklist-pop felpus-checklist-glow" : ""}`}
               style={{ borderColor: C.border }}
@@ -3023,8 +3172,7 @@ export default function FelpusMatcher() {
                     "Es falsa o engañosa" (ver REPORT_FLAG_REASONS en
                     matching.js) y el panel de admin. */}
                 <p className="text-[12px] mb-1.5" style={{ color: C.muted }}>
-                  Una foto real de la mascota, tal cual es — no un cartel, una captura de pantalla ni una imagen generada.
-                  Felpus compara fotos para encontrar coincidencias, y un flyer no sirve para eso.
+                  Una foto real de la mascota (no un flyer ni una captura): es la que se compara para buscar coincidencias.
                 </p>
                 {form.fotos.length > 1 && (
                   <p className="text-[12px] mb-1.5" style={{ color: C.muted }}>
@@ -3222,7 +3370,7 @@ export default function FelpusMatcher() {
                 )}
                 {avisoFalta("zona")}
                 <p className="text-[12px] mt-1" style={{ color: C.muted }}>
-                  Cuanto más exacta sea la dirección — escrita o marcada en el mapa — mejor va a ser el match.
+                  Cuanto más precisa, mejor la búsqueda. Marcá dónde se perdió o se vio, no tu casa.
                 </p>
                 {geoStatus === "done" && (
                   <p className="text-[12px] mt-1" style={{ color: C.green }}>Ubicación capturada — mejora mucho la precisión del match.</p>
@@ -3259,24 +3407,20 @@ export default function FelpusMatcher() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label htmlFor="form-sexo" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
-                    Sexo <span style={{ color: C.red }}>*</span>
+                    Sexo
                   </label>
                   <select
                     id="form-sexo"
                     value={form.sexo}
                     onChange={(e) => setForm((f) => ({ ...f, sexo: e.target.value }))}
                     className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
-                    style={{ borderColor: bordeCampo("sexo"), color: C.text }}
+                    style={{ borderColor: C.border, color: C.text }}
                   >
-                    <option value="">Elegir sexo...</option>
+                    <option value="">Sin dato</option>
                     {SEXO_OPTIONS.map((op) => (
                       <option key={op} value={op}>{op}</option>
                     ))}
                   </select>
-                  {fieldErrors.sexo && (
-                    <p className="text-[12px] mt-1" style={{ color: C.red }}>{fieldErrors.sexo}</p>
-                  )}
-                  {avisoFalta("sexo")}
                 </div>
                 <div>
                   <label htmlFor="form-color" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
@@ -3285,7 +3429,10 @@ export default function FelpusMatcher() {
                   <select
                     id="form-color"
                     value={form.color}
-                    onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
+                    onChange={(e) => {
+                      marcarTocado("color");
+                      setForm((f) => ({ ...f, color: e.target.value }));
+                    }}
                     className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
                     style={{ borderColor: bordeCampo("color"), color: C.text }}
                   >
@@ -3328,7 +3475,10 @@ export default function FelpusMatcher() {
                   <select
                     id="form-especie"
                     value={form.especie}
-                    onChange={(e) => setForm((f) => ({ ...f, especie: e.target.value }))}
+                    onChange={(e) => {
+                      marcarTocado("especie");
+                      setForm((f) => ({ ...f, especie: e.target.value }));
+                    }}
                     className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
                     style={{ borderColor: C.border, color: C.text }}
                   >
@@ -3342,7 +3492,10 @@ export default function FelpusMatcher() {
                   <select
                     id="form-tamano"
                     value={form.tamano}
-                    onChange={(e) => setForm((f) => ({ ...f, tamano: e.target.value }))}
+                    onChange={(e) => {
+                      marcarTocado("tamano");
+                      setForm((f) => ({ ...f, tamano: e.target.value }));
+                    }}
                     className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
                     style={{ borderColor: C.border, color: C.text }}
                   >
@@ -3352,6 +3505,12 @@ export default function FelpusMatcher() {
                   </select>
                 </div>
               </div>
+              {aiSugeridos.length > 0 && (
+                <p className="text-[12px] -mt-2 flex items-center gap-1" style={{ color: C.muted }}>
+                  <Sparkles className="w-3.5 h-3.5 shrink-0" style={{ color: C.orangeInk }} aria-hidden="true" />
+                  {`Sugerido por la foto: ${aiSugeridos.map((k) => ({ especie: "especie", color: "color", tamano: "tamaño", raza: "raza" })[k]).join(", ")}. Podés cambiarlo.`}
+                </p>
+              )}
 
               <div>
                 <label id="form-contacto-label" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
@@ -3450,14 +3609,16 @@ export default function FelpusMatcher() {
                 <div className="overflow-hidden">
                   <div className="space-y-4">
                     <div>
-                      <label htmlFor="form-nombre" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>Nombre de la mascota (si lo sabés)</label>
+                      <label htmlFor="form-nombre" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
+                        {reportKind === "encontrada" ? "Nombre (si tiene chapita)" : "Nombre de la mascota"}
+                      </label>
                       <input
                         id="form-nombre"
                         type="text"
                         value={form.nombre}
                         onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
                         maxLength={60}
-                        placeholder="Dejalo vacío si no lo sabés"
+                        placeholder={reportKind === "encontrada" ? "Si no lo sabés, dejalo vacío" : "Ej: Luna"}
                         className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
                         style={{ borderColor: C.border, color: C.text }}
                       />
@@ -3756,6 +3917,43 @@ export default function FelpusMatcher() {
                   </div>
                 </div>
               </div>
+
+              {/* Posible duplicado (duplicates.js): aviso, nunca un bloqueo —
+                  Publicar sigue funcionando igual. */}
+              {dupVisible && (
+                <div className="rounded-xl border p-3 flex gap-3" style={{ borderColor: C.border, background: C.surfaceSubtle }} role="status">
+                  {dupVisible.report.foto && (
+                    <div className="relative w-14 h-14 rounded-lg overflow-hidden shrink-0" style={{ background: C.surfaceMuted }}>
+                      <Image src={dupVisible.report.foto} alt={reportPhotoAlt(dupVisible.report)} fill sizes="56px" className="object-cover" />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold" style={{ color: C.text }}>{duplicateMessage(dupVisible.kind).title}</p>
+                    <p className="text-[12px] truncate" style={{ color: C.text }}>
+                      {petTitle(dupVisible.report)} · {zonaConCiudad(dupVisible.report)}
+                    </p>
+                    <p className="text-[12px] leading-snug mt-0.5" style={{ color: C.muted }}>{duplicateMessage(dupVisible.kind).body}</p>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => setDetailReport(dupVisible.report)}
+                        className="min-h-[36px] px-3 rounded-lg text-[12px] font-bold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                        style={{ background: C.emphasisBg }}
+                      >
+                        {dupVisible.propio ? "Ver mi reporte" : "Ver y aportar datos"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDupDescartado(dupVisible.report.id)}
+                        className="min-h-[36px] px-3 rounded-lg border text-[12px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                        style={{ borderColor: C.border, color: C.text, background: C.surface }}
+                      >
+                        No es la misma
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {formError && (
                 <p className="text-xs rounded-lg px-3 py-2" style={{ color: C.redDark, background: C.dangerBg }}>
