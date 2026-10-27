@@ -167,6 +167,9 @@ const nextConfig = {
   // no se bajan en el build (ver .npmrc).
   // /api/photo-check (CLIP, ver photoCheck.js) usa lo mismo.
   outputFileTracingIncludes: {
+    // Fuentes y logos de las imágenes al compartir (shareImage.jsx los
+    // lee con fs desde assets/).
+    "/r/**": ["assets/**", "public/og-image.png"],
     "/api/embed": ONNX_RUNTIME_FILES,
     // + Tesseract (OCR): el worker y el wasm se cargan con rutas que el
     // rastreo de Next no sigue.

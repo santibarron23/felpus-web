@@ -29,21 +29,20 @@ import {
   PartyPopper,
   Trash2,
   Facebook,
-  Twitter,
   Instagram,
-  Copy,
   AlertCircle,
   RefreshCw,
   Check,
   Flag,
   Bookmark,
 } from "lucide-react";
-import { scoreLabel, isRecent, formatFechaAR, buildShareText, reportPhotoAlt, COLOR_OPTIONS, REPORT_FLAG_REASONS, fechaLabel, getRazaOptions, RAZA_ESPECIALES } from "../../lib/matching";
+import { scoreLabel, isRecent, formatFechaAR, reportPhotoAlt, COLOR_OPTIONS, REPORT_FLAG_REASONS, fechaLabel, getRazaOptions, RAZA_ESPECIALES } from "../../lib/matching";
 import { SITE_URL } from "../../lib/site";
 import { logError } from "../../lib/log";
 import { useFocusTrap } from "./useFocusTrap";
 import { displayColor } from "../../lib/theme";
 import { useTheme } from "./ThemeProvider";
+import ShareSheet from "./ShareSheet";
 
 // Los tres estados con el MISMO tamaño, formato y jerarquía, distinguidos
 // por color y por texto (nunca solo por color): PERDIDA rojo, ENCONTRADA
@@ -750,158 +749,17 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
   );
 }
 
+// Botón "Compartir": abre la hoja de compartir (ShareSheet.jsx), con la
+// vista previa del link, WhatsApp, Facebook, historias de Instagram, copiar
+// enlace y el resto de las apps del celular.
 export function ShareButton({ report, className, style, children, wrapperClassName = "relative inline-block" }) {
-  const C = useTheme();
   const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [menuPos, setMenuPos] = useState(null);
-  const btnRef = useRef(null);
-
-  // /r/<id> (no /?r=<id>) — esa ruta genera meta etiquetas Open Graph del
-  // lado del servidor con la foto real de ESTA mascota, para que
-  // WhatsApp/Facebook/X armen la vista previa con la imagen correcta en vez
-  // del banner genérico de la marca (que es lo único que puede leer un
-  // crawler desde la SPA, ya que no ejecuta JavaScript).
-  const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/r/${encodeURIComponent(report.id)}` : "";
-  const shareText = buildShareText(report);
-  const [sharingInstagram, setSharingInstagram] = useState(false);
-  const MENU_WIDTH = 192; // w-48
-
-  // En mobile (Web Share API disponible) preferimos la hoja nativa del SO:
-  // muestra TODAS las apps instaladas que aceptan compartir (Telegram, SMS,
-  // Mail, Instagram, etc.), no solo las 4 fijas de nuestro menú. Antes
-  // siempre abríamos el menú propio, que en mobile se sentía limitado
-  // ("no me deja ver todas las opciones de compartir"). El menú propio queda
-  // como respaldo para desktop o si la hoja nativa no está disponible.
-  async function toggleOpen() {
-    if (open) {
-      setOpen(false);
-      return;
-    }
-    if (typeof navigator !== "undefined" && navigator.share) {
-      try {
-        await navigator.share({ title: "Felpus", text: shareText, url: shareUrl });
-        return;
-      } catch (e) {
-        if (e?.name === "AbortError") return; // el usuario cerró la hoja nativa, no mostrar el menú propio
-        logError("No se pudo compartir con la hoja nativa", e);
-      }
-    }
-    if (btnRef.current) {
-      const rect = btnRef.current.getBoundingClientRect();
-      setMenuPos({
-        top: rect.bottom + 4,
-        left: Math.min(Math.max(8, rect.right - MENU_WIDTH), window.innerWidth - MENU_WIDTH - 8),
-      });
-    }
-    setOpen(true);
-  }
-
-  function openWindow(url) {
-    window.open(url, "_blank", "noopener,noreferrer");
-    setOpen(false);
-  }
-
-  async function copyLink() {
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch (e) {
-      logError(e);
-    }
-  }
-
-  // Instagram no tiene una URL web pública para mandar directo a "Historias"
-  // con una imagen — la única forma real de lograrlo desde un sitio es el
-  // selector nativo del celular (Web Share API con archivos), donde
-  // Instagram ya aparece como una opción y ahí sí ofrece "Agregar a tu
-  // historia". En desktop (sin ese selector) se abre la foto en una
-  // pestaña nueva para guardarla y subirla a mano.
-  async function shareToInstagram() {
-    setSharingInstagram(true);
-    try {
-      const res = await fetch(report.foto);
-      const blob = await res.blob();
-      const file = new File([blob], "felpus-mascota.jpg", { type: blob.type || "image/jpeg" });
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], text: shareText });
-        setOpen(false);
-        return;
-      }
-    } catch (e) {
-      if (e?.name === "AbortError") {
-        setOpen(false);
-        return;
-      }
-      logError("No se pudo compartir a Instagram", e);
-    } finally {
-      setSharingInstagram(false);
-    }
-    window.open(report.foto, "_blank", "noopener,noreferrer");
-    setOpen(false);
-  }
-
   return (
     <div className={wrapperClassName}>
-      <button ref={btnRef} type="button" onClick={toggleOpen} className={className} style={style}>
+      <button type="button" onClick={() => setOpen(true)} className={className} style={style}>
         {children}
       </button>
-      {open &&
-        menuPos &&
-        createPortal(
-          <>
-            <div className="fixed inset-0 z-[70]" onClick={() => setOpen(false)} />
-            <div
-              className="fixed z-[71] bg-white dark:bg-[var(--felpus-dark-card)] rounded-xl border shadow-lg py-1 text-xs"
-              style={{ borderColor: C.border, top: menuPos.top, left: menuPos.left, width: MENU_WIDTH }}
-            >
-            <button
-              onClick={() => openWindow(`https://wa.me/?text=${encodeURIComponent(`${shareText}\n${shareUrl}`)}`)}
-              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[var(--felpus-surface-subtle)] dark:hover:bg-[var(--felpus-dark-hover)] font-semibold"
-              style={{ color: C.text }}
-            >
-              <Share2 className="w-3.5 h-3.5" /> WhatsApp
-            </button>
-            <button
-              onClick={() =>
-                openWindow(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`)
-              }
-              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[var(--felpus-surface-subtle)] dark:hover:bg-[var(--felpus-dark-hover)] font-semibold"
-              style={{ color: C.text }}
-            >
-              <Facebook className="w-3.5 h-3.5" /> Facebook
-            </button>
-            <button
-              onClick={() =>
-                openWindow(
-                  `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`
-                )
-              }
-              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[var(--felpus-surface-subtle)] dark:hover:bg-[var(--felpus-dark-hover)] font-semibold"
-              style={{ color: C.text }}
-            >
-              <Twitter className="w-3.5 h-3.5" /> X / Twitter
-            </button>
-            <button
-              onClick={shareToInstagram}
-              disabled={sharingInstagram}
-              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[var(--felpus-surface-subtle)] dark:hover:bg-[var(--felpus-dark-hover)] font-semibold disabled:opacity-60"
-              style={{ color: C.text }}
-            >
-              {sharingInstagram ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Instagram className="w-3.5 h-3.5" />} Instagram
-            </button>
-            <button
-              onClick={copyLink}
-              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[var(--felpus-surface-subtle)] dark:hover:bg-[var(--felpus-dark-hover)] font-semibold"
-              style={{ color: copied ? C.green : C.text }}
-            >
-              <Copy className="w-3.5 h-3.5" /> {copied ? "¡Copiado!" : "Copiar enlace"}
-            </button>
-            </div>
-          </>,
-          document.body
-        )}
+      {open && <ShareSheet report={report} onClose={() => setOpen(false)} />}
     </div>
   );
 }
