@@ -584,16 +584,26 @@ export async function updateProfile(userId, { nickname, whatsapp, ...extra }) {
   // Alias y "acepto apoyos": igual que el WhatsApp, con un UPDATE aparte —
   // alias_pago no se puede leer con la clave pública (ver la migración
   // 20261026_02) y el upsert de arriba lo rechazaría.
-  if ("alias_pago" in extra || "acepta_apoyos" in extra) {
+  if ("alias_pago" in extra || "acepta_apoyos" in extra || "link_cobro" in extra) {
     const patch = {};
     if ("alias_pago" in extra) patch.alias_pago = extra.alias_pago || null;
+    if ("link_cobro" in extra) patch.link_cobro = extra.link_cobro || null;
     if ("acepta_apoyos" in extra) patch.acepta_apoyos = !!extra.acepta_apoyos;
     const { error: supError } = await supabase.from(CONTRIBUTORS_TABLE).update(patch).eq("id", userId);
     if (supError) {
+      if (isMissingColumnError(supError, "link_cobro")) {
+        throw new Error("El link de cobro todavía no está disponible. Probá de nuevo más tarde.");
+      }
       if (isSupportColumnsError(supError) || isMissingColumnError(supError, "alias_pago")) {
         throw new Error("Los apoyos todavía no están disponibles. Probá de nuevo más tarde.");
       }
-      if (String(supError.code) === "23514") throw new Error("Revisá el alias: tiene que ser un CBU/CVU de 22 números o un alias de 6 a 20 caracteres.");
+      if (String(supError.code) === "23514") {
+        throw new Error(
+          String(supError.message || "").includes("link_cobro")
+            ? "Revisá el link de cobro: tiene que ser de Mercado Pago o de Cafecito."
+            : "Revisá el alias: tiene que ser un CBU/CVU de 22 números o un alias de 6 a 20 caracteres."
+        );
+      }
       throw supError;
     }
   }
@@ -871,7 +881,7 @@ export async function fetchMySupport() {
     throw error;
   }
   const row = Array.isArray(data) ? data[0] : data;
-  return { alias: row?.alias_pago || "", acepta: !!row?.acepta_apoyos };
+  return { alias: row?.alias_pago || "", acepta: !!row?.acepta_apoyos, link: row?.link_cobro || "" };
 }
 
 async function postJson(url, body) {
@@ -881,7 +891,8 @@ async function postJson(url, body) {
   return data;
 }
 
-// Alias de alguien para apoyarle (pasa por el servidor, con límite por IP).
+// Alias y link de cobro de alguien para apoyarle (pasa por el servidor, con
+// límite por IP): { alias, link, nickname }.
 export function fetchSupportAlias(contributorId) {
   return postJson("/api/support-alias", { contributorId });
 }

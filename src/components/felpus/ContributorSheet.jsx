@@ -2,15 +2,18 @@
 
 // Ficha de un colaborador (2026-10-26): se abre al tocar a alguien en el
 // ranking. Muestra quién es y qué aportó, y si acepta apoyos, el botón
-// "Apoyar" (abre SupportModal con su alias).
-import { useEffect, useRef } from "react";
+// "Apoyar" (abre SupportModal con su alias). Si además cargó un link de
+// cobro, el botón principal es "Pagar con Mercado Pago / Cafecito" (2026-10-27).
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Camera, Flame, Heart, HeartHandshake, MapPin, PartyPopper, X } from "lucide-react";
+import { Camera, Flame, Heart, HeartHandshake, Loader2, MapPin, PartyPopper, X } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
 import { useFocusTrap } from "./useFocusTrap";
 import { Avatar } from "./Ranking";
 import { getBadges, getTier } from "../../lib/matching";
 import { formatUbicacion } from "../../lib/profile";
+import { fetchSupportAlias } from "../../lib/store";
+import { PayLinkButton } from "./SupportModal";
 
 export default function ContributorSheet({ contributor: u, rank, isMe, avatarUrl, onSupport, onClose }) {
   const C = useTheme();
@@ -19,6 +22,21 @@ export default function ContributorSheet({ contributor: u, rank, isMe, avatarUrl
   const tier = getTier(u.points || 0, C);
   const badges = getBadges(u);
   const ubicacion = formatUbicacion(u, { conPais: true });
+  // Alias y link de cobro: se piden al abrir la ficha (solo si acepta
+  // apoyos) y se le pasan a SupportModal para no pedirlos dos veces.
+  const wantsSupport = !isMe && !!u.acepta_apoyos;
+  const [support, setSupport] = useState({ loading: wantsSupport, data: null });
+
+  useEffect(() => {
+    if (!wantsSupport) return;
+    let cancelled = false;
+    fetchSupportAlias(u.id)
+      .then((data) => !cancelled && setSupport({ loading: false, data }))
+      .catch(() => !cancelled && setSupport({ loading: false, data: null }));
+    return () => {
+      cancelled = true;
+    };
+  }, [wantsSupport, u.id]);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -97,16 +115,35 @@ export default function ContributorSheet({ contributor: u, rank, isMe, avatarUrl
           </p>
         ) : u.acepta_apoyos ? (
           <div className="space-y-1.5">
-            <button
-              type="button"
-              onClick={() => onSupport(u)}
-              className="w-full flex items-center justify-center gap-2 rounded-xl py-3.5 text-base font-bold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
-              style={{ background: C.redSolid }}
-            >
-              <HeartHandshake className="w-5 h-5" aria-hidden="true" /> Apoyar a {u.nickname}
-            </button>
+            {support.loading ? (
+              <p className="flex items-center justify-center gap-2 text-sm py-3.5" style={{ color: C.muted }}>
+                <Loader2 className="w-4 h-4 animate-spin" /> Cargando…
+              </p>
+            ) : support.data?.link ? (
+              <>
+                <PayLinkButton link={support.data.link} />
+                <button
+                  type="button"
+                  onClick={() => onSupport(u, support.data)}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold border"
+                  style={{ borderColor: C.border, color: C.text }}
+                >
+                  <HeartHandshake className="w-4 h-4" aria-hidden="true" />
+                  {support.data.alias ? "Ver alias y más opciones" : "Más opciones"}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onSupport(u, support.data || undefined)}
+                className="w-full flex items-center justify-center gap-2 rounded-xl py-3.5 text-base font-bold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                style={{ background: C.redSolid }}
+              >
+                <HeartHandshake className="w-5 h-5" aria-hidden="true" /> Apoyar a {u.nickname}
+              </button>
+            )}
             <p className="text-[12px] text-center" style={{ color: C.muted }}>
-              Un regalo voluntario de persona a persona. Felpus no cobra nada.
+              Un regalo voluntario de persona a persona. Felpus no cobra nada. Nunca pagues para recuperar a tu mascota.
             </p>
           </div>
         ) : (
