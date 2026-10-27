@@ -2585,9 +2585,13 @@ export default function FelpusMatcher() {
         {activeTab === "inicio" && (
           <div key="inicio" className="max-w-2xl mx-auto space-y-5 felpus-fadein">
             <div className="bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl border overflow-hidden shadow-sm" style={{ borderColor: C.border }}>
-              <div className="p-5 text-center">
+              {/* Compacto a propósito (2026-10-27): ilustración, espacios y
+                  botones más chicos para que en celular se vea más contenido
+                  útil sin scrollear. La IA va como titular porque es el
+                  diferencial de Felpus; el lema queda como antetítulo. */}
+              <div className="p-4 sm:p-5 text-center">
                 <div
-                  className="relative w-28 h-28 rounded-full overflow-hidden mx-auto mb-2 border-4"
+                  className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden mx-auto mb-2 border-[3px]"
                   style={{ borderColor: C.cream }}
                 >
                   <Image
@@ -2599,24 +2603,31 @@ export default function FelpusMatcher() {
                     style={{ objectPosition: "50% 35%" }}
                   />
                 </div>
-                <h2 className="felpus-display text-xl sm:text-2xl mb-2" style={{ color: C.text }}>
+                <p className="text-xs font-semibold mb-1" style={{ color: C.muted }}>
                   Cada mascota merece volver a casa
-                </h2>
-                <p className="text-sm leading-relaxed max-w-sm mx-auto" style={{ color: C.muted }}>
-                  {/* Corto a propósito: entra en 2 renglones aun en celulares de 320 px. */}
-                  Subí una foto y Felpus busca coincidencias en toda la comunidad.
                 </p>
-                <div className="flex gap-2 mt-4">
+                <h2 className="felpus-display text-xl sm:text-2xl leading-tight mb-1.5 max-w-md mx-auto" style={{ color: C.text }}>
+                  Encontrá a tu mascota con ayuda de{" "}
+                  <span className="whitespace-nowrap" style={{ color: C.red }}>
+                    <Sparkles className="inline w-5 h-5 -mt-1 mr-0.5" aria-hidden="true" />
+                    inteligencia artificial
+                  </span>
+                  .
+                </h2>
+                <p className="text-sm leading-snug max-w-sm mx-auto" style={{ color: C.muted }}>
+                  Subí una foto y buscamos posibles coincidencias por vos.
+                </p>
+                <div className="flex gap-2 mt-3">
                   <button
                     onClick={() => {
                       playTap();
                       setReportKind("perdida");
                       goToTab("reportar");
                     }}
-                    className="felpus-cta flex-1 text-white text-sm font-bold rounded-xl py-3 transition-all duration-200 flex flex-col items-center justify-center gap-1 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--felpus-focus)]"
+                    className="felpus-cta flex-1 min-h-[48px] text-white text-sm font-bold leading-tight rounded-xl px-2 py-2.5 transition-all duration-200 flex items-center justify-center gap-1.5 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--felpus-focus)]"
                     style={{ background: C.redSolid }}
                   >
-                    <Heart className="w-5 h-5" fill="currentColor" />
+                    <Heart className="w-4 h-4 shrink-0" fill="currentColor" />
                     Perdí a mi mascota
                   </button>
                   <button
@@ -2628,10 +2639,10 @@ export default function FelpusMatcher() {
                     // Antes ring-[#E36525] — un naranja descartado en la
                     // auditoría de contraste (ver theme.js); además no
                     // coincidía con el color real del botón (C.orangeInk).
-                    className="felpus-cta flex-1 text-white text-sm font-bold rounded-xl py-3 transition-all duration-200 flex flex-col items-center justify-center gap-1 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--felpus-focus)]"
+                    className="felpus-cta flex-1 min-h-[48px] text-white text-sm font-bold leading-tight rounded-xl px-2 py-2.5 transition-all duration-200 flex items-center justify-center gap-1.5 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--felpus-focus)]"
                     style={{ background: C.orangeInkSolid }}
                   >
-                    <MapPin className="w-5 h-5" fill="currentColor" strokeWidth={1.5} />
+                    <MapPin className="w-4 h-4 shrink-0" fill="currentColor" strokeWidth={1.5} />
                     Encontré una mascota
                   </button>
                 </div>
@@ -2640,16 +2651,15 @@ export default function FelpusMatcher() {
 
             {/* Franja de actividad — le da pulso a la app con datos reales
                 (nada simulado): cuántos reportes hay activos ahora, cuántos
-                se publicaron en las últimas 24hs, y cuántas mascotas ya
-                volvieron a casa gracias a la comunidad. */}
-            <div className="grid grid-cols-3 gap-2.5">
+                se publicaron en los últimos 7 días, y cuántas mascotas ya
+                volvieron a casa gracias a la comunidad. Número + texto en un
+                solo renglón ("150 mascotas en búsqueda"); en celular las
+                píldoras pasan a dos renglones en vez de cortar el texto. */}
+            <div className="flex flex-wrap justify-center gap-2">
               {[
                 {
                   value: activeReports.length,
-                  // Corto para que entre en una línea en celular; el lector de
-                  // pantalla sigue diciendo "reportes activos".
-                  label: "Activos",
-                  aria: "reportes activos",
+                  label: activeReports.length === 1 ? "mascota en búsqueda" : "mascotas en búsqueda",
                   color: C.red,
                   onClick: () => {
                     setFilterTipo("todos");
@@ -2660,8 +2670,10 @@ export default function FelpusMatcher() {
                   },
                 },
                 {
+                  // "Esta semana" = creados en los últimos 7 días corridos
+                  // (last7dCount), no desde el lunes.
                   value: last7dCount,
-                  label: "Últimos 7 días",
+                  label: last7dCount === 1 ? "reporte esta semana" : "reportes esta semana",
                   color: C.orangeInk,
                   onClick: () => {
                     setFilterTipo("todos");
@@ -2673,7 +2685,7 @@ export default function FelpusMatcher() {
                 },
                 {
                   value: resueltas.length,
-                  label: "Reencontradas",
+                  label: resueltas.length === 1 ? "reencuentro" : "reencuentros",
                   color: C.green,
                   onClick: () => {
                     setFilterTipo("resuelto");
@@ -2694,16 +2706,16 @@ export default function FelpusMatcher() {
                   // El número cuenta hacia arriba con una animación (AnimatedNumber);
                   // sin aria-label estático, un lector de pantalla podía anunciar
                   // cada valor intermedio de la cuenta en vez de solo el final.
-                  aria-label={`${s.value} — ${s.aria || s.label}`}
-                  className="felpus-card-hover bg-white dark:bg-[var(--felpus-dark-card)] rounded-xl border shadow-sm p-3 text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                  aria-label={`${s.value} ${s.label}`}
+                  className="felpus-card-hover min-h-[44px] bg-white dark:bg-[var(--felpus-dark-card)] rounded-full border shadow-sm px-3 py-2 inline-flex items-center gap-1.5 whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
                   style={{ borderColor: C.border }}
                 >
-                  <p className="felpus-mono text-xl font-bold" style={{ color: s.color }} aria-hidden="true">
+                  <span className="felpus-mono text-base font-bold" style={{ color: s.color }} aria-hidden="true">
                     <AnimatedNumber value={s.value} />
-                  </p>
-                  <p className="text-[11px] font-semibold leading-tight mt-0.5" style={{ color: C.muted }} aria-hidden="true">
+                  </span>
+                  <span className="text-xs font-semibold" style={{ color: C.muted }} aria-hidden="true">
                     {s.label}
-                  </p>
+                  </span>
                 </button>
               ))}
             </div>
