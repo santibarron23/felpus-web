@@ -1,4 +1,4 @@
-// Lado del navegador de "Importar de Facebook": achicar la captura antes de
+// Lado del navegador de "Leer la captura de un aviso": achicarla antes de
 // mandarla, recortar la foto de la mascota y llamar a /api/import-post.
 // Lo puro (validación, mapeo al formulario) está en postImport.js.
 
@@ -40,7 +40,7 @@ function canvasToFile(canvas, name) {
   });
 }
 
-// Imagen (File o data URL) -> File listo para el procesamiento de fotos de
+// Imagen (File) -> File listo para el procesamiento de fotos de
 // siempre (processPhotoFile). Con box ({top,left,bottom,right} en 0..1)
 // recorta la foto de la mascota de la captura.
 export function toPhotoFile(source, box = null) {
@@ -57,8 +57,7 @@ export function toPhotoFile(source, box = null) {
   });
 }
 
-// { url } o { image } -> { ok: true, draft, box, photo, source } o
-// { ok: false, code, error }.
+// { image } -> { ok: true, draft, box } o { ok: false, code, error }.
 export async function importPost(payload) {
   try {
     const res = await fetch("/api/import-post", {
@@ -67,7 +66,7 @@ export async function importPost(payload) {
       body: JSON.stringify(payload),
     });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok) return { ok: false, code: body.code || "error", error: body.error || "No pudimos leer la publicación." };
+    if (!res.ok) return { ok: false, code: body.code || "error", error: body.error || "No pudimos leer la captura." };
     return { ok: true, ...body };
   } catch {
     return { ok: false, code: "network", error: "Sin conexión. Probá de nuevo." };

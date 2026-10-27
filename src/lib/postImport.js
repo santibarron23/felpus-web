@@ -1,16 +1,15 @@
-// Lógica pura de "Importar una publicación de Facebook" (/api/import-post):
-// qué links se aceptan, cómo se leen los metadatos públicos (og:*), qué se le
-// pide a Gemini y cómo se valida lo que devuelve antes de que toque el
-// formulario. Separado de la ruta para poder testearlo sin red ni API key.
+// Lógica pura de "Leer la captura de una publicación" (/api/import-post):
+// qué se le pide a Gemini y cómo se valida lo que devuelve antes de que toque
+// el formulario. Separado de la ruta para poder testearlo sin red ni API key.
 //
 // Lo que devuelve Gemini termina en el MISMO borrador que usa el Asistente
 // Felpus (normalizeDraft / draftToFormFields en chatbot.js): una sola
 // validación contra las opciones reales del formulario. Nada se publica
 // desde acá — la persona revisa el formulario y toca Publicar como siempre.
 //
-// Protección de datos: el link no se guarda en ningún lado, y del texto del
-// post se borran teléfonos, mails, links y @usuarios (el contacto se lo pide
-// Felpus a quien publica, como en cualquier reporte).
+// Protección de datos: la captura no se guarda en ningún lado, y de los
+// textos se borran teléfonos, mails, links y @usuarios (el contacto se lo
+// pide Felpus a quien publica, como en cualquier reporte).
 import { COLOR_OPTIONS, TAMANO_OPTIONS } from "./matching";
 import {
   normalizeDraft,
@@ -29,111 +28,6 @@ export const DEFAULT_GEMINI_MODEL = "gemini-flash-lite-latest";
 export const FALLBACK_GEMINI_MODEL = "gemini-flash-latest";
 
 export const MAX_POST_TEXT_CHARS = 3000;
-export const MAX_PAGE_BYTES = 1_500_000;
-export const MAX_REMOTE_IMAGE_BYTES = 5 * 1024 * 1024;
-
-// ---------------------------------------------------------------------------
-// Links
-// ---------------------------------------------------------------------------
-const FACEBOOK_HOSTS = new Set([
-  "facebook.com",
-  "www.facebook.com",
-  "m.facebook.com",
-  "web.facebook.com",
-  "mbasic.facebook.com",
-  "touch.facebook.com",
-  "fb.com",
-  "www.fb.com",
-  "fb.me",
-  "fb.watch",
-]);
-
-// Devuelve el link normalizado (https, sin usuario/puerto/#) o null si no es
-// de Facebook. Se usa en cada salto de redirección, no solo en el primero:
-// así la función del servidor nunca termina pidiendo otra cosa (SSRF).
-export function normalizeFacebookUrl(value) {
-  if (typeof value !== "string") return null;
-  const raw = value.trim();
-  if (!raw || raw.length > 2000) return null;
-  let u;
-  try {
-    u = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
-  } catch {
-    return null;
-  }
-  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
-  if (u.username || u.password || u.port) return null;
-  const host = u.hostname.toLowerCase();
-  if (!FACEBOOK_HOSTS.has(host)) return null;
-  u.protocol = "https:";
-  u.hash = "";
-  return u.toString();
-}
-
-// Las fotos de las publicaciones las sirve el CDN de Facebook.
-export function isAllowedImageUrl(value) {
-  let u;
-  try {
-    u = new URL(value);
-  } catch {
-    return false;
-  }
-  if (u.protocol !== "https:" || u.username || u.password || u.port) return false;
-  const host = u.hostname.toLowerCase();
-  return host.endsWith(".fbcdn.net") || host === "lookaside.fbsbx.com";
-}
-
-// ---------------------------------------------------------------------------
-// Metadatos públicos (Open Graph) — lo mismo que usa cualquier vista previa
-// de link. Sin sesión, sin JavaScript, sin saltear nada: si Facebook no los
-// entrega, la persona sube una captura.
-// ---------------------------------------------------------------------------
-const ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
-export function decodeEntities(s) {
-  return String(s || "").replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, code) => {
-    if (code[0] === "#") {
-      const n = code[1].toLowerCase() === "x" ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
-      return Number.isFinite(n) && n > 0 && n < 0x110000 ? String.fromCodePoint(n) : "";
-    }
-    return ENTITIES[code.toLowerCase()] ?? m;
-  });
-}
-
-function attr(tag, name) {
-  const m = new RegExp(`\\b${name}\\s*=\\s*("([^"]*)"|'([^']*)')`, "i").exec(tag);
-  return m ? (m[2] ?? m[3] ?? "") : null;
-}
-
-export function extractOgTags(html) {
-  const out = {};
-  const tags = String(html || "").match(/<meta\b[^>]*>/gi) || [];
-  for (const tag of tags) {
-    const key = (attr(tag, "property") || attr(tag, "name") || "").toLowerCase();
-    if (!["og:title", "og:description", "og:image", "description"].includes(key)) continue;
-    const content = attr(tag, "content");
-    if (content == null || out[key]) continue;
-    out[key] = decodeEntities(content).trim();
-  }
-  return {
-    title: out["og:title"] || "",
-    description: out["og:description"] || out.description || "",
-    image: out["og:image"] || "",
-  };
-}
-
-// Facebook a veces devuelve la página de "Iniciá sesión" con su propio
-// og:title genérico: eso no es la publicación.
-const GENERIC_TITLES = /^(facebook|log in|login|iniciar sesi[oó]n|inicia sesi[oó]n|entrar|log into facebook)\b/i;
-export function postTextFromOg(og) {
-  const title = GENERIC_TITLES.test(og.title || "") ? "" : og.title || "";
-  const description = /log in|inicia sesi[oó]n|iniciá sesi[oó]n|see posts, photos and more/i.test(og.description || "")
-    ? ""
-    : og.description || "";
-  const parts = [title, description].map((s) => s.trim()).filter(Boolean);
-  // El og:title suele repetir el comienzo de la descripción.
-  if (parts.length === 2 && parts[1].startsWith(parts[0].replace(/[.…]+$/, ""))) parts.shift();
-  return parts.join("\n").slice(0, MAX_POST_TEXT_CHARS);
-}
 
 // ---------------------------------------------------------------------------
 // Datos personales de terceros: fuera antes de llegar al formulario.
