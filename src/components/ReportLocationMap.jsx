@@ -4,7 +4,9 @@
 // tocar la zona en la ficha abría Google Maps y sacaba a la persona de
 // Felpus. Ahora se abre este mapa encima de la ficha:
 // - con punto marcado (lat/lng): el pin con la foto, mismo estilo que el
-//   mapa de Explorar (rojo perdida / azul encontrada);
+//   mapa de Explorar (rojo perdida / azul encontrada), en un punto corrido
+//   y con un círculo que contiene el real — el punto marcado puede ser la
+//   casa de quien publicó (ver approxLocation.js);
 // - solo con la zona escrita: se busca esa zona y se marca un círculo como
 //   ubicación aproximada.
 // Queda un link chico a Google Maps para quien quiera cómo llegar.
@@ -14,13 +16,17 @@ import { loadLeaflet, createMap, observeMapResize, photoIcon, geocodeText } from
 import { CITIES } from "../lib/cities";
 import { logError } from "../lib/log";
 import { zonaConCiudad } from "../lib/zona";
+import { approxLocation, APPROX_RADIUS_M } from "../lib/approxLocation";
 import { useTheme } from "./felpus/ThemeProvider";
 
-const APPROX_RADIUS_M = 600;
+// Círculo cuando solo hay zona escrita (el geocoding de un barrio es más
+// impreciso que un punto marcado).
+const ZONA_RADIUS_M = 600;
 
 export function externalMapsUrl(report) {
-  return report.lat != null && report.lng != null
-    ? `https://www.google.com/maps?q=${report.lat},${report.lng}`
+  const approx = approxLocation(report);
+  return approx
+    ? `https://www.google.com/maps?q=${approx.lat},${approx.lng}`
     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([report.zona, report.ciudad].filter(Boolean).join(", "))}`;
 }
 
@@ -30,7 +36,8 @@ export default function ReportLocationMap({ report, onClose }) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const [status, setStatus] = useState("loading"); // loading | ready | approx | not-found | error
-  const hasPoint = report.lat != null && report.lng != null;
+  const approx = approxLocation(report);
+  const hasPoint = !!approx;
   const color = report.tipo === "perdida" ? C.redSolid : C.mapFound;
 
   useEffect(() => {
@@ -51,11 +58,20 @@ export default function ReportLocationMap({ report, onClose }) {
     loadLeaflet()
       .then(async (L) => {
         if (cancelled || !containerRef.current) return;
-        const start = hasPoint ? { lat: report.lat, lng: report.lng } : CITIES.salta.geo;
-        map = createMap(L, containerRef.current, { center: start, zoom: hasPoint ? 16 : 13 });
+        const start = approx || CITIES.salta.geo;
+        map = createMap(L, containerRef.current, { center: start, zoom: hasPoint ? 15 : 13 });
         stopResize = observeMapResize(map, containerRef.current);
         if (hasPoint) {
-          L.marker([report.lat, report.lng], {
+          L.circle([approx.lat, approx.lng], {
+            radius: APPROX_RADIUS_M,
+            color,
+            opacity: 0.9,
+            weight: 2,
+            fillColor: color,
+            fillOpacity: 0.12,
+            interactive: false,
+          }).addTo(map);
+          L.marker([approx.lat, approx.lng], {
             icon: photoIcon(L, { foto: report.foto, color, size: 52 }),
             title: zonaConCiudad(report),
             keyboard: false,
@@ -72,7 +88,7 @@ export default function ReportLocationMap({ report, onClose }) {
         }
         map.setView([loc.lat, loc.lng], 15);
         L.circle([loc.lat, loc.lng], {
-          radius: APPROX_RADIUS_M,
+          radius: ZONA_RADIUS_M,
           color,
           opacity: 0.9,
           weight: 2,
@@ -91,6 +107,8 @@ export default function ReportLocationMap({ report, onClose }) {
       if (stopResize) stopResize();
       map?.remove();
     };
+    // approx sale de report (mismo id y punto = mismo resultado).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasPoint, report, color]);
 
   return (
@@ -113,8 +131,8 @@ export default function ReportLocationMap({ report, onClose }) {
               {status === "approx"
                 ? "Ubicación aproximada según la zona escrita"
                 : report.tipo === "perdida"
-                  ? "Dónde se perdió"
-                  : "Dónde se encontró"}
+                  ? "Dónde se perdió (zona aproximada)"
+                  : "Dónde se encontró (zona aproximada)"}
             </p>
           </div>
           <button
