@@ -1937,7 +1937,7 @@ export default function FelpusMatcher() {
   // resizeImageFile/computeHistogram, igual que processPhotoFile) en el
   // formulario de siempre. Publicar sigue siendo exclusivamente handleSubmit,
   // con todas sus validaciones: el chat nunca publica por su cuenta.
-  // origin "facebook": lo mismo desde "Importar de Facebook" (ImportPostCard),
+  // origin "captura": lo mismo desde "Subir captura del aviso" (ImportPostCard),
   // donde fields trae solo lo que decía el aviso y la persona ya está en el
   // formulario.
   function applyChatDraft({ reportKind: kind, form: fields, accesorioChips: acc, reaccionChips: rea, marcaChips: mar, manchaUbicacion: mu, manchaColor: mc, detalleLibre: dl, fotos, startedAt }, { origin = "chat" } = {}) {
@@ -1975,11 +1975,11 @@ export default function FelpusMatcher() {
     pushToast("success", "Te dejamos el reporte completado. Revisalo, marcá la ubicación, agregá tu contacto y tocá Publicar.");
   }
 
-  // "Importar de Facebook": completa el formulario y suma la foto del post
-  // (o la recortada de la captura) por el camino de siempre — histograma,
-  // embedding y revisión de flyer incluidos.
+  // "Subir captura del aviso": completa el formulario y suma la foto
+  // recortada de la captura por el camino de siempre — histograma, embedding
+  // y revisión de flyer incluidos.
   async function handleImportPost({ fields, photoFile }) {
-    applyChatDraft(fields, { origin: "facebook" });
+    applyChatDraft(fields, { origin: "captura" });
     if (photoFile) await processPhotoFile(photoFile);
   }
 

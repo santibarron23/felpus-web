@@ -1,10 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  normalizeFacebookUrl,
-  isAllowedImageUrl,
-  decodeEntities,
-  extractOgTags,
-  postTextFromOg,
   scrubPersonalData,
   buildGeminiRequest,
   parseGeminiResponse,
@@ -41,83 +36,6 @@ const ejemplo = {
   detalle_libre: "Lleva collar rosa. Llamar al 387 4123456 o escribir a juan@mail.com",
   foto_recuadro: [100, 200, 600, 800],
 };
-
-describe("normalizeFacebookUrl", () => {
-  it("acepta links de Facebook y los normaliza a https sin #", () => {
-    expect(normalizeFacebookUrl("https://www.facebook.com/groups/123/posts/456/#x")).toBe(
-      "https://www.facebook.com/groups/123/posts/456/"
-    );
-    expect(normalizeFacebookUrl("m.facebook.com/story.php?story_fbid=1&id=2")).toBe(
-      "https://m.facebook.com/story.php?story_fbid=1&id=2"
-    );
-    expect(normalizeFacebookUrl("http://fb.me/abc")).toBe("https://fb.me/abc");
-    expect(normalizeFacebookUrl("  https://www.facebook.com/share/p/1AbC/  ")).toBe("https://www.facebook.com/share/p/1AbC/");
-  });
-
-  it("rechaza otros dominios, puertos, usuarios y protocolos raros", () => {
-    for (const bad of [
-      "https://facebook.com.evil.com/x",
-      "https://evilfacebook.com/x",
-      "https://www.facebook.com:8080/x",
-      "https://user:pass@www.facebook.com/x",
-      "javascript:alert(1)",
-      "ftp://facebook.com/x",
-      "http://127.0.0.1/",
-      "",
-      null,
-      42,
-      "https://instagram.com/p/1",
-    ]) {
-      expect(normalizeFacebookUrl(bad)).toBeNull();
-    }
-  });
-});
-
-describe("isAllowedImageUrl", () => {
-  it("solo el CDN de Facebook por https", () => {
-    expect(isAllowedImageUrl("https://scontent.fsla1-1.fna.fbcdn.net/v/t39/foto.jpg?x=1")).toBe(true);
-    expect(isAllowedImageUrl("https://lookaside.fbsbx.com/x")).toBe(true);
-    expect(isAllowedImageUrl("http://scontent.fbcdn.net/x.jpg")).toBe(false);
-    expect(isAllowedImageUrl("https://fbcdn.net.evil.com/x.jpg")).toBe(false);
-    expect(isAllowedImageUrl("https://169.254.169.254/latest")).toBe(false);
-    expect(isAllowedImageUrl("no es url")).toBe(false);
-  });
-});
-
-describe("extractOgTags / postTextFromOg", () => {
-  it("lee og:title, og:description y og:image con entidades", () => {
-    const html = `<html><head>
-      <meta property="og:title" content="Se perdi&#xf3; Luna en Tres Cerritos" />
-      <meta content='Perrita negra &amp; blanca, collar rosa.' property='og:description'>
-      <meta property="og:image" content="https://scontent.fbcdn.net/a.jpg?a=1&amp;b=2">
-      <meta name="description" content="otra cosa">
-    </head></html>`;
-    const og = extractOgTags(html);
-    expect(og).toEqual({
-      title: "Se perdió Luna en Tres Cerritos",
-      description: "Perrita negra & blanca, collar rosa.",
-      image: "https://scontent.fbcdn.net/a.jpg?a=1&b=2",
-    });
-    expect(postTextFromOg(og)).toBe("Se perdió Luna en Tres Cerritos\nPerrita negra & blanca, collar rosa.");
-  });
-
-  it("descarta la página de login de Facebook", () => {
-    const og = extractOgTags(
-      '<meta property="og:title" content="Facebook"><meta property="og:description" content="Log in to Facebook to start sharing">'
-    );
-    expect(postTextFromOg(og)).toBe("");
-  });
-
-  it("no repite el título cuando es el comienzo de la descripción", () => {
-    expect(postTextFromOg({ title: "Se perdió Toby...", description: "Se perdió Toby ayer en el centro" })).toBe(
-      "Se perdió Toby ayer en el centro"
-    );
-  });
-
-  it("decodeEntities tolera códigos inválidos", () => {
-    expect(decodeEntities("a&#0;b&foo;c&#x1F436;")).toBe("ab&foo;c🐶");
-  });
-});
 
 describe("scrubPersonalData", () => {
   it("borra teléfonos, mails, links y @usuarios", () => {
