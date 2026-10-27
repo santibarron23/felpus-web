@@ -869,6 +869,42 @@ export async function sendHeart(contributorId) {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
+// Historial de huellitas y referidos (migración 20261027_02). Las tres
+// devuelven null si la migración todavía no se corrió: la sección
+// Colaboradores esconde esas partes en vez de mostrar un error.
+// ---------------------------------------------------------------------------
+
+// { total, events: [{ reason, points, created_at, detalle, tipo }] }
+export async function fetchMyPointsHistory(limit = 50) {
+  const { data, error } = await supabase.rpc("get_my_points_history", { p_limit: limit });
+  if (error) {
+    if (isMissingFunctionError(error)) return null;
+    throw error;
+  }
+  return { total: data?.total || 0, events: Array.isArray(data?.events) ? data.events : [] };
+}
+
+// { invitados, premiados }
+export async function fetchMyReferrals() {
+  const { data, error } = await supabase.rpc("get_my_referrals");
+  if (error) {
+    if (isMissingFunctionError(error)) return null;
+    throw error;
+  }
+  return { invitados: data?.invitados || 0, premiados: data?.premiados || 0 };
+}
+
+// 'ok' | 'ya-registrado' | 'no-aplica' (la base decide si cuenta).
+export async function registerReferral(referrerId) {
+  const { data, error } = await supabase.rpc("register_referral", { p_referrer_id: referrerId });
+  if (error) {
+    if (isMissingFunctionError(error)) return null;
+    throw error;
+  }
+  return data;
+}
+
+// ---------------------------------------------------------------------------
 // Apoyos entre personas y antifraude (migración 20261026_02)
 // ---------------------------------------------------------------------------
 
