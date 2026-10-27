@@ -3,7 +3,7 @@
 // Ficha de un colaborador (2026-10-26): se abre al tocar a alguien en el
 // ranking. Muestra quién es y qué aportó, y si acepta apoyos, el botón
 // "Apoyar" (abre SupportModal con su alias). Si además cargó un link de
-// cobro, el botón principal es "Pagar con Mercado Pago / Cafecito" (2026-10-27).
+// cobro, el botón principal es "Colaborar con Mercado Pago / Cafecito" (2026-10-27).
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Camera, Flame, Heart, HeartHandshake, Loader2, MapPin, PartyPopper, X } from "lucide-react";
