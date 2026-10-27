@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import SocialLinks from "./felpus/SocialLinks";
 import FelpusAssistant from "./felpus/FelpusAssistant";
+import ImportPostCard from "./felpus/ImportPostCard";
 import {
   PawPrint,
   Search,
@@ -1936,8 +1937,14 @@ export default function FelpusMatcher() {
   // resizeImageFile/computeHistogram, igual que processPhotoFile) en el
   // formulario de siempre. Publicar sigue siendo exclusivamente handleSubmit,
   // con todas sus validaciones: el chat nunca publica por su cuenta.
-  function applyChatDraft({ reportKind: kind, form: fields, accesorioChips: acc, reaccionChips: rea, marcaChips: mar, manchaUbicacion: mu, manchaColor: mc, detalleLibre: dl, fotos, startedAt }) {
-    setReportKind(kind === "encontrada" ? "encontrada" : "perdida");
+  // origin "facebook": lo mismo desde "Importar de Facebook" (ImportPostCard),
+  // donde fields trae solo lo que decía el aviso y la persona ya está en el
+  // formulario.
+  function applyChatDraft({ reportKind: kind, form: fields, accesorioChips: acc, reaccionChips: rea, marcaChips: mar, manchaUbicacion: mu, manchaColor: mc, detalleLibre: dl, fotos, startedAt }, { origin = "chat" } = {}) {
+    const fromChat = origin === "chat";
+    // Si el aviso no trae zona, se conserva la ubicación que ya estaba.
+    const keepLocation = !fromChat && !fields.zona;
+    if (kind) setReportKind(kind === "encontrada" ? "encontrada" : "perdida");
     setForm((f) => ({
       ...f,
       ...fields,
@@ -1945,9 +1952,7 @@ export default function FelpusMatcher() {
       // del autocompletado ya no corresponde. lat/lng: el punto que se marcó
       // en el mapa del chat, si se marcó (si no, null — tampoco corresponde
       // uno anterior).
-      ciudad: "",
-      lat: fields.lat ?? null,
-      lng: fields.lng ?? null,
+      ...(keepLocation ? {} : { ciudad: "", lat: fields.lat ?? null, lng: fields.lng ?? null }),
       fotos: fotos?.length ? fotos.slice(0, MAX_FOTOS) : f.fotos,
     }));
     (fotos || []).slice(0, MAX_FOTOS).forEach((foto) => foto?.dataUrl && revisarFoto(foto.dataUrl));
@@ -1960,13 +1965,22 @@ export default function FelpusMatcher() {
     if ((acc || []).length || (rea || []).length || (mar || []).length || dl || fields.nombre || fields.raza || fields.edad) {
       setShowMoreDetails(true);
     }
-    setGeoStatus(fields.lat != null && fields.lng != null ? "done" : "idle");
+    if (!keepLocation) setGeoStatus(fields.lat != null && fields.lng != null ? "done" : "idle");
     setFormError("");
     setFieldErrors({});
+    if (!fromChat) return;
     chatOriginRef.current = { startedAt: startedAt || Date.now() };
     setDetailReport(null);
     goToTab("reportar");
     pushToast("success", "Te dejamos el reporte completado. Revisalo, marcá la ubicación, agregá tu contacto y tocá Publicar.");
+  }
+
+  // "Importar de Facebook": completa el formulario y suma la foto del post
+  // (o la recortada de la captura) por el camino de siempre — histograma,
+  // embedding y revisión de flyer incluidos.
+  async function handleImportPost({ fields, photoFile }) {
+    applyChatDraft(fields, { origin: "facebook" });
+    if (photoFile) await processPhotoFile(photoFile);
   }
 
   async function handleSubmit(e) {
@@ -2898,6 +2912,8 @@ export default function FelpusMatcher() {
                 </button>
               ))}
             </div>
+
+            <ImportPostCard hasPhotos={form.fotos.length > 0} onImport={handleImportPost} />
 
             <div
               className={`relative bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl p-3.5 border sticky top-2 z-10 shadow-sm ${justCompletedChecklist ? "felpus-checklist-pop felpus-checklist-glow" : ""}`}

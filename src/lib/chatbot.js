@@ -77,11 +77,11 @@ export const CHAT_SECTIONS = ["inicio", "explorar", "reportar", "resultado", "ra
 
 // "No sé" es una respuesta válida del formulario (SEXO_OPTIONS) — sirve para
 // que el botón "No sé" del chat cierre la pregunta sin inventar el dato.
-const SEXO_CHAT_OPTIONS = ["Macho", "Hembra", "No sé"];
-const EDAD_CHAT_OPTIONS = EDAD_OPTIONS.filter((e) => e !== "No sé");
-const ACCESORIO_IDS = ACCESORIO_OPTIONS.map((o) => o.id);
+export const SEXO_CHAT_OPTIONS = ["Macho", "Hembra", "No sé"];
+export const EDAD_CHAT_OPTIONS = EDAD_OPTIONS.filter((e) => e !== "No sé");
+export const ACCESORIO_IDS = ACCESORIO_OPTIONS.map((o) => o.id);
 const REACCION_IDS = REACCION_OPTIONS.map((o) => o.id).filter((id) => id !== "no_se");
-const MARCA_IDS = MARCA_OPTIONS.map((o) => o.id).filter((id) => id !== "otro");
+export const MARCA_IDS = MARCA_OPTIONS.map((o) => o.id).filter((id) => id !== "otro");
 const MANCHA_UBICACION_IDS = MANCHA_UBICACION_OPTIONS.map((o) => o.id).filter((id) => id !== "otro");
 const MANCHA_COLOR_CHAT = MANCHA_COLOR_OPTIONS.filter((c) => c !== "Otro color");
 export const SEARCH_DIAS_OPTIONS = [0, 1, 3, 7, 14, 30, 90];
