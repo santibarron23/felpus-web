@@ -98,6 +98,9 @@ import {
   deleteReport,
   fetchLeaderboard,
   fetchMyRank,
+  fetchMyPointsHistory,
+  fetchMyReferrals,
+  registerReferral,
   awardPoints as awardPointsRemote,
   sendHeart,
   bumpStreak,
@@ -147,6 +150,8 @@ import MatchScorecard from "./felpus/MatchScorecard";
 import ReportGrid from "./felpus/ReportGrid";
 import SupportModal from "./felpus/SupportModal";
 import ContributorSheet from "./felpus/ContributorSheet";
+import { InviteCard, PointsHistory } from "./felpus/PointsHistory";
+import { PUNTOS_REFERIDO, REF_STORAGE_KEY, parseReferrer, referralLink, storedReferrer } from "../lib/pointsHistory";
 import AdminUsers from "./felpus/AdminUsers";
 import { normalizeAlias, normalizeLinkCobro } from "../lib/support";
 import { checkPhotoKind } from "../lib/photoCheckClient";
@@ -535,6 +540,10 @@ export default function FelpusMatcher() {
   const [mySupport, setMySupport] = useState(null);
   const [supportDraft, setSupportDraft] = useState(null);
   const [myRank, setMyRank] = useState(null);
+  // Historial de huellitas y referidos (sección Colaboradores). null =
+  // todavía no cargó o la migración 20261027_02 no se corrió.
+  const [pointsHistory, setPointsHistory] = useState(null);
+  const [myReferrals, setMyReferrals] = useState(null);
   const [confirmingId, setConfirmingId] = useState(null);
   // Auditoría integral (2026-08-09): el botón "Sí, confirmar"/"Sí, ya está
   // en casa" no se deshabilitaba mientras la confirmación estaba en
@@ -1014,6 +1023,42 @@ export default function FelpusMatcher() {
     };
   }, [user, pushToast]);
 
+  // Link de invitación (?invita=<id>): se guarda en el dispositivo al
+  // entrar, porque el login con Google sale del sitio y vuelve sin el
+  // parámetro. Apenas hay sesión se le avisa a la base, que decide si
+  // cuenta (solo cuentas nuevas, ver register_referral). El premio para
+  // quien invitó lo da la base cuando esta persona publica su primer reporte.
+  useEffect(() => {
+    const ref = parseReferrer(window.location.search);
+    if (!ref) return;
+    try {
+      localStorage.setItem(REF_STORAGE_KEY, JSON.stringify({ id: ref, at: Date.now() }));
+    } catch {
+      // Sin almacenamiento (modo privado): el referido no se registra.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    let ref = null;
+    try {
+      ref = storedReferrer(localStorage.getItem(REF_STORAGE_KEY));
+    } catch {
+      return;
+    }
+    if (!ref) return;
+    registerReferral(ref)
+      .then((res) => {
+        try {
+          localStorage.removeItem(REF_STORAGE_KEY);
+        } catch {
+          // no es bloqueante
+        }
+        if (res === "ok") pushToast("success", "¡Te damos la bienvenida a Felpus! Publicá tu primer reporte y le sumás huellitas a quien te invitó. 🐾");
+      })
+      .catch((e) => logError("No se pudo registrar la invitación", e));
+  }, [user, pushToast]);
+
   // Cuándo fue la última vez que este usuario revisó sus propias
   // coincidencias — se usa para saber qué mostrar como "novedad" en la
   // campanita, sin necesitar un sistema de notificaciones push/email real.
@@ -1404,6 +1449,28 @@ export default function FelpusMatcher() {
       setMyRank(null);
     }
   }, [user]);
+
+  // Se recarga al entrar a Colaboradores y cada vez que cambian mis
+  // huellitas (acabo de publicar o confirmar un reencuentro).
+  const myPoints = myRank?.points;
+  useEffect(() => {
+    if (!user) {
+      setPointsHistory(null);
+      setMyReferrals(null);
+      return;
+    }
+    if (activeTab !== "ranking") return;
+    let cancelled = false;
+    fetchMyPointsHistory()
+      .then((h) => !cancelled && setPointsHistory(h))
+      .catch((e) => logError("No se pudo cargar el historial de huellitas", e));
+    fetchMyReferrals()
+      .then((r) => !cancelled && setMyReferrals(r))
+      .catch((e) => logError("No se pudieron cargar las invitaciones", e));
+    return () => {
+      cancelled = true;
+    };
+  }, [user, activeTab, myPoints]);
 
   const loadAll = useCallback(async () => {
     setLoadingReports(true);
@@ -4217,6 +4284,15 @@ export default function FelpusMatcher() {
                     Reportá una mascota o confirmá un reencuentro para sumar huellitas y aparecer en el ranking.
                   </p>
                 )}
+                {/* Solo con la migración 20261027_02 corrida (si no, null). */}
+                {myReferrals && (
+                  <InviteCard
+                    link={referralLink(window.location.origin, user.id)}
+                    referrals={myReferrals}
+                    onCopied={() => pushToast("success", "Link copiado")}
+                  />
+                )}
+                <PointsHistory history={pointsHistory} myPoints={myRank?.points} />
               </>
             ) : (
               <div className="text-sm bg-white dark:bg-[var(--felpus-dark-card)] rounded-3xl p-4 text-center border" style={{ color: C.muted, borderColor: C.border }}>
@@ -4282,6 +4358,7 @@ export default function FelpusMatcher() {
               <p>+{PUNTOS_ENCONTRADA} huellitas · publicar una mascota encontrada</p>
               <p>+{PUNTOS_REENCUENTRO} huellitas · confirmar un reencuentro real</p>
               <p>+{PUNTOS_BONO_ORIGINAL} huellitas · bono para quien reportó originalmente esa mascota</p>
+              <p>+{PUNTOS_REFERIDO} huellitas · invitar a alguien que publica su primer reporte</p>
             </div>
 
             <div className="bg-[var(--felpus-surface-subtle)] rounded-xl p-3.5 border text-[12px]" style={{ borderColor: C.border, color: C.muted }}>
