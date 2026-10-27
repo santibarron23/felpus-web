@@ -2,40 +2,8 @@ import RedirectClient from "./RedirectClient";
 import { safeJsonLdString } from "../../../lib/jsonLd";
 import { SITE_URL } from "../../../lib/site";
 import { petTitle } from "../../../lib/petTitle";
-
-// Fetch server-side directo contra la REST API de Supabase (no el cliente
-// de src/lib/supabaseClient.js — ese está armado para persistir sesión en
-// el navegador, algo que no aplica ni hace falta acá). Es una sola lectura
-// pública, ya permitida por la policy "reports_select_all".
-// Columnas explícitas, NO "select=*": desde que se endureció el acceso de
-// la anon key a "reports" (revoke select on reports from anon,
-// authenticated; grant select (columna, columna, ...) — ver schema.sql),
-// pedir "*" incluye columnas que esa key ya no tiene permiso de leer
-// (contacto_whatsapp/contacto_email, nunca estuvieron en la lista) y
-// Postgres rechaza el SELECT completo con un 401, no solo esas columnas.
-// Bug real encontrado en vivo (2026-08-10): esto rompía la meta etiqueta
-// Open Graph de CADA reporte compartido — al fallar el fetch, la página
-// caía al fallback genérico y Facebook/WhatsApp mostraban el banner de la
-// marca en vez de la foto real de la mascota. Esta lista trae solo lo que
-// generateMetadata()/el JSON-LD de abajo realmente usan.
-const REPORT_OG_COLUMNS = "id,tipo,especie,nombre,zona,descripcion,foto_url,resuelto,creado_en";
-
-async function fetchReport(id) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  try {
-    const res = await fetch(`${url}/rest/v1/reports?id=eq.${encodeURIComponent(id)}&select=${REPORT_OG_COLUMNS}`, {
-      headers: { apikey: key, Authorization: `Bearer ${key}` },
-      next: { revalidate: 60 },
-    });
-    if (!res.ok) return null;
-    const rows = await res.json();
-    return rows?.[0] || null;
-  } catch (e) {
-    return null;
-  }
-}
+import { fetchReportForShare as fetchReport } from "../../../lib/reportOg";
+import { shareCardData } from "../../../lib/shareCard";
 
 // Cada mascota compartida tiene que mostrar SU foto real al pegar el link
 // en WhatsApp/Facebook/X, no el banner genérico de la marca — esos
@@ -57,13 +25,20 @@ export async function generateMetadata({ params }) {
       robots: { index: false, follow: false },
     };
   }
-  const tipoTxt = report.tipo === "perdida" ? "Perdida" : "Encontrada";
+  const card = shareCardData(report);
+  // "Se busca: Toby en Centro", "Encontrada: Gata blanca en…", "¡Volvió a
+  // casa!: Luna en…" (concuerda con el sexo, ver shareCard.js).
+  const tipoTxt =
+    card.estado === "reencontrada" ? "¡Volvió a casa!" : card.badge.charAt(0) + card.badge.slice(1).toLowerCase();
   const nombre = petTitle(report);
   const title = `${tipoTxt}: ${nombre} en ${report.zona} — Felpus`;
-  const description = report.descripcion
-    ? report.descripcion.slice(0, 200)
-    : "Ayudanos a reencontrar esta mascota con su familia.";
-  const image = report.foto_url;
+  // Descripción de la vista previa: cuándo + la descripción del reporte,
+  // así se entiende de un vistazo sin abrir el link.
+  const description =
+    [card.cuando, report.descripcion ? report.descripcion.replace(/\s+/g, " ").trim() : "Ayudanos a reencontrar esta mascota con su familia."]
+      .filter(Boolean)
+      .join(". ")
+      .slice(0, 200);
   const canonical = `${SITE_URL}/r/${id}`;
 
   return {
@@ -83,13 +58,13 @@ export async function generateMetadata({ params }) {
       siteName: "Felpus",
       locale: "es_AR",
       type: "website",
-      images: image ? [{ url: image, width: 800, height: 800, alt: title }] : undefined,
+      // La imagen la pone opengraph-image.js (cartel con foto + resumen,
+      // 1200x630); X la toma de og:image.
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: image ? [image] : undefined,
     },
   };
 }
