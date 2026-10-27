@@ -8,6 +8,7 @@ import {
   buildGeminiRequest,
   parseGeminiResponse,
   interpretExtraction,
+  photoSuggestion,
 } from "../../../lib/postImport";
 
 // Leer la captura de una publicación (Facebook, Instagram, WhatsApp, un
@@ -71,13 +72,16 @@ export async function POST(request) {
   const img = parseImageDataUrl(body?.image);
   if (img.error) return json({ error: img.error }, 400);
   if (!img.image) return json({ error: "Falta la captura." }, 400);
+  // "foto": la foto real de la mascota recién subida al formulario; devuelve
+  // solo sugerencias (especie, color, tamaño, raza). Si no, una captura.
+  const modo = body?.modo === "foto" ? "foto" : "captura";
 
   if (!(await checkRateLimit(getClientIp(request)))) {
     return json({ error: "Demasiados intentos seguidos. Probá de nuevo en un rato.", code: "rate_limit" }, 429);
   }
 
   try {
-    const result = await callGemini(apiKey, buildGeminiRequest({ image: img.image }));
+    const result = await callGemini(apiKey, buildGeminiRequest({ image: img.image, modo }));
     if (!result.body) {
       logEvent("import_post_gemini_error", { status: result.status });
       if (result.status === 429) return json({ error: "La IA está saturada. Probá de nuevo en un rato.", code: "unavailable" }, 503);
@@ -92,7 +96,10 @@ export async function POST(request) {
       return json({ error: "No pudimos entender la captura. Completá el formulario a mano.", code: "error" }, 502);
     }
     const out = interpretExtraction(parsed.data);
-    logEvent("import_post_ok", { model: result.model, esMascota: out.esMascota, conRecuadro: !!out.box });
+    logEvent("import_post_ok", { model: result.model, modo, esMascota: out.esMascota, conRecuadro: !!out.box });
+    if (modo === "foto") {
+      return json({ sugerencia: out.esMascota && !out.especieNoSoportada ? photoSuggestion(out.draft) : null });
+    }
     if (!out.esMascota) {
       return json({ error: "No parece un aviso de un perro o gato perdido o encontrado.", code: "not_pet" }, 422);
     }

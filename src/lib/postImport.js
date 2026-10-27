@@ -109,13 +109,29 @@ export function buildGeminiPrompt(now = new Date()) {
   ].join("\n");
 }
 
-export function buildGeminiRequest({ text = "", image = null, now = new Date() } = {}) {
+// Modo "foto" (2026-10-27): una foto real de la mascota recién subida al
+// formulario. Solo se piden los rasgos que se ven (ver photoSuggestion); el
+// resto del schema queda vacío. Mismo schema y misma validación que la
+// captura, para no duplicar nada.
+export function buildPhotoPrompt() {
+  return [
+    "Recibís la foto de un perro o un gato que alguien perdió o encontró en Argentina.",
+    "Completá solo lo que se ve claramente en la foto: especie, color, color_detalle, tamano y raza.",
+    "- raza: solo si es claramente reconocible; \"Mestizo\" si se ve que no tiene raza definida; si dudás, \"\".",
+    "- tamano: estimalo por la contextura; si no hay forma de saberlo, \"no_se\".",
+    "- Todo lo demás: \"no_se\", \"\" o lista vacía. No inventes.",
+    "- Si la foto no muestra un perro o un gato, es_publicacion_mascota = false.",
+  ].join("\n");
+}
+
+export function buildGeminiRequest({ text = "", image = null, now = new Date(), modo = "captura" } = {}) {
   const parts = [];
   const t = (text || "").slice(0, MAX_POST_TEXT_CHARS).trim();
-  parts.push({ text: t ? `Texto de la publicación:\n"""\n${t}\n"""` : "No hay texto aparte: está todo en la imagen." });
+  if (modo === "foto") parts.push({ text: "Foto de la mascota:" });
+  else parts.push({ text: t ? `Texto de la publicación:\n"""\n${t}\n"""` : "No hay texto aparte: está todo en la imagen." });
   if (image) parts.push({ inlineData: { mimeType: image.media_type, data: image.data } });
   return {
-    systemInstruction: { parts: [{ text: buildGeminiPrompt(now) }] },
+    systemInstruction: { parts: [{ text: modo === "foto" ? buildPhotoPrompt() : buildGeminiPrompt(now) }] },
     contents: [{ role: "user", parts }],
     generationConfig: {
       responseMimeType: "application/json",
@@ -228,4 +244,11 @@ export function importToFormFields(draft) {
   if (!d.especie) delete form.especie;
   if (!d.tamano) delete form.tamano;
   return { ...fields, reportKind: d.tipo || null, form };
+}
+
+// Sugerencias para el formulario a partir de la foto: solo lo que se ve.
+// Vacío = sin sugerencia para ese campo.
+export function photoSuggestion(draft) {
+  const d = normalizeDraft(draft);
+  return { especie: d.especie, color: d.color, colorDetalle: d.colorDetalle, tamano: d.tamano, raza: d.raza };
 }
