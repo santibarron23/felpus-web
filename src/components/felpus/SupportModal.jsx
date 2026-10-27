@@ -7,7 +7,7 @@
 // al abrir esta ventana (ver /api/support-alias), nunca viene con el ranking;
 // si la ficha del colaborador ya lo pidió, llega en `prefetched`.
 // Link de cobro (2026-10-27): si la persona cargó uno de Mercado Pago o
-// Cafecito, el botón principal es "Pagar con …" y el alias queda abajo.
+// Cafecito, el botón principal es "Colaborar con …" y el alias queda abajo.
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Copy, ExternalLink, Flag, HeartHandshake, Loader2, ShieldAlert, X } from "lucide-react";
@@ -189,7 +189,7 @@ export default function SupportModal({ contributor, prefetched, onClose }) {
   );
 }
 
-// Botón "Pagar con Mercado Pago / Cafecito": abre el link de cobro de la
+// Botón "Colaborar con Mercado Pago / Cafecito": abre el link de cobro de la
 // persona (validado en la base y en /api/support-alias). Lo usa también la
 // ficha del colaborador.
 export function PayLinkButton({ link }) {
@@ -204,7 +204,7 @@ export function PayLinkButton({ link }) {
       className="w-full flex items-center justify-center gap-2 rounded-xl py-3.5 text-base font-bold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
       style={{ background: C.redSolid }}
     >
-      <ExternalLink className="w-5 h-5" aria-hidden="true" /> Pagar con {label}
+      <ExternalLink className="w-5 h-5" aria-hidden="true" /> Colaborar con {label}
     </a>
   );
 }

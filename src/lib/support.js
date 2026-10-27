@@ -43,7 +43,7 @@ export function normalizeLinkCobro(value) {
   return { ok: true, link: `https://${host}${path}` };
 }
 
-// "Mercado Pago" o "Cafecito" (para el botón "Pagar con …").
+// "Mercado Pago" o "Cafecito" (para el botón "Colaborar con …").
 export function linkCobroLabel(link) {
   try {
     return LINK_COBRO_HOSTS[new URL(link).hostname] || "";

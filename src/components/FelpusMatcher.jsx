@@ -2275,7 +2275,7 @@ export default function FelpusMatcher() {
   const normalizedRaza = normalizeText(filterRaza.trim());
   const filteredReports = useMemo(() => {
     // "resuelto" (Solo reencontradas, el filtro que activa la tarjeta
-    // "Reencontradas" de Inicio) cambia la base de la lista: en vez de los
+    // "Reencuentros" de Inicio) cambia la base de la lista: en vez de los
     // reportes activos, muestra solo los reencuentros confirmados.
     const soloResueltas = filterTipo === "resuelto";
     let list = (soloResueltas ? resueltas : activeReports).filter((r) => {
@@ -2758,7 +2758,7 @@ export default function FelpusMatcher() {
                 },
                 {
                   value: resueltas.length,
-                  label: "Reencontradas",
+                  label: "Reencuentros",
                   color: C.green,
                   onClick: () => {
                     setFilterTipo("resuelto");
@@ -5344,7 +5344,7 @@ export default function FelpusMatcher() {
                             />
                             <p className="text-[12px] mt-1" style={{ color: C.muted }}>
                               Tu link de pago de Mercado Pago (con monto libre) o tu página de Cafecito. Así te pueden
-                              pagar con un toque desde el botón “Pagar”.
+                              colaborar con un toque desde el botón “Colaborar”.
                             </p>
                           </div>
                         )}
@@ -5521,7 +5521,7 @@ export default function FelpusMatcher() {
       <footer className="max-w-2xl mx-auto px-4 pb-28 pt-2 space-y-1.5">
         <SocialLinks className="pb-1" />
         <p className="text-[12px] font-semibold flex items-center gap-1 justify-center" style={{ color: C.greenDark }}>
-          <PartyPopper className="w-3.5 h-3.5" /> {resueltas.length} mascotas reencontradas gracias a la comunidad
+          <PartyPopper className="w-3.5 h-3.5" /> {resueltas.length} {resueltas.length === 1 ? "reencuentro" : "reencuentros"} gracias a la comunidad
         </p>
         <p className="text-[12px] leading-snug flex items-start gap-1 justify-center text-center" style={{ color: C.muted }}>
           <HelpCircle className="w-3.5 h-3.5 shrink-0 mt-px" /> Herramienta comunitaria: no reemplaza la denuncia ante autoridades o refugios.
