@@ -9,10 +9,12 @@ import { logError } from "../lib/log";
 import { requestLocation, geolocationErrorMessage, MAP_GEOLOCATION_OPTIONS } from "../lib/geolocation";
 import { CITIES } from "../lib/cities";
 import { zonaConCiudad } from "../lib/zona";
+import { approxLocation } from "../lib/approxLocation";
 import { useTheme } from "./felpus/ThemeProvider";
 
 // Mapa de sólo lectura que pinta un marcador por cada reporte que tenga
-// ubicación exacta (lat/lng), mostrando la foto real de la mascota en un
+// punto marcado (lat/lng) — corrido unos cientos de metros, ver
+// approxLocation.js: el punto puede ser la casa de quien publicó —, mostrando la foto real de la mascota en un
 // círculo — rojo para perdidas, naranja para encontradas — en vez de un
 // punto de color genérico, para poder reconocer a la mascota de un vistazo
 // sin tener que abrir cada reporte. Tocar un marcador abre el detalle
@@ -136,8 +138,9 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
     if (status !== "ready" || !map || !L) return;
     markersRef.current.forEach((m) => m.remove());
     markersRef.current = reports
-      .filter((r) => r.lat != null && r.lng != null)
-      .map((r) => {
+      .map((r) => [r, approxLocation(r)])
+      .filter(([, pos]) => pos)
+      .map(([r, pos]) => {
         try {
           // Encontrada en azul (C.mapFound): el naranja de antes se confundía
           // con el rojo de "perdida" en los pines chicos.
@@ -145,7 +148,7 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
           const label = `${r.tipo === "perdida" ? "Perdida" : "Encontrada"} · ${zonaConCiudad(r)}`;
           // keyboard: true + title: el pin se puede alcanzar y activar con el
           // teclado (Leaflet lo hace foco y responde a Enter).
-          const marker = L.marker([r.lat, r.lng], { icon: photoIcon(L, { foto: r.foto, color }), title: label, alt: label, keyboard: true }).addTo(map);
+          const marker = L.marker([pos.lat, pos.lng], { icon: photoIcon(L, { foto: r.foto, color }), title: label, alt: label, keyboard: true }).addTo(map);
           marker.on("click", () => onSelectRef.current?.(r));
           return marker;
         } catch (e) {
@@ -306,9 +309,11 @@ const ARGENTINA = { latMin: -56, latMax: -21, lngMin: -74, lngMax: -53 };
 const enArgentina = (r) =>
   r.lat >= ARGENTINA.latMin && r.lat <= ARGENTINA.latMax && r.lng >= ARGENTINA.lngMin && r.lng <= ARGENTINA.lngMax;
 
+// Con los puntos corridos, igual que los pines: con un solo reporte, el
+// centro del mapa sería justo el punto real.
 function fitToReports(L, map, reports) {
-  const conPunto = (reports || []).filter((r) => r.lat != null && r.lng != null && enArgentina(r));
+  const conPunto = (reports || []).filter((r) => r.lat != null && r.lng != null && enArgentina(r)).map(approxLocation).filter(Boolean);
   if (!conPunto.length) return;
-  const bounds = L.latLngBounds(conPunto.map((r) => [r.lat, r.lng]));
+  const bounds = L.latLngBounds(conPunto.map((p) => [p.lat, p.lng]));
   map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
 }
