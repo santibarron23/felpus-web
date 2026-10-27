@@ -2707,7 +2707,7 @@ export default function FelpusMatcher() {
                   // sin aria-label estático, un lector de pantalla podía anunciar
                   // cada valor intermedio de la cuenta en vez de solo el final.
                   aria-label={`${s.value} ${s.label}`}
-                  className="felpus-card-hover min-h-[44px] bg-white dark:bg-[var(--felpus-dark-card)] rounded-full border shadow-sm px-3 py-2 inline-flex items-center gap-1.5 whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                  className="felpus-card-hover min-h-[44px] bg-white rounded-full border shadow-sm px-3 py-2 inline-flex items-center gap-1.5 whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
                   style={{ borderColor: C.border }}
                 >
                   <span className="felpus-mono text-base font-bold" style={{ color: s.color }} aria-hidden="true">
