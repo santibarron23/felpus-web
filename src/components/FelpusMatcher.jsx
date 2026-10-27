@@ -59,6 +59,7 @@ import {
   getTier,
   getTierProgress,
   getBadges,
+  BADGES,
   timeAgo,
   emptyForm,
   MAX_FOTOS,
@@ -4281,6 +4282,21 @@ export default function FelpusMatcher() {
               <p>+{PUNTOS_ENCONTRADA} huellitas · publicar una mascota encontrada</p>
               <p>+{PUNTOS_REENCUENTRO} huellitas · confirmar un reencuentro real</p>
               <p>+{PUNTOS_BONO_ORIGINAL} huellitas · bono para quien reportó originalmente esa mascota</p>
+            </div>
+
+            <div className="bg-[var(--felpus-surface-subtle)] rounded-xl p-3.5 border text-[12px]" style={{ borderColor: C.border, color: C.muted }}>
+              <h3 className="font-bold text-xs mb-1.5" style={{ color: C.text }}>Cómo se ganan las insignias</h3>
+              <ul className="space-y-1.5">
+                {BADGES.map((b) => (
+                  <li key={b.id} className="flex items-start gap-2">
+                    <span aria-hidden="true">{b.icon}</span>
+                    <span>
+                      <span className="font-semibold" style={{ color: C.text }}>{b.label}</span> · {b.requisito}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2">Se ganan solas y no se pierden.</p>
             </div>
 
             {/* Donación — deliberadamente el último elemento de la pantalla,

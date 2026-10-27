@@ -1199,14 +1199,18 @@ export function isRecent(report) {
 // Insignias puntuales por comportamiento (además del nivel general por
 // puntos) — se derivan de campos que ya existen en "contributors", no
 // necesitan columnas nuevas. Cada una responde a un comportamiento que
-// vale la pena incentivar (publicar, confirmar reencuentros, ser querido
-// por la comunidad, sostenerlo en el tiempo).
+// vale la pena incentivar (publicar, confirmar reencuentros, sostenerlo en
+// el tiempo). `requisito` es el texto de "Cómo se ganan las insignias"
+// (sección Colaboradores): si cambia un umbral, cambiarlo también ahí.
+// "Rescatista" reemplazó a "Querido por la comunidad" (5 corazones) el
+// 2026-10-27, a pedido. Solo contadores que no se reinician (no la racha),
+// para que una insignia ganada no desaparezca.
 export const BADGES = [
-  { id: "primera-huella", icon: "🌟", label: "Primera huella", check: (c) => (c.reportes || 0) >= 1 },
-  { id: "guia-de-barrio", icon: "🧭", label: "Guía de barrio", check: (c) => (c.reportes || 0) >= 5 },
-  { id: "heroe-reencuentro", icon: "🎉", label: "Héroe del reencuentro", check: (c) => (c.reencuentros || 0) >= 1 },
-  { id: "querido-comunidad", icon: "💞", label: "Querido por la comunidad", check: (c) => (c.hearts || 0) >= 5 },
-  { id: "leyenda-felpus", icon: "👑", label: "Leyenda Felpus", check: (c) => (c.points || 0) >= 100 },
+  { id: "primera-huella", icon: "🌟", label: "Primera huella", requisito: "Publicar tu primer reporte", check: (c) => (c.reportes || 0) >= 1 },
+  { id: "guia-de-barrio", icon: "🧭", label: "Guía de barrio", requisito: "Publicar 5 reportes", check: (c) => (c.reportes || 0) >= 5 },
+  { id: "heroe-reencuentro", icon: "🎉", label: "Héroe del reencuentro", requisito: "Confirmar tu primer reencuentro", check: (c) => (c.reencuentros || 0) >= 1 },
+  { id: "rescatista", icon: "🐾", label: "Rescatista", requisito: "Confirmar 3 reencuentros", check: (c) => (c.reencuentros || 0) >= 3 },
+  { id: "leyenda-felpus", icon: "👑", label: "Leyenda Felpus", requisito: "Llegar a 100 huellitas", check: (c) => (c.points || 0) >= 100 },
 ];
 
 export function getBadges(contributor) {
