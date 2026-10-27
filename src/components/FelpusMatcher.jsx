@@ -147,7 +147,7 @@ import ReportGrid from "./felpus/ReportGrid";
 import SupportModal from "./felpus/SupportModal";
 import ContributorSheet from "./felpus/ContributorSheet";
 import AdminUsers from "./felpus/AdminUsers";
-import { normalizeAlias } from "../lib/support";
+import { normalizeAlias, normalizeLinkCobro } from "../lib/support";
 import { checkPhotoKind } from "../lib/photoCheckClient";
 import { Avatar, RankingList, RankingMeCard, RankingStatTiles } from "./felpus/Ranking";
 import { PAIS_DEFAULT, PAISES, PROVINCIAS_AR, UBICACION_MAX, cleanUbicacion, cropAvatarDataUrl, formatUbicacion } from "../lib/profile";
@@ -527,7 +527,7 @@ export default function FelpusMatcher() {
   const [nickname, setNickname] = useState("");
   const [leaderboard, setLeaderboard] = useState([]);
   // Colaborador al que se está por apoyar (ventana SupportModal).
-  const [supportTarget, setSupportTarget] = useState(null);
+  const [supportTarget, setSupportTarget] = useState(null); // { u, prefetched }
   // Ficha del colaborador tocado en el ranking ({ u, rank }).
   const [profileTarget, setProfileTarget] = useState(null);
   // Mis datos de apoyo (alias + acepto), y el borrador al editar el perfil.
@@ -683,7 +683,7 @@ export default function FelpusMatcher() {
     fetchMySupport()
       .then((sup) => {
         setMySupport(sup);
-        setSupportDraft(sup ? { acepta: sup.acepta, alias: sup.alias } : null);
+        setSupportDraft(sup ? { acepta: sup.acepta, alias: sup.alias, link: sup.link } : null);
       })
       .catch((e) => logError("No se pudieron leer los datos de apoyo", e));
     setProfilePhoneText("");
@@ -752,21 +752,28 @@ export default function FelpusMatcher() {
       if (supportDraft) {
         const alias = normalizeAlias(supportDraft.alias);
         if (!alias.ok) throw new Error(alias.error);
-        if (supportDraft.acepta && !alias.alias) throw new Error("Para aceptar apoyos, cargá tu alias o CBU/CVU.");
+        const link = normalizeLinkCobro(supportDraft.link);
+        if (!link.ok) throw new Error(link.error);
+        if (supportDraft.acepta && !alias.alias && !link.link) throw new Error("Para aceptar apoyos, cargá tu alias o un link de cobro.");
         if ((alias.alias || "") !== (mySupport?.alias || "")) extra.alias_pago = alias.alias;
+        if ((link.link || "") !== (mySupport?.link || "")) extra.link_cobro = link.link;
         if (supportDraft.acepta !== !!mySupport?.acepta) extra.acepta_apoyos = supportDraft.acepta;
       }
       await updateProfile(user.id, { nickname: name, ...extra });
-      if ("alias_pago" in extra || "acepta_apoyos" in extra) {
-        setMySupport({ alias: "alias_pago" in extra ? extra.alias_pago || "" : mySupport?.alias || "", acepta: "acepta_apoyos" in extra ? extra.acepta_apoyos : !!mySupport?.acepta });
+      if ("alias_pago" in extra || "acepta_apoyos" in extra || "link_cobro" in extra) {
+        setMySupport({
+          alias: "alias_pago" in extra ? extra.alias_pago || "" : mySupport?.alias || "",
+          acepta: "acepta_apoyos" in extra ? extra.acepta_apoyos : !!mySupport?.acepta,
+          link: "link_cobro" in extra ? extra.link_cobro || "" : mySupport?.link || "",
+        });
       }
       if ("avatar_url" in extra && prevAvatar) deleteAvatarFile(prevAvatar);
-      const { alias_pago: _aliasPerfil, ...extraPerfil } = extra;
+      const { alias_pago: _aliasPerfil, link_cobro: _linkPerfil, ...extraPerfil } = extra;
       setProfile((prev) => ({ ...(prev || { id: user.id }), ...extraPerfil, nickname: name, whatsapp: whatsapp || null }));
       if ("avatar_url" in extra) setMyRank((prev) => (prev ? { ...prev, avatar_url: extra.avatar_url } : prev));
       if ("acepta_apoyos" in extra) setMyRank((prev) => (prev ? { ...prev, acepta_apoyos: extra.acepta_apoyos } : prev));
-      // Al ranking solo los datos públicos (nunca el WhatsApp ni el alias).
-      const { whatsapp: _privado, alias_pago: _alias, ...publico } = extra;
+      // Al ranking solo los datos públicos (nunca el WhatsApp, el alias ni el link).
+      const { whatsapp: _privado, alias_pago: _alias, link_cobro: _link, ...publico } = extra;
       setLeaderboard((prev) => prev.map((u) => (u.id === user.id ? { ...u, nickname: name, ...publico } : u)));
       setNickname(name);
       setEditingProfile(false);
@@ -4262,13 +4269,15 @@ export default function FelpusMatcher() {
                 isMe={!!user && profileTarget.u.id === user.id}
                 avatarUrl={profileTarget.u.avatar_url || (user && profileTarget.u.id === user.id ? myAvatarUrl : null)}
                 onClose={() => setProfileTarget(null)}
-                onSupport={(u) => {
+                onSupport={(u, prefetched) => {
                   setProfileTarget(null);
-                  setSupportTarget(u);
+                  setSupportTarget({ u, prefetched });
                 }}
               />
             )}
-            {supportTarget && <SupportModal contributor={supportTarget} onClose={() => setSupportTarget(null)} />}
+            {supportTarget && (
+              <SupportModal contributor={supportTarget.u} prefetched={supportTarget.prefetched} onClose={() => setSupportTarget(null)} />
+            )}
 
             <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-xl p-3.5 border text-[12px] space-y-1.5" style={{ borderColor: C.border, color: C.muted }}>
               <p className="font-bold text-xs mb-1" style={{ color: C.text }}>Cómo se suman huellitas</p>
@@ -5207,6 +5216,30 @@ export default function FelpusMatcher() {
                             />
                             <p className="text-[12px] mt-1" style={{ color: C.muted }}>
                               Ojo: al transferir, el banco le muestra a la otra persona el nombre del titular del alias.
+                            </p>
+                          </div>
+                        )}
+                        {supportDraft.acepta && (
+                          <div>
+                            <label htmlFor="profile-link-cobro" className="text-[12px] font-semibold mb-1 block" style={{ color: C.muted }}>
+                              Link de cobro (opcional)
+                            </label>
+                            <input
+                              id="profile-link-cobro"
+                              type="url"
+                              inputMode="url"
+                              value={supportDraft.link || ""}
+                              onChange={(e) => setSupportDraft((d) => ({ ...d, link: e.target.value }))}
+                              maxLength={200}
+                              placeholder="link.mercadopago.com.ar/tunombre"
+                              autoCapitalize="none"
+                              autoComplete="off"
+                              className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
+                              style={{ borderColor: C.border, color: C.text }}
+                            />
+                            <p className="text-[12px] mt-1" style={{ color: C.muted }}>
+                              Tu link de pago de Mercado Pago (con monto libre) o tu página de Cafecito. Así te pueden
+                              pagar con un toque desde el botón “Pagar”.
                             </p>
                           </div>
                         )}

@@ -4,35 +4,44 @@
 // transferirle POR FUERA de Felpus. Felpus no cobra ni intermedia nada, y
 // apoyar no da ninguna ventaja dentro de la app (regla de Google Play y
 // Apple para regalos entre personas). El alias se pide al servidor recién
-// al abrir esta ventana (ver /api/support-alias), nunca viene con el ranking.
+// al abrir esta ventana (ver /api/support-alias), nunca viene con el ranking;
+// si la ficha del colaborador ya lo pidió, llega en `prefetched`.
+// Link de cobro (2026-10-27): si la persona cargó uno de Mercado Pago o
+// Cafecito, el botón principal es "Pagar con …" y el alias queda abajo.
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Copy, ExternalLink, Flag, HeartHandshake, Loader2, ShieldAlert, X } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
 import { useFocusTrap } from "./useFocusTrap";
 import { fetchSupportAlias, flagSupport } from "../../lib/store";
-import { SUPPORT_FLAG_REASONS } from "../../lib/support";
+import { SUPPORT_FLAG_REASONS, linkCobroLabel } from "../../lib/support";
 
-export default function SupportModal({ contributor, onClose }) {
+export default function SupportModal({ contributor, prefetched, onClose }) {
   const C = useTheme();
   const panelRef = useRef(null);
   useFocusTrap(true, panelRef, onClose);
-  const [state, setState] = useState({ loading: true, alias: "", error: "" });
+  const [state, setState] = useState(
+    prefetched ? { loading: false, alias: prefetched.alias || "", link: prefetched.link || "", error: "" } : { loading: true, alias: "", link: "", error: "" }
+  );
   const [copied, setCopied] = useState(false);
   const [flagging, setFlagging] = useState(false);
   const [flagMsg, setFlagMsg] = useState("");
 
   useEffect(() => {
     let cancelled = false;
-    fetchSupportAlias(contributor.id)
-      .then((d) => !cancelled && setState({ loading: false, alias: d.alias, error: "" }))
-      .catch((e) => !cancelled && setState({ loading: false, alias: "", error: e.message }));
+    if (!prefetched) {
+      fetchSupportAlias(contributor.id)
+        .then((d) => !cancelled && setState({ loading: false, alias: d.alias || "", link: d.link || "", error: "" }))
+        .catch((e) => !cancelled && setState({ loading: false, alias: "", link: "", error: e.message }));
+    }
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       cancelled = true;
       document.body.style.overflow = prev;
     };
+    // prefetched solo cuenta al abrir.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contributor.id]);
 
   async function copy() {
@@ -94,32 +103,51 @@ export default function SupportModal({ contributor, onClose }) {
           </p>
         ) : (
           <>
-            <div className="rounded-2xl border p-3" style={{ borderColor: C.border, background: C.surfaceSubtle }}>
-              <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>Alias o CBU/CVU</p>
-              <p className="felpus-mono text-lg break-all" style={{ color: C.text }}>{state.alias}</p>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={copy}
-                className="flex items-center justify-center gap-1.5 rounded-xl py-3 text-sm font-bold text-white"
-                style={{ background: copied ? C.greenSolid : C.redSolid }}
-              >
-                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />} {copied ? "Copiado" : "Copiar alias"}
-              </button>
-              <a
-                href="https://www.mercadopago.com.ar/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-1.5 rounded-xl py-3 text-sm font-bold border"
-                style={{ borderColor: C.border, color: C.text }}
-              >
-                <ExternalLink className="w-4 h-4" /> Mercado Pago
-              </a>
-            </div>
-            <p className="text-[12px]" style={{ color: C.muted }}>
-              Copiá el alias y transferí desde tu banco o billetera, por el monto que quieras.
-            </p>
+            {state.link && <PayLinkButton link={state.link} />}
+            {state.alias && (
+              <>
+                <div className="rounded-2xl border p-3" style={{ borderColor: C.border, background: C.surfaceSubtle }}>
+                  <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>
+                    {state.link ? "O transferí al alias o CBU/CVU" : "Alias o CBU/CVU"}
+                  </p>
+                  <p className="felpus-mono text-lg break-all" style={{ color: C.text }}>{state.alias}</p>
+                </div>
+                <div className={state.link ? "" : "grid grid-cols-2 gap-2"}>
+                  <button
+                    type="button"
+                    onClick={copy}
+                    className={
+                      state.link
+                        ? "w-full flex items-center justify-center gap-1.5 rounded-xl py-3 text-sm font-bold border"
+                        : "flex items-center justify-center gap-1.5 rounded-xl py-3 text-sm font-bold text-white"
+                    }
+                    style={
+                      state.link
+                        ? { borderColor: copied ? C.greenSolid : C.border, color: copied ? C.greenSolid : C.text }
+                        : { background: copied ? C.greenSolid : C.redSolid }
+                    }
+                  >
+                    {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />} {copied ? "Copiado" : "Copiar alias"}
+                  </button>
+                  {!state.link && (
+                    <a
+                      href="https://www.mercadopago.com.ar/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-1.5 rounded-xl py-3 text-sm font-bold border"
+                      style={{ borderColor: C.border, color: C.text }}
+                    >
+                      <ExternalLink className="w-4 h-4" /> Mercado Pago
+                    </a>
+                  )}
+                </div>
+                {!state.link && (
+                  <p className="text-[12px]" style={{ color: C.muted }}>
+                    Copiá el alias y transferí desde tu banco o billetera, por el monto que quieras.
+                  </p>
+                )}
+              </>
+            )}
           </>
         )}
 
@@ -158,5 +186,25 @@ export default function SupportModal({ contributor, onClose }) {
       </div>
     </div>,
     document.body
+  );
+}
+
+// Botón "Pagar con Mercado Pago / Cafecito": abre el link de cobro de la
+// persona (validado en la base y en /api/support-alias). Lo usa también la
+// ficha del colaborador.
+export function PayLinkButton({ link }) {
+  const C = useTheme();
+  const label = linkCobroLabel(link);
+  if (!label) return null;
+  return (
+    <a
+      href={link}
+      target="_blank"
+      rel="noopener noreferrer nofollow"
+      className="w-full flex items-center justify-center gap-2 rounded-xl py-3.5 text-base font-bold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+      style={{ background: C.redSolid }}
+    >
+      <ExternalLink className="w-5 h-5" aria-hidden="true" /> Pagar con {label}
+    </a>
   );
 }

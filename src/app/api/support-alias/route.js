@@ -1,8 +1,9 @@
 import { logError } from "../../../lib/log";
 import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
 import { callServiceRpc, CONTRIBUTOR_ID_RE } from "../../../lib/serverSupport";
+import { normalizeLinkCobro } from "../../../lib/support";
 
-// Alias de un colaborador para "Apoyar" (ver serverSupport.js). El alias no se
+// Alias y link de cobro de un colaborador para "Apoyar" (ver serverSupport.js). El alias no se
 // puede leer por la API pública: solo por acá, de a uno y con límite por IP
 // (30 por hora, la IP la determina Vercel). No se devuelve si la persona no
 // acepta apoyos, está baneada o su alias tiene 3+ denuncias sin revisar.
@@ -30,8 +31,11 @@ export async function POST(request) {
       return Response.json({ error: r.error }, { status: r.status });
     }
     const row = Array.isArray(r.data) ? r.data[0] : r.data;
-    if (!row?.alias_pago) return Response.json({ error: "Esta persona no recibe apoyos en este momento." }, { status: 404 });
-    return Response.json({ alias: row.alias_pago, nickname: row.nickname || "" });
+    // El link se vuelve a validar acá aunque la base ya lo controla: nunca
+    // devolver un link que no sea de Mercado Pago o Cafecito.
+    const link = normalizeLinkCobro(row?.link_cobro).link || "";
+    if (!row?.alias_pago && !link) return Response.json({ error: "Esta persona no recibe apoyos en este momento." }, { status: 404 });
+    return Response.json({ alias: row.alias_pago || "", link, nickname: row.nickname || "" });
   } catch (e) {
     logError("Fallo inesperado en /api/support-alias", e);
     return Response.json({ error: "No se pudo obtener el alias." }, { status: 500 });
