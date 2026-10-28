@@ -594,6 +594,16 @@ export async function fetchMyWhatsapp(userId) {
 // extra (opcional): { avatar_url, pais, provincia, ciudad } — se mandan solo
 // las claves presentes, así un perfil que no las toca sigue guardando igual
 // aunque la migración 20261022_01 todavía no se haya corrido.
+// "permission denied" (42501) al guardar el perfil es un problema de permisos
+// de la base, no de la persona (pasó el 2026-10-28, ver la migración
+// 20261028_02): se registra y se muestra un mensaje entendible en vez del
+// texto técnico de Postgres.
+function permisoError(error) {
+  if (String(error?.code) !== "42501" && !/permission denied/i.test(String(error?.message || ""))) return error;
+  logError("Sin permiso para guardar el perfil (revisar grants de contributors)", error);
+  return new Error("No pudimos guardar tu perfil por un problema nuestro. Ya nos llegó el aviso: probá de nuevo más tarde.");
+}
+
 export async function updateProfile(userId, { nickname, whatsapp, ...extra }) {
   if (!userId) throw new Error("Necesitás iniciar sesión para editar tu perfil.");
   // Sin "whatsapp" en el upsert (2026-10-23): desde la migración
@@ -611,7 +621,7 @@ export async function updateProfile(userId, { nickname, whatsapp, ...extra }) {
     if (["avatar_url", "pais", "provincia", "ciudad"].some((c) => isMissingColumnError(error, c))) {
       throw new Error("La foto y la ubicación del perfil todavía no están disponibles. Probá de nuevo más tarde.");
     }
-    throw error;
+    throw permisoError(error);
   }
   // Alias y "acepto apoyos": igual que el WhatsApp, con un UPDATE aparte —
   // alias_pago no se puede leer con la clave pública (ver la migración
@@ -623,6 +633,8 @@ export async function updateProfile(userId, { nickname, whatsapp, ...extra }) {
     if ("acepta_apoyos" in extra) patch.acepta_apoyos = !!extra.acepta_apoyos;
     const { error: supError } = await supabase.from(CONTRIBUTORS_TABLE).update(patch).eq("id", userId);
     if (supError) {
+      // 42501 acá también es falta de permisos (no "apoyos no disponibles").
+      if (String(supError.code) === "42501") throw permisoError(supError);
       if (isMissingColumnError(supError, "link_cobro")) {
         throw new Error("El link de cobro todavía no está disponible. Probá de nuevo más tarde.");
       }
@@ -636,7 +648,7 @@ export async function updateProfile(userId, { nickname, whatsapp, ...extra }) {
             : "Revisá el alias: tiene que ser un CBU/CVU de 22 números o un alias de 6 a 20 caracteres."
         );
       }
-      throw supError;
+      throw permisoError(supError);
     }
   }
   if (whatsapp === undefined) return;
