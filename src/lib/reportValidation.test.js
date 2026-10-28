@@ -38,3 +38,19 @@ describe("validateReportContact", () => {
     expect(validateReportContact({ contacto_email: "a@" + "x".repeat(260) + ".com" }).ok).toBe(false);
   });
 });
+
+describe("validateReportContact — avistamientos", () => {
+  it("un avistamiento (encontrada que solo se vio) puede ir sin contacto", () => {
+    expect(validateReportContact({ tipo: "encontrada", detalles: { avistamiento: true } })).toEqual({ ok: true, whatsapp: null, email: null });
+  });
+
+  it("si deja contacto, se valida igual", () => {
+    expect(validateReportContact({ tipo: "encontrada", detalles: { avistamiento: true }, contacto_whatsapp: "123" }).ok).toBe(false);
+  });
+
+  it("una perdida o una encontrada común siguen necesitando contacto", () => {
+    expect(validateReportContact({ tipo: "perdida", detalles: { avistamiento: true } }).ok).toBe(false);
+    expect(validateReportContact({ tipo: "encontrada", detalles: {} }).ok).toBe(false);
+    expect(validateReportContact({ tipo: "encontrada", detalles: { avistamiento: "true" } }).ok).toBe(false);
+  });
+});

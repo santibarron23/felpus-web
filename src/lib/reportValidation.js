@@ -29,6 +29,12 @@ export function validateReportContact(row) {
   if (email && !emailOk) {
     return { ok: false, error: "Revisá el email de contacto, no parece válido." };
   }
+  // "Lo vi suelto" (sighting.js): quien solo VIO la mascota en la calle
+  // puede avisar sin dejar contacto — lo que sirve es el dónde y el cuándo,
+  // y quien la perdió recibe la coincidencia igual. Si deja uno, se valida.
+  if (!whatsapp && !email && row?.tipo === "encontrada" && row?.detalles?.avistamiento === true) {
+    return { ok: true, whatsapp: null, email: null };
+  }
   if (!whatsappOk && !emailOk) {
     return { ok: false, error: "Dejá un WhatsApp o un email de contacto — así pueden avisarte si la reconocen." };
   }

@@ -13,6 +13,7 @@ import Image from "next/image";
 import { petTitle, petDescriptor, nombreReal } from "../../lib/petTitle";
 import { zonaConCiudad } from "../../lib/zona";
 import { whatsappUrl } from "../../lib/shareCard";
+import { isSighting } from "../../lib/sighting";
 import ReportLocationMap from "../ReportLocationMap";
 import {
   Cat,
@@ -36,6 +37,7 @@ import {
   Check,
   Flag,
   Bookmark,
+  Eye,
 } from "lucide-react";
 import { scoreLabel, isRecent, formatFechaAR, reportPhotoAlt, COLOR_OPTIONS, REPORT_FLAG_REASONS, fechaLabel, getRazaOptions, RAZA_ESPECIALES } from "../../lib/matching";
 import { SITE_URL } from "../../lib/site";
@@ -49,7 +51,9 @@ import ShareSheet from "./ShareSheet";
 // por color y por texto (nunca solo por color): PERDIDA rojo, ENCONTRADA
 // naranja, REENCONTRADA verde — el verde se reserva para reencuentros
 // confirmados (paleta 2026-10-20, ver theme.js).
-export function Badge({ tipo, resuelto = false }) {
+// avistamiento: "encontrada" que quien avisó solo vio en la calle (ver
+// sighting.js) — mismo color que encontrada, otro texto.
+export function Badge({ tipo, resuelto = false, avistamiento = false }) {
   const C = useTheme();
   const isLost = tipo === "perdida";
   const bg = resuelto ? C.greenSolid : isLost ? C.redSolid : C.orangeInkSolid;
@@ -58,7 +62,7 @@ export function Badge({ tipo, resuelto = false }) {
       className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-bold tracking-wide uppercase text-white"
       style={{ background: bg }}
     >
-      {resuelto ? "Reencontrada" : isLost ? "Perdida" : "Encontrada"}
+      {resuelto ? "Reencontrada" : isLost ? "Perdida" : avistamiento ? "Vista suelta" : "Encontrada"}
     </span>
   );
 }
@@ -197,7 +201,7 @@ export function ReportCard({ report, onOpenDetail, saved, onToggleSaved, childre
             {resuelto ? (
               <Badge tipo={report.tipo} resuelto />
             ) : (
-              <Badge tipo={report.tipo} />
+              <Badge tipo={report.tipo} avistamiento={isSighting(report)} />
             )}
             <span className="inline-flex items-center gap-1 text-[12px] font-medium" style={{ color: C.muted }}>
               <EspecieIcon especie={report.especie} className="w-3.5 h-3.5" />
@@ -244,7 +248,7 @@ function contactMessage(report) {
   return `Hola! Vi en Felpus tu publicación de ${nombre} en ${zonaConCiudad(report)}. Creo que puedo ayudar.\n${SITE_URL}/r/${report.id}`;
 }
 
-export function DetailModal({ report, contactStatus, onRetryContact, onClose, onResolve, confirming, resolving, onConfirm, onCancelConfirm, isLoggedIn, isOwner, onDelete, onFlagReport, saved, onToggleSaved, onAskAssistant }) {
+export function DetailModal({ report, contactStatus, onRetryContact, onClose, onResolve, confirming, resolving, onConfirm, onCancelConfirm, isLoggedIn, isOwner, onDelete, onFlagReport, saved, onToggleSaved, onAskAssistant, onSawIt }) {
   const C = useTheme();
   const [activeIndex, setActiveIndex] = useState(0);
   const [generatingFlyer, setGeneratingFlyer] = useState(false);
@@ -365,7 +369,7 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
             {report.resuelto ? (
               <Badge tipo={report.tipo} resuelto />
             ) : (
-              <Badge tipo={report.tipo} />
+              <Badge tipo={report.tipo} avistamiento={isSighting(report)} />
             )}
           </div>
         </div>
@@ -433,6 +437,18 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
             <p className="text-sm" style={{ color: C.text }}>{report.descripcion}</p>
           </div>
           {report.nickname && <p className="text-xs" style={{ color: C.muted }}>Reportado por {report.nickname}</p>}
+          {/* "La vi" (sighting.js): en una perdida activa, avisar que se la vio
+              abre el reporte express ya vinculado a esta ficha. */}
+          {onSawIt && report.tipo === "perdida" && !report.resuelto && !isOwner && (
+            <button
+              type="button"
+              onClick={() => onSawIt(report)}
+              className="w-full min-h-[48px] flex items-center justify-center gap-2 rounded-xl text-sm font-bold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+              style={{ background: C.orangeInkSolid }}
+            >
+              <Eye className="w-4 h-4" aria-hidden="true" /> La vi: avisar dónde
+            </button>
+          )}
           {/* Contactar — antes esta sección entera dependía de que
               report.contactoWhatsapp/contactoEmail ya estuvieran cargados, y
               se piden aparte de forma asíncrona (ver openReportDetail en
@@ -471,7 +487,9 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
               )}
               {contactStatus === "ready" && !report.contactoWhatsapp && !report.contactoEmail && (
                 <p className="text-sm rounded-xl py-2.5 px-3" style={{ background: C.surfaceSubtle, color: C.muted }}>
-                  Esta publicación no dejó un contacto directo.
+                  {isSighting(report)
+                    ? "Quien la vio suelta no dejó contacto: lo que sirve es el lugar y la hora de arriba."
+                    : "Esta publicación no dejó un contacto directo."}
                 </p>
               )}
               {contactStatus === "ready" && (report.contactoWhatsapp || report.contactoEmail) && (
