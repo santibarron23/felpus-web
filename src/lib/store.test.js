@@ -696,6 +696,20 @@ describe("updateProfile", () => {
       .mockReturnValueOnce(makeBuilder({ error: { code: "PGRST204", message: "Could not find the 'whatsapp' column of 'contributors'" } }));
     await expect(updateProfile("user-1", { nickname: "Ana", whatsapp: "+54" })).rejects.toThrow(/todavía no está disponible/i);
   });
+
+  // 2026-10-28: sin los grants de contributors (se corrió un schema.sql viejo),
+  // la persona veía "permission denied for table contributors".
+  it("sin permisos en la base (42501) muestra un mensaje entendible, no el de Postgres", async () => {
+    supabaseMock.from.mockReturnValueOnce(makeBuilder({ error: { code: "42501", message: "permission denied for table contributors" } }));
+    await expect(updateProfile("user-1", { nickname: "Ana" })).rejects.toThrow(/problema nuestro/i);
+  });
+
+  it("lo mismo al guardar alias o link de cobro (no dice 'apoyos no disponibles')", async () => {
+    supabaseMock.from
+      .mockReturnValueOnce(makeBuilder({ error: null }))
+      .mockReturnValueOnce(makeBuilder({ error: { code: "42501", message: "permission denied for table contributors" } }));
+    await expect(updateProfile("user-1", { nickname: "Ana", alias_pago: "FILO.SOMBRA.SUERTE", acepta_apoyos: true })).rejects.toThrow(/problema nuestro/i);
+  });
 });
 
 describe("fetchSavedReportIds / saveReport / unsaveReport", () => {

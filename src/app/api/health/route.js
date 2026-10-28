@@ -37,6 +37,22 @@ export async function GET() {
     if (leaks.length) {
       return Response.json({ ok: false, error: "Datos privados legibles con la clave pública.", leaks }, { status: 503 });
     }
+    // Permisos que la app necesita (o que no deberían estar), según la base
+    // misma: felpus_permisos_faltantes() (migración 20261028_02). Se agregó
+    // después de que correr un schema.sql viejo dejara a los colaboradores
+    // sin poder guardar el perfil. Sin la función (404), se saltea.
+    const perm = await fetch(`${url}/rest/v1/rpc/felpus_permisos_faltantes`, {
+      method: "POST",
+      headers: { apikey: anon, Authorization: `Bearer ${anon}`, "Content-Type": "application/json" },
+      body: "{}",
+      cache: "no-store",
+    });
+    if (perm.ok) {
+      const faltan = await perm.json().catch(() => []);
+      if (Array.isArray(faltan) && faltan.length) {
+        return Response.json({ ok: false, error: "Permisos de la base desactualizados.", permisos: faltan }, { status: 503 });
+      }
+    }
     return Response.json({ ok: true, reports: total });
   } catch (e) {
     return Response.json({ ok: false, error: e?.message || "Sin conexión con Supabase." }, { status: 503 });
