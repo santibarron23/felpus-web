@@ -17,6 +17,8 @@ vi.mock("./supabaseClient", () => ({ supabase: supabaseMock }));
 
 const {
   fetchReports,
+  fetchReportVectors,
+  mergeReportVectors,
   createReport,
   resolveReports,
   fetchReportContact,
@@ -202,6 +204,52 @@ describe("fetchReports", () => {
   it("con la lista vacía, no rompe (devuelve array vacío)", async () => {
     supabaseMock.from.mockReturnValueOnce(makeBuilder({ data: [], error: null }));
     expect(await fetchReports()).toEqual([]);
+  });
+});
+
+describe("carga en dos pasos (light + vectores)", () => {
+  it("light pide el listado sin histogramas ni embeddings", async () => {
+    const builder = makeBuilder({ data: [baseRow({ hist: undefined, embedding: undefined })], error: null });
+    supabaseMock.from.mockReturnValueOnce(builder);
+    const result = await fetchReports({ light: true });
+    const cols = builder.select.mock.calls[0][0].split(",");
+    for (const c of ["hist", "embedding", "hists", "embeddings"]) expect(cols).not.toContain(c);
+    expect(cols).toContain("foto_url");
+    expect(result[0].fotos[0].hist ?? null).toBeNull();
+  });
+
+  it("sin light pide todo, como antes", async () => {
+    const builder = makeBuilder({ data: [baseRow()], error: null });
+    supabaseMock.from.mockReturnValueOnce(builder);
+    await fetchReports();
+    expect(builder.select.mock.calls[0][0].split(",")).toEqual(expect.arrayContaining(["hist", "embedding", "hists", "embeddings"]));
+  });
+
+  it("fetchReportVectors pide solo id + vectores", async () => {
+    const builder = makeBuilder({ data: [{ id: "r1", hist: [1] }], error: null });
+    supabaseMock.from.mockReturnValueOnce(builder);
+    expect(await fetchReportVectors()).toEqual([{ id: "r1", hist: [1] }]);
+    expect(builder.select.mock.calls[0][0]).toBe("id,hist,embedding,hists,embeddings");
+  });
+
+  it("mergeReportVectors: por foto, foto única y sin fila", () => {
+    const reports = [
+      { id: "a", fotos: [{ url: "u0", hist: null, embedding: null }, { url: "u1", hist: null, embedding: null, dudosa: true }] },
+      { id: "b", fotos: [{ url: "v0", hist: null, embedding: null }] },
+      { id: "c", fotos: [{ url: "w0", hist: [9], embedding: [9] }] },
+    ];
+    const out = mergeReportVectors(reports, [
+      { id: "a", hists: [[1], [2]], embeddings: [[0.1], null] },
+      { id: "b", hist: [3], embedding: [0.3], hists: null, embeddings: null },
+    ]);
+    expect(out[0].fotos).toEqual([
+      { url: "u0", hist: [1], embedding: [0.1] },
+      { url: "u1", hist: [2], embedding: null, dudosa: true },
+    ]);
+    expect(out[0].hist).toEqual([1]);
+    expect(out[0].embedding).toEqual([0.1]);
+    expect(out[1].fotos[0]).toEqual({ url: "v0", hist: [3], embedding: [0.3] });
+    expect(out[2]).toBe(reports[2]);
   });
 });
 
