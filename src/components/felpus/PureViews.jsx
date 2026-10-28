@@ -769,11 +769,19 @@ export function ShareButton({ report, className, style, children, wrapperClassNa
 // sensación de "vivo" a datos que son reales (no simulados), sin depender de
 // ninguna librería de animación nueva. Respeta prefers-reduced-motion
 // mostrando el número final directamente.
+//
+// Arranca en el valor real, no en 0 (2026-10-28): los números ya vienen en
+// el HTML (homeStats.js) y contar desde 0 hacía que se vieran tarde. Solo
+// anima cuando el valor cambia después.
 export function AnimatedNumber({ value }) {
-  const [display, setDisplay] = useState(0);
-  const prevValue = useRef(0);
+  const [display, setDisplay] = useState(value);
+  const prevValue = useRef(value);
 
   useEffect(() => {
+    if (value === prevValue.current) {
+      setDisplay(value);
+      return;
+    }
     const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     if (reduceMotion) {
       setDisplay(value);

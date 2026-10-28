@@ -338,7 +338,7 @@ function AdminBreakdownCard({ title, items }) {
   );
 }
 
-export default function FelpusMatcher() {
+export default function FelpusMatcher({ initialStats = null } = {}) {
   const C = useTheme();
   const { mode: themeMode } = useThemeToggle();
   const [activeTab, setActiveTab] = useState("inicio");
@@ -2436,6 +2436,14 @@ export default function FelpusMatcher() {
     const desde = Date.now() - 7 * 24 * 3600 * 1000;
     return reports.filter((r) => r.creadoEn >= desde).length;
   }, [reports]);
+  // Números de Inicio: mientras baja el listado completo (pesado: trae los
+  // embeddings de cada foto), se muestran los que ya vinieron en el HTML
+  // (page.js → homeStats.js). Mismas definiciones, así no saltan.
+  const usarStatsIniciales = !!initialStats && loadingReports && reports.length === 0;
+  const homeStats = usarStatsIniciales
+    ? initialStats
+    : { activas: activeReports.length, ultimos7: last7dCount, reencuentros: resueltas.length };
+
   // Memoizado: sin esto, esta lista se recalculaba (con una referencia de
   // array NUEVA) en cada render de todo el componente, sin importar si algo
   // relevante había cambiado. Eso hacía que ReportsMap reconstruyera todos
@@ -2720,7 +2728,7 @@ export default function FelpusMatcher() {
               className="felpus-mono text-[12px] font-bold text-white rounded-full px-3 min-h-[40px] whitespace-nowrap shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
               style={{ background: C.redSolid }}
             >
-              {activeReports.length} mascotas
+              {homeStats.activas} mascotas
             </button>
           </div>
         </div>
@@ -2903,7 +2911,7 @@ export default function FelpusMatcher() {
             <div className="grid grid-cols-3 gap-2.5">
               {[
                 {
-                  value: activeReports.length,
+                  value: homeStats.activas,
                   label: "Mascotas en búsqueda",
                   color: C.red,
                   onClick: () => {
@@ -2915,7 +2923,7 @@ export default function FelpusMatcher() {
                   },
                 },
                 {
-                  value: last7dCount,
+                  value: homeStats.ultimos7,
                   label: "Últimos 7 días",
                   color: C.orangeInk,
                   onClick: () => {
@@ -2927,7 +2935,7 @@ export default function FelpusMatcher() {
                   },
                 },
                 {
-                  value: resueltas.length,
+                  value: homeStats.reencuentros,
                   label: "Reencuentros",
                   color: C.green,
                   onClick: () => {
@@ -5757,7 +5765,7 @@ export default function FelpusMatcher() {
       <footer className="max-w-2xl mx-auto px-4 pb-28 pt-2 space-y-1.5">
         <SocialLinks className="pb-1" />
         <p className="text-[12px] font-semibold flex items-center gap-1 justify-center" style={{ color: C.greenDark }}>
-          <PartyPopper className="w-3.5 h-3.5" /> {resueltas.length} {resueltas.length === 1 ? "reencuentro" : "reencuentros"} gracias a la comunidad
+          <PartyPopper className="w-3.5 h-3.5" /> {homeStats.reencuentros} {homeStats.reencuentros === 1 ? "reencuentro" : "reencuentros"} gracias a la comunidad
         </p>
         <p className="text-[12px] leading-snug flex items-start gap-1 justify-center text-center" style={{ color: C.muted }}>
           <HelpCircle className="w-3.5 h-3.5 shrink-0 mt-px" /> Herramienta comunitaria: no reemplaza la denuncia ante autoridades o refugios.
