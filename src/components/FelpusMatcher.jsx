@@ -15,6 +15,7 @@ import { importPost } from "../lib/postImportClient";
 import {
   PawPrint,
   Search,
+  ArrowRight,
   MapPin,
   Camera,
   Navigation,
@@ -2964,7 +2965,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                   Cada mascota merece volver a casa
                 </h2>
                 <p className="text-sm leading-relaxed max-w-sm mx-auto" style={{ color: C.muted }}>
-                  Subí una foto y Felpus busca coincidencias en toda la comunidad mediante Inteligencia Artificial.
+                  Publicá una mascota perdida o encontrada. Nuestra IA te ayuda a encontrar posibles coincidencias.
                 </p>
                 <div className="flex gap-2 mt-4">
                   <button
@@ -3013,6 +3014,27 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                     Vi una mascota suelta
                   </span>
                   <span className="text-[11px]" style={{ color: C.muted }}>No la tengo conmigo · Avisá en 3 toques</span>
+                </button>
+                {/* Buscar (2026-10-28): mucha gente entra a buscar una mascota
+                    ya publicada, no a reportar; "Explorar" del menú inferior
+                    no siempre se identifica. Mismo destino que "Mascotas en
+                    búsqueda" de la franja de abajo. */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    playTap();
+                    setFilterTipo("todos");
+                    setFilterFecha("todos");
+                    setExploreView("lista");
+                    setShowResueltas(false);
+                    goToTab("explorar");
+                  }}
+                  className="mx-auto mt-3 px-3 min-h-[44px] flex items-center justify-center gap-1.5 text-sm font-bold underline underline-offset-4 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                  style={{ color: C.text }}
+                >
+                  <Search className="w-4 h-4" aria-hidden="true" />
+                  Ver mascotas reportadas
+                  <ArrowRight className="w-4 h-4" aria-hidden="true" />
                 </button>
               </div>
             </div>
