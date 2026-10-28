@@ -14,7 +14,7 @@ const MAX_PER_HOUR = 8;
 // schema.sql. Duplicada acá (no importada) porque esta ruta corre en un
 // entorno de servidor separado del cliente y así queda explícito qué
 // columnas puede llegar a faltar sin depender de un import cruzado.
-const OPTIONAL_COLUMNS = ["raza", "detalles", "oculto", "ciudad", "provincia"];
+const OPTIONAL_COLUMNS = ["raza", "detalles", "oculto", "ciudad", "provincia", "avisos_email"];
 
 export function missingOptionalColumn(error) {
   if (!error) return null;

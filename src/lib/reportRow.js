@@ -40,6 +40,8 @@ export const REPORT_INSERT_COLUMNS = [
   "hists",
   "embeddings",
   "nickname",
+  // Avisos por email (migración 20261028_01): false = no quiere mails.
+  "avisos_email",
 ];
 
 export const REPORT_ID_RE = /^[A-Za-z0-9-]{6,64}$/;
@@ -93,6 +95,8 @@ export function sanitizeReportRow(input, { photosPrefix } = {}) {
   if (row.detalles != null && (typeof row.detalles !== "object" || Array.isArray(row.detalles))) {
     return { error: "Detalles inválidos." };
   }
+
+  if (row.avisos_email !== undefined) row.avisos_email = row.avisos_email !== false;
 
   return { row };
 }

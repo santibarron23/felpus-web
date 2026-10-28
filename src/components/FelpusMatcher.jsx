@@ -8,6 +8,7 @@ import FelpusAssistant from "./felpus/FelpusAssistant";
 import ImportPostCard from "./felpus/ImportPostCard";
 import SightingSheet from "./felpus/SightingSheet";
 import { buildSightingDraft, PUNTOS_AVISTAMIENTO } from "../lib/sighting";
+import { novedadesDue, NOVEDADES_KEY_PREFIX } from "../lib/emailAvisos";
 import { findDuplicates, duplicateMessage } from "../lib/duplicates";
 import { REPORT_DRAFT_KEY, serializeReportDraft, parseReportDraft } from "../lib/reportDraft";
 import { importPost } from "../lib/postImportClient";
@@ -98,6 +99,8 @@ import {
 } from "../lib/matching";
 import {
   fetchReports,
+  fetchReportVectors,
+  mergeReportVectors,
   fetchReportContact,
   createReport,
   resolveReports,
@@ -340,13 +343,21 @@ function AdminBreakdownCard({ title, items }) {
   );
 }
 
-export default function FelpusMatcher() {
+export default function FelpusMatcher({ initialStats = null } = {}) {
   const C = useTheme();
   const { mode: themeMode } = useThemeToggle();
   const [activeTab, setActiveTab] = useState("inicio");
   const [reportKind, setReportKind] = useState("perdida");
   const [form, setForm] = useState(emptyForm());
   const [reports, setReports] = useState([]);
+  // Carga en dos pasos (2026-10-28): primero el listado liviano, sin
+  // histogramas ni embeddings (Explorar y el mapa aparecen enseguida), y
+  // después, en segundo plano, los vectores de las fotos. Todo lo que compara
+  // fotos espera a vectoresListos o a reportesParaComparar().
+  const [vectoresListos, setVectoresListos] = useState(false);
+  const vectoresRef = useRef({ promise: null, rows: null });
+  const reportsRef = useRef(reports);
+  reportsRef.current = reports;
   const [loadingReports, setLoadingReports] = useState(true);
   // Antes reports=[] significaba lo mismo para "todavía no hay reportes" que
   // para "no se pudo conectar" — el empty-state mostraba siempre el mismo
@@ -1178,7 +1189,7 @@ export default function FelpusMatcher() {
   // directamente CUÁL reporte tuyo tiene una coincidencia nueva y con qué,
   // para poder ir directo al detalle en vez de tener que buscarlo.
   const newMatchItems = useMemo(() => {
-    if (!user) return [];
+    if (!user || !vectoresListos) return [];
     const myActive = reports.filter((r) => r.userId === user.id && !r.resuelto);
     if (myActive.length === 0) return [];
     const items = [];
@@ -1191,7 +1202,7 @@ export default function FelpusMatcher() {
       }
     }
     return items;
-  }, [reports, user, matchesSeenAt]);
+  }, [reports, user, matchesSeenAt, vectoresListos]);
   const newMatchesCount = newMatchItems.length;
 
   // Rediseño de "Detalles para reconocerlo" (ver CHIP_BTN_CLASS/
@@ -1354,7 +1365,7 @@ export default function FelpusMatcher() {
   // contra reportes activos del mismo tipo. Solo con foto, zona y color —
   // antes no hay con qué comparar en serio. Es un aviso: nunca bloquea.
   const posibleDuplicado = useMemo(() => {
-    if (!form.fotos.length || !form.color || !(form.zona.trim() || (form.lat != null && form.lng != null))) return null;
+    if (!vectoresListos || !form.fotos.length || !form.color || !(form.zona.trim() || (form.lat != null && form.lng != null))) return null;
     const draft = {
       id: "_nuevo",
       tipo: reportKind,
@@ -1375,7 +1386,7 @@ export default function FelpusMatcher() {
       creadoEn: Date.now(),
     };
     return findDuplicates(draft, reports, { userId: user?.id || null, nickname })[0] || null;
-  }, [form.fotos, form.color, form.colorOtro, form.zona, form.lat, form.lng, form.especie, form.raza, form.tamano, form.sexo, form.edad, form.provincia, form.fecha, reportKind, reports, user, nickname]);
+  }, [form.fotos, form.color, form.colorOtro, form.zona, form.lat, form.lng, form.especie, form.raza, form.tamano, form.sexo, form.edad, form.provincia, form.fecha, reportKind, reports, user, nickname, vectoresListos]);
   const dupVisible = posibleDuplicado && posibleDuplicado.report.id !== dupDescartado ? posibleDuplicado : null;
 
   // Borrador en el dispositivo: se recupera una sola vez al montar y se
@@ -1586,9 +1597,19 @@ export default function FelpusMatcher() {
   const loadAll = useCallback(async () => {
     setLoadingReports(true);
     try {
-      const items = await fetchReports();
+      const items = await fetchReports({ light: true });
       setReports(items);
       setLoadError(false);
+      // Sin await: el listado ya se muestra; los vectores llegan solos. Si
+      // fallan, el matching compara sin fotos (mejor que no mostrar nada).
+      setVectoresListos(false);
+      vectoresRef.current.promise = fetchReportVectors()
+        .then((rows) => {
+          vectoresRef.current.rows = rows;
+          setReports((prev) => mergeReportVectors(prev, rows));
+        })
+        .catch((e) => logError("No se pudieron cargar los vectores de las fotos", e))
+        .finally(() => setVectoresListos(true));
       await loadLeaderboard();
     } catch (e) {
       logError("No se pudieron cargar los reportes", e);
@@ -1637,6 +1658,39 @@ export default function FelpusMatcher() {
     renewReport(rid);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading]);
+
+  // "¿Hubo novedades?" dentro de la app (emailAvisos.js): uno de tus
+  // reportes activos cumplió 30 días. Tuyo = de tu cuenta, o publicado desde
+  // este dispositivo (token guardado). Descartarlo lo esconde 30 días.
+  const [novedadesVistas, setNovedadesVistas] = useState(0);
+  const reporteNovedades = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const now = Date.now();
+    return (
+      reports.find((r) => {
+        const mio = (user && r.userId === user.id) || !!reportToken(r.id);
+        if (!mio) return false;
+        let dismissedAt = null;
+        try {
+          dismissedAt = Number(localStorage.getItem(NOVEDADES_KEY_PREFIX + r.id)) || null;
+        } catch {
+          // sin localStorage: se muestra igual
+        }
+        return novedadesDue(r, { dismissedAt, now });
+      }) || null
+    );
+    // novedadesVistas: recalcula al descartar uno.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reports, user, novedadesVistas]);
+
+  function descartarNovedades(reportId) {
+    try {
+      localStorage.setItem(NOVEDADES_KEY_PREFIX + reportId, String(Date.now()));
+    } catch {
+      // sin localStorage: se descarta solo en esta visita
+    }
+    setNovedadesVistas((n) => n + 1);
+  }
 
   async function renewReport(reportId) {
     try {
@@ -2149,7 +2203,6 @@ export default function FelpusMatcher() {
   // queda abierta con los datos). Si createReport falla, tira el error.
   async function publishAndMatch(draft, { puntos, navigateFirst = true }) {
     const opposite = draft.tipo === "perdida" ? "encontrada" : "perdida";
-    const candidates = reports.filter((r) => r.tipo === opposite && !r.resuelto);
 
     if (navigateFirst) {
       goToTab("resultado");
@@ -2165,6 +2218,8 @@ export default function FelpusMatcher() {
       setPushSubState("idle");
       goToTab("resultado");
     }
+    // Con los vectores de las fotos ya cargados (ver vectoresListos).
+    const candidates = (await reportesParaComparar()).filter((r) => r.tipo === opposite && !r.resuelto);
 
     const scored = findMatches(savedReport, candidates, { limit: 6 });
 
@@ -2236,6 +2291,13 @@ export default function FelpusMatcher() {
     } catch {
       // localStorage no disponible: no había borrador.
     }
+  }
+
+  // Reportes con los vectores de las fotos ya cargados (ver vectoresListos):
+  // si todavía están llegando, espera; si fallaron, devuelve lo que hay.
+  async function reportesParaComparar() {
+    await vectoresRef.current.promise;
+    return vectoresRef.current.rows ? mergeReportVectors(reportsRef.current, vectoresRef.current.rows) : reportsRef.current;
   }
 
   async function handleSubmit(e) {
@@ -2366,6 +2428,7 @@ export default function FelpusMatcher() {
         },
         contactoWhatsapp: whatsappResult.isValid ? whatsappResult.digits : "",
         contactoEmail: form.contactoEmail.trim(),
+        avisosEmail: form.avisosEmail !== false,
         fotos: form.fotos.map((foto) => (foto.check?.dudosa ? { ...foto, dudosa: true } : foto)),
         nickname: nickname.trim(),
         userId: user?.id || null,
@@ -2423,7 +2486,7 @@ export default function FelpusMatcher() {
     setExpandedCard(report.id);
     if (cardMatches[report.id]) return;
     const opposite = report.tipo === "perdida" ? "encontrada" : "perdida";
-    const candidates = reports.filter((r) => r.id !== report.id && r.tipo === opposite && !r.resuelto);
+    const candidates = (await reportesParaComparar()).filter((r) => r.id !== report.id && r.tipo === opposite && !r.resuelto);
     const scored = findMatches(report, candidates, { limit: 6 });
     let descartados = new Set();
     try {
@@ -2479,6 +2542,14 @@ export default function FelpusMatcher() {
     const desde = Date.now() - 7 * 24 * 3600 * 1000;
     return reports.filter((r) => r.creadoEn >= desde).length;
   }, [reports]);
+  // Números de Inicio: mientras baja el listado completo (pesado: trae los
+  // embeddings de cada foto), se muestran los que ya vinieron en el HTML
+  // (page.js → homeStats.js). Mismas definiciones, así no saltan.
+  const usarStatsIniciales = !!initialStats && loadingReports && reports.length === 0;
+  const homeStats = usarStatsIniciales
+    ? initialStats
+    : { activas: activeReports.length, ultimos7: last7dCount, reencuentros: resueltas.length };
+
   // Memoizado: sin esto, esta lista se recalculaba (con una referencia de
   // array NUEVA) en cada render de todo el componente, sin importar si algo
   // relevante había cambiado. Eso hacía que ReportsMap reconstruyera todos
@@ -2763,7 +2834,7 @@ export default function FelpusMatcher() {
               className="felpus-mono text-[12px] font-bold text-white rounded-full px-3 min-h-[40px] whitespace-nowrap shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
               style={{ background: C.redSolid }}
             >
-              {activeReports.length} mascotas
+              {homeStats.activas} mascotas
             </button>
           </div>
         </div>
@@ -2886,6 +2957,52 @@ export default function FelpusMatcher() {
         {/* INICIO */}
         {activeTab === "inicio" && (
           <div key="inicio" className="max-w-2xl mx-auto space-y-5 felpus-fadein">
+            {reporteNovedades && (
+              <div className="bg-white rounded-2xl border p-4 space-y-3 shadow-sm" style={{ borderColor: C.border }} role="status">
+                <div className="flex items-start gap-2">
+                  <p className="flex-1 text-sm" style={{ color: C.text }}>
+                    <span className="font-bold">
+                      {reporteNovedades.tipo === "encontrada" ? "¿Pudiste devolver a " : "¿Hubo novedades de "}
+                      {nombreReal(reporteNovedades) || petTitle(reporteNovedades).toLowerCase()}?
+                    </span>{" "}
+                    Tu reporte lleva {Math.max(1, Math.round((Date.now() - reporteNovedades.creadoEn) / 86400000))} días publicado.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => descartarNovedades(reporteNovedades.id)}
+                    aria-label="Ahora no"
+                    className="shrink-0 w-9 h-9 -mt-1 -mr-1 rounded-full flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                    style={{ color: C.muted }}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      descartarNovedades(reporteNovedades.id);
+                      openReportDetail(reporteNovedades);
+                    }}
+                    className="min-h-[44px] rounded-xl text-sm font-bold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                    style={{ background: C.greenSolid }}
+                  >
+                    {reporteNovedades.tipo === "encontrada" ? "Ya volvió 🎉" : "Volvió a casa 🎉"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      descartarNovedades(reporteNovedades.id);
+                      renewReport(reporteNovedades.id);
+                    }}
+                    className="min-h-[44px] rounded-xl border text-sm font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                    style={{ borderColor: C.border, color: C.text }}
+                  >
+                    Sigo buscando
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl border overflow-hidden shadow-sm" style={{ borderColor: C.border }}>
               <div className="p-5 text-center">
                 <div
@@ -2960,7 +3077,7 @@ export default function FelpusMatcher() {
             <div className="grid grid-cols-3 gap-2.5">
               {[
                 {
-                  value: activeReports.length,
+                  value: homeStats.activas,
                   label: "Mascotas en búsqueda",
                   color: C.red,
                   onClick: () => {
@@ -2972,7 +3089,7 @@ export default function FelpusMatcher() {
                   },
                 },
                 {
-                  value: last7dCount,
+                  value: homeStats.ultimos7,
                   label: "Últimos 7 días",
                   color: C.orangeInk,
                   onClick: () => {
@@ -2984,7 +3101,7 @@ export default function FelpusMatcher() {
                   },
                 },
                 {
-                  value: resueltas.length,
+                  value: homeStats.reencuentros,
                   label: "Reencuentros",
                   color: C.green,
                   onClick: () => {
@@ -3644,6 +3761,19 @@ export default function FelpusMatcher() {
                       className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
                       style={{ borderColor: fieldErrors.contacto ? C.red : C.border, color: C.text }}
                     />
+                    {form.contactoEmail.trim() && (
+                      <label className="flex items-start gap-2 mt-2 text-[12px] leading-snug cursor-pointer" style={{ color: C.text }}>
+                        <input
+                          type="checkbox"
+                          checked={form.avisosEmail !== false}
+                          onChange={(e) => setForm((f) => ({ ...f, avisosEmail: e.target.checked }))}
+                          className="mt-0.5 w-4 h-4 shrink-0"
+                        />
+                        <span>
+                          Avisarme por email solo si hay novedades: una coincidencia muy probable o, cada 30 días, &ldquo;¿hubo novedades?&rdquo;.
+                        </span>
+                      </label>
+                    )}
                   </div>
                 </div>
                 {fieldErrors.contacto && (
@@ -5840,7 +5970,7 @@ export default function FelpusMatcher() {
       <footer className="max-w-2xl mx-auto px-4 pb-28 pt-2 space-y-1.5">
         <SocialLinks className="pb-1" />
         <p className="text-[12px] font-semibold flex items-center gap-1 justify-center" style={{ color: C.greenDark }}>
-          <PartyPopper className="w-3.5 h-3.5" /> {resueltas.length} {resueltas.length === 1 ? "reencuentro" : "reencuentros"} gracias a la comunidad
+          <PartyPopper className="w-3.5 h-3.5" /> {homeStats.reencuentros} {homeStats.reencuentros === 1 ? "reencuentro" : "reencuentros"} gracias a la comunidad
         </p>
         <p className="text-[12px] leading-snug flex items-start gap-1 justify-center text-center" style={{ color: C.muted }}>
           <HelpCircle className="w-3.5 h-3.5 shrink-0 mt-px" /> Herramienta comunitaria: no reemplaza la denuncia ante autoridades o refugios.

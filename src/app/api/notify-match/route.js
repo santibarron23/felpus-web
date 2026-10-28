@@ -2,9 +2,10 @@ import { timingSafeEqual } from "node:crypto";
 import { findMatches } from "../../../lib/matching";
 import { rowToMatchable, makeDb, makePusher, dispatchNewReport } from "../../../lib/alertsServer";
 import { logError } from "../../../lib/log";
-import { petTitle, nombreReal } from "../../../lib/petTitle";
 import { SITE_URL } from "../../../lib/site";
-import { C } from "../../../lib/theme";
+import { argentinaDayStartIso } from "../../../lib/alerts";
+import { matchEmail, matchEmailAllowed, cupoRestante } from "../../../lib/emailAvisos";
+import { makeEmailDb, makeEmailSender, linkSecret, firmarAviso, avisoUrls } from "../../../lib/serverEmailAvisos";
 
 // Comparación de tiempo constante para el secreto del webhook: `!==` sobre
 // strings corta apenas encuentra el primer carácter distinto, lo que en
@@ -29,11 +30,10 @@ function secretsMatch(received, expected) {
 // dependen del DOM, así que corren igual de bien acá que en el cliente.
 export const runtime = "nodejs";
 
-// Umbral más alto que el de la app (0.15, "ver posibles coincidencias"):
-// un email es más intrusivo que una tarjeta en una lista, así que solo
-// avisamos por mail ante probabilidad media/alta real.
-const EMAIL_SCORE_THRESHOLD = 0.4;
-const MAX_EMAILS_PER_REPORT = 3;
+// Mails de coincidencia (2026-10-28, ver emailAvisos.js): solo coincidencias
+// ALTAS, como mucho 1 por semana por reporte, respetando la baja y el tope
+// diario. Antes salían desde 40 % y hasta 3 por reporte nuevo.
+const MAX_EMAILS_POR_REPORTE_NUEVO = 3;
 
 
 // Columnas explícitas, SIN contacto_whatsapp/contacto_email: esas dos
@@ -41,7 +41,7 @@ const MAX_EMAILS_PER_REPORT = 3;
 // vía la RPC get_report_contact (que sí las expone, rate-limitada) — acá se
 // listan aparte porque select=* no las traería de todos modos. El email de
 // la coincidencia que termina superando el umbral se pide aparte, recién
-// cuando hace falta (ver fetchReportContactServer más abajo).
+// cuando hace falta (makeEmailDb.getReport en serverEmailAvisos.js).
 //
 // push_subscription: auditoría integral (2026-08-09) — se sacó del SELECT
 // otorgado a anon/authenticated (una PushSubscription no debería ser
@@ -50,7 +50,7 @@ const MAX_EMAILS_PER_REPORT = 3;
 // x-webhook-secret) así que no había motivo real para que usara la anon
 // key en primer lugar — pasa a usar SUPABASE_SERVICE_ROLE_KEY para esta
 // consulta también (antes solo se usaba para el contacto de la coincidencia
-// puntual, ver fetchReportContactServer).
+// puntual).
 const CANDIDATE_COLUMNS =
   "id,tipo,especie,raza,detalles,nombre,color,color_otro,tamano,sexo,edad,peso,zona,provincia,lat,lng,fecha,descripcion,push_subscription,foto_url,hist,embedding,foto_urls,hists,embeddings,creado_en";
 
@@ -71,28 +71,6 @@ async function fetchCandidates(supabaseUrl, apiKey, newReport) {
   return res.json();
 }
 
-// Mismo camino que usa el navegador (get_report_contact en schema.sql), pero
-// llamado servidor-a-servidor sin IP real que identificar, así que no
-// compite contra el cupo de 30/hora por IP de gente real abriendo detalles
-// de reportes (ver el comentario junto a esa función). Se pide solo para
-// las coincidencias que ya superaron el umbral, nunca en bloque para los
-// 200 candidatos.
-//
-// Hallazgo de auditoría de seguridad (2026-08-07): get_report_contact ahora
-// exige el rol service_role (ver PENDIENTE_DECISION.md #-14) — la anon key
-// que usaba esta llamada ya no alcanza, así que pasa a requerir
-// SUPABASE_SERVICE_ROLE_KEY explícitamente.
-async function fetchReportContactServer(supabaseUrl, serviceKey, reportId) {
-  const res = await fetch(`${supabaseUrl}/rest/v1/rpc/get_report_contact`, {
-    method: "POST",
-    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ p_report_id: reportId, p_client_ip: null }),
-  });
-  if (!res.ok) return "";
-  const rows = await res.json();
-  return (Array.isArray(rows) ? rows[0]?.contacto_email : null) || "";
-}
-
 // nombre/color/zona son texto libre que cualquier persona controla al
 // publicar un reporte (zona en particular viene de Google Places o texto a
 // mano) — sin escapar, alguien podría meter HTML/enlaces propios en el
@@ -101,43 +79,7 @@ async function fetchReportContactServer(supabaseUrl, serviceKey, reportId) {
 // se ejecutaría como <script> (los clientes de correo lo filtran), pero sí
 // se renderiza como HTML real, así que el resto (links, estilos, tags)
 // pasa sin filtro si no se escapa acá.
-export function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  })[c]);
-}
-
-async function sendMatchEmail({ resendKey, toEmail, matchedReport, newReport, score }) {
-  const link = `${SITE_URL}/r/${encodeURIComponent(newReport.id)}`;
-  const nombre = escapeHtml(nombreReal(newReport) || petTitle(newReport).toLowerCase());
-  const color = escapeHtml(newReport.color);
-  const zona = escapeHtml(newReport.zona);
-  const matchedNombre = escapeHtml(petTitle(matchedReport));
-  const pct = Math.round(score * 100);
-  const html = `
-    <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">
-      <h2 style="color:${C.red};">🐾 Posible coincidencia en Felpus</h2>
-      <p>Alguien publicó ${newReport.tipo === "perdida" ? "una mascota perdida" : "una mascota encontrada"}
-        (<strong>${nombre}</strong>, ${color}, zona ${zona}) que se parece a tu publicación
-        de <strong>${matchedNombre}</strong> — ${pct}% de compatibilidad.</p>
-      <p><a href="${link}" style="display:inline-block;background:${C.redSolid};color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold;">Ver la publicación</a></p>
-      <p style="color:${C.muted};font-size:12px;">Entrá a Felpus para ver el detalle completo y confirmar si es tu mascota.</p>
-    </div>`;
-  await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      from: "Felpus <onboarding@resend.dev>",
-      to: [toEmail],
-      subject: `🐾 Posible coincidencia con ${petTitle(matchedReport)} en Felpus`,
-      html,
-    }),
-  });
-}
+export { escapeHtml } from "../../../lib/emailAvisos";
 
 export async function POST(request) {
   const secret = request.headers.get("x-webhook-secret");
@@ -146,7 +88,6 @@ export async function POST(request) {
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const resendKey = process.env.RESEND_API_KEY;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) {
     return Response.json({ error: "Faltan variables de entorno en el servidor." }, { status: 501 });
@@ -164,28 +105,44 @@ export async function POST(request) {
     return Response.json({ notified: 0 });
   }
 
-  // 1) Email al dueño del otro reporte (igual que siempre; se mantiene a
-  // pedido del usuario, 2026-10-20). El push ya no sale de acá: lo manda el
-  // despacho de alertas de abajo, con umbrales propios y sin repetir.
+  // 1) Email al dueño del otro reporte, solo si la coincidencia es alta (ver
+  // emailAvisos.js). El push lo manda el despacho de alertas de abajo.
   let notified = 0;
-  if (resendKey) {
+  const send = makeEmailSender();
+  const linkKey = linkSecret();
+  if (send && linkKey) {
     try {
+      const now = new Date();
       const newReport = rowToMatchable(row);
       const candidateRows = await fetchCandidates(supabaseUrl, serviceKey, row);
       const candidates = candidateRows.map(rowToMatchable);
-      const matches = findMatches(newReport, candidates, { limit: 10 }).filter((m) => m.score >= EMAIL_SCORE_THRESHOLD);
+      const matches = findMatches(newReport, candidates, { limit: 10 });
+      const emailDb = makeEmailDb({ supabaseUrl, serviceKey });
+      const dayStart = argentinaDayStartIso(now);
+      let cupo = null;
       for (const m of matches) {
-        if (notified >= MAX_EMAILS_PER_REPORT) break;
-        let contactoEmail = "";
+        if (notified >= MAX_EMAILS_POR_REPORTE_NUEVO) break;
+        // Sin la migración 20261028_01, getReport falla y no se manda nada
+        // (no hay cómo respetar la baja).
+        const destino = await emailDb.getReport(m.report.id);
+        if (!matchEmailAllowed(destino, m.score, now.getTime())) continue;
+        if (cupo == null) cupo = cupoRestante(await emailDb.countEmailsSince(dayStart));
+        if (cupo <= 0) break;
+        const token = firmarAviso(destino.id, linkKey, now.getTime());
+        const urls = avisoUrls(SITE_URL, token);
         try {
-          contactoEmail = await fetchReportContactServer(supabaseUrl, serviceKey, m.report.id);
-        } catch (e) {
-          logError("No se pudo obtener el email de contacto para la coincidencia", e);
-        }
-        if (!contactoEmail) continue;
-        try {
-          await sendMatchEmail({ resendKey, toEmail: contactoEmail, matchedReport: m.report, newReport, score: m.score });
+          const mail = matchEmail({
+            report: destino,
+            otro: row,
+            score: m.score,
+            verUrl: `${SITE_URL}/r/${encodeURIComponent(row.id)}`,
+            bajaUrl: urls.bajaUrl,
+          });
+          await send({ to: destino.contacto_email, ...mail, unsubscribeUrl: urls.unsubscribePostUrl });
+          await emailDb.markMatchEmail(destino.id, now.toISOString());
+          await emailDb.logEmail({ reportId: destino.id, kind: "email_match", day: dayStart.slice(0, 10) });
           notified++;
+          cupo--;
         } catch (e) {
           logError("No se pudo mandar el email de coincidencia", e);
         }

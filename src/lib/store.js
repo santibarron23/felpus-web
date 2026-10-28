@@ -1,6 +1,6 @@
 import { supabase } from "./supabaseClient";
 import { logError } from "./log";
-import { REPORT_LIST_BASE_FIELDS, REPORT_LIST_OPTIONAL_COLUMNS } from "./reportColumns";
+import { REPORT_LIST_BASE_FIELDS, REPORT_LIST_OPTIONAL_COLUMNS, REPORT_VECTOR_FIELDS } from "./reportColumns";
 import { marcarDudosas } from "./matching";
 
 const REPORTS_TABLE = "reports";
@@ -129,8 +129,8 @@ export async function deleteReport(reportId, ownerUserId, fotoUrls) {
 // Las listas de columnas viven en reportColumns.js (ver ahí por qué cada
 // columna nueva necesita su grant select).
 
-function reportListColumns(excluded) {
-  const fields = [...REPORT_LIST_BASE_FIELDS];
+function reportListColumns(excluded, { light = false } = {}) {
+  const fields = REPORT_LIST_BASE_FIELDS.filter((f) => !light || !REPORT_VECTOR_FIELDS.includes(f));
   const insertAt = fields.indexOf("especie") + 1;
   const optional = REPORT_LIST_OPTIONAL_COLUMNS.filter((c) => !excluded.has(c));
   fields.splice(insertAt, 0, ...optional);
@@ -160,10 +160,14 @@ function missingOptionalColumn(error, candidates, excluded = new Set()) {
 // administrador (ver adminListAllReports más abajo). El resto de la app
 // (Explorar, mapa, matching) sigue llamando fetchReports() sin argumentos,
 // que se comporta exactamente igual que antes.
-export async function fetchReports({ includeHidden = false } = {}) {
+//
+// light: true trae el listado SIN histogramas ni embeddings (~180 KB en vez
+// de ~1,2 MB): alcanza para Explorar, el mapa y las tarjetas. Los vectores
+// llegan después con fetchReportVectors + mergeReportVectors.
+export async function fetchReports({ includeHidden = false, light = false } = {}) {
   const excluded = new Set();
   for (let attempt = 0; attempt <= REPORT_LIST_OPTIONAL_COLUMNS.length; attempt++) {
-    const columns = reportListColumns(excluded);
+    const columns = reportListColumns(excluded, { light });
     const result = await supabase.from(REPORTS_TABLE).select(columns).order("creado_en", { ascending: false });
     const missing = missingOptionalColumn(result.error, REPORT_LIST_OPTIONAL_COLUMNS, excluded);
     if (!missing || excluded.has(missing)) {
@@ -180,6 +184,32 @@ export async function fetchReports({ includeHidden = false } = {}) {
     excluded.add(missing);
   }
   throw new Error("No se pudo cargar el listado de reportes.");
+}
+
+// Segundo paso de la carga (ver fetchReports({ light })): solo id + vectores.
+export async function fetchReportVectors() {
+  const { data, error } = await supabase.from(REPORTS_TABLE).select(["id", ...REPORT_VECTOR_FIELDS].join(","));
+  if (error) throw error;
+  return data || [];
+}
+
+// Le pone a cada reporte los vectores de sus fotos, con el mismo criterio que
+// rowToReport (hists/embeddings por foto si están; si no, hist/embedding en
+// la primera). Conserva url y "dudosa" de cada foto. Los reportes sin fila de
+// vectores (por ejemplo, uno recién publicado, que ya los trae) quedan igual.
+export function mergeReportVectors(reports, vectorRows) {
+  const byId = new Map((vectorRows || []).map((v) => [v.id, v]));
+  return (reports || []).map((r) => {
+    const v = byId.get(r.id);
+    if (!v) return r;
+    const porFoto = Array.isArray(v.hists) || Array.isArray(v.embeddings);
+    const fotos = (r.fotos || []).map((f, i) => {
+      const hist = porFoto ? (v.hists?.[i] ?? null) : i === 0 ? (v.hist ?? null) : null;
+      const embedding = porFoto ? (v.embeddings?.[i] ?? null) : i === 0 ? (v.embedding || null) : null;
+      return { ...f, hist: f.hist ?? hist, embedding: f.embedding ?? embedding };
+    });
+    return { ...r, fotos, hist: fotos[0]?.hist ?? null, embedding: fotos[0]?.embedding ?? null };
+  });
 }
 
 // Se pide recién cuando alguien abre el detalle de ESE reporte puntual.
@@ -402,6 +432,8 @@ export async function createReport(report) {
     descripcion: report.descripcion,
     contacto_whatsapp: report.contactoWhatsapp || null,
     contacto_email: report.contactoEmail || null,
+    // Solo tiene sentido con email; sin dato, sí quiere avisos (default).
+    avisos_email: report.avisosEmail !== false,
     foto_url: uploaded[0].url,
     hist: uploaded[0].hist,
     embedding: uploaded[0].embedding,

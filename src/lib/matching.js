@@ -1503,6 +1503,8 @@ export function emptyForm() {
     // la app usa para todo lo que depende del navegador (tema, geolocation).
     contactoWhatsappCountry: "AR",
     contactoEmail: "",
+    // Avisos por email (emailAvisos.js): pocos, solo si hay novedades.
+    avisosEmail: true,
     // Hasta 3 fotos: [{ dataUrl, hist, embedding }, ...]
     fotos: [],
   };
