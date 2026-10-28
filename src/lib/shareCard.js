@@ -3,10 +3,12 @@
 // (1080x1920). Lógica pura (texto y colores), testeable sin generar
 // imágenes; el dibujo está en shareImage.jsx.
 import { petTitle, nombreReal, petDescriptor } from "./petTitle";
+import { estadoReporte } from "./sighting";
 
 const COLORES = {
   perdida: { accent: "#D71925", label: "SE BUSCA" },
   encontrada: { accent: "#D45516", label: "ENCONTRAD" },
+  avistamiento: { accent: "#6D46B8", label: "VISTA SUELTA" },
   reencontrada: { accent: "#2F7955", label: "¡VOLVIÓ A CASA!" },
 };
 
@@ -37,7 +39,8 @@ function recortar(texto, max) {
 }
 
 export function shareCardData(report, now = new Date()) {
-  const estado = report?.resuelto ? "reencontrada" : report?.tipo === "encontrada" ? "encontrada" : "perdida";
+  // Sin tipo conocido, como antes: "se busca".
+  const estado = report?.resuelto || report?.tipo === "encontrada" ? estadoReporte(report) : "perdida";
   const fem = esFemenino(report);
   const { accent, label } = COLORES[estado];
   const badge = estado === "encontrada" ? `${label}${fem ? "A" : "O"}` : label;
@@ -60,7 +63,9 @@ export function shareCardData(report, now = new Date()) {
       ? `Se perdió el ${dia}`
       : estado === "encontrada"
         ? `Encontrad${a} el ${dia}`
-        : `Reencontrad${a} con su familia`
+        : estado === "avistamiento"
+          ? `Vist${a} suelt${a} el ${dia}${/^\d{2}:\d{2}$/.test(report?.detalles?.hora || "") ? ` a las ${report.detalles.hora}` : ""}`
+          : `Reencontrad${a} con su familia`
     : "";
   const description = recortar(report?.descripcion, 140);
   const cta =
@@ -68,7 +73,9 @@ export function shareCardData(report, now = new Date()) {
       ? "¿L" + a + " viste? Avisá en felpus.com"
       : estado === "encontrada"
         ? "¿Es tuy" + a + "? Contactá en felpus.com"
-        : "Gracias a todos los que compartieron";
+        : estado === "avistamiento"
+          ? "¿Es tuy" + a + "? Mirá dónde l" + a + " vieron en felpus.com"
+          : "Gracias a todos los que compartieron";
 
   return { estado, accent, badge, title, subtitle, zona, cuando, description, cta };
 }
@@ -78,7 +85,7 @@ export function shareCardData(report, now = new Date()) {
 // el mensaje es breve: qué pasó, dónde y qué hacer.
 export function buildShareMessage(report, now = new Date()) {
   const d = shareCardData(report, now);
-  const emoji = d.estado === "perdida" ? "🔴" : d.estado === "encontrada" ? "🟠" : "💚";
+  const emoji = { perdida: "🔴", encontrada: "🟠", avistamiento: "👀", reencontrada: "💚" }[d.estado];
   const badge = d.estado === "reencontrada" ? "¡Volvió a casa!" : d.badge;
   return [`${emoji} ${badge}: ${d.title}`, d.zona && `📍 ${d.zona}`, d.cuando, d.estado === "reencontrada" ? "" : `${d.cta.replace(/ en felpus\.com$/, "")} 👇`]
     .filter(Boolean)

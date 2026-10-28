@@ -7,6 +7,7 @@ import { useTheme } from "./ThemeProvider";
 import SocialLinks from "./SocialLinks";
 import { zonaConCiudad } from "../../lib/zona";
 import { petTitle } from "../../lib/petTitle";
+import { estadoLabel, isSighting } from "../../lib/sighting";
 
 // Vista de /mascotas-perdidas/<ciudad> — mismo lenguaje visual que
 // LegalPage.jsx (header con logo, tarjetas felpus-display, paleta vía
@@ -43,9 +44,9 @@ function ReportCard({ r, C }) {
           <span
             className="inline-block text-[11px] font-bold uppercase tracking-wide rounded px-1.5 py-0.5 text-white"
             // Mismos colores de estado que la app: verde es solo para reencuentros.
-            style={{ background: perdida ? C.redSolid : C.orangeInkSolid }}
+            style={{ background: perdida ? C.redSolid : isSighting(r) ? C.sightingSolid : C.orangeInkSolid }}
           >
-            {perdida ? "Perdida" : "Encontrada"}
+            {estadoLabel({ ...r, resuelto: false })}
           </span>
           <h3 className="text-sm font-semibold mt-1 truncate" style={{ color: C.text }}>
             {titulo}

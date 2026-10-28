@@ -17,6 +17,7 @@ import { CITIES } from "../lib/cities";
 import { logError } from "../lib/log";
 import { zonaConCiudad } from "../lib/zona";
 import { approxLocation, APPROX_RADIUS_M } from "../lib/approxLocation";
+import { estadoColor, isSighting } from "../lib/sighting";
 import { useTheme } from "./felpus/ThemeProvider";
 
 // Círculo cuando solo hay zona escrita (el geocoding de un barrio es más
@@ -38,7 +39,7 @@ export default function ReportLocationMap({ report, onClose }) {
   const [status, setStatus] = useState("loading"); // loading | ready | approx | not-found | error
   const approx = approxLocation(report);
   const hasPoint = !!approx;
-  const color = report.tipo === "perdida" ? C.redSolid : C.mapFound;
+  const color = estadoColor({ ...report, resuelto: false }, C);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -132,7 +133,9 @@ export default function ReportLocationMap({ report, onClose }) {
                 ? "Ubicación aproximada según la zona escrita"
                 : report.tipo === "perdida"
                   ? "Dónde se perdió (zona aproximada)"
-                  : "Dónde se encontró (zona aproximada)"}
+                  : isSighting(report)
+                    ? "Dónde la vieron (zona aproximada)"
+                    : "Dónde se encontró (zona aproximada)"}
             </p>
           </div>
           <button

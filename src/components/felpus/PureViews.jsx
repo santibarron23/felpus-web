@@ -13,7 +13,7 @@ import Image from "next/image";
 import { petTitle, petDescriptor, nombreReal } from "../../lib/petTitle";
 import { zonaConCiudad } from "../../lib/zona";
 import { whatsappUrl } from "../../lib/shareCard";
-import { isSighting } from "../../lib/sighting";
+import { isSighting, estadoReporte, ESTADO_LABEL, avistamientoCuando } from "../../lib/sighting";
 import ReportLocationMap from "../ReportLocationMap";
 import {
   Cat,
@@ -51,18 +51,18 @@ import ShareSheet from "./ShareSheet";
 // por color y por texto (nunca solo por color): PERDIDA rojo, ENCONTRADA
 // naranja, REENCONTRADA verde — el verde se reserva para reencuentros
 // confirmados (paleta 2026-10-20, ver theme.js).
-// avistamiento: "encontrada" que quien avisó solo vio en la calle (ver
-// sighting.js) — mismo color que encontrada, otro texto.
+// avistamiento: mascota que alguien VIO suelta y nadie tiene (sighting.js):
+// estado propio, con su color (violeta) y su texto.
 export function Badge({ tipo, resuelto = false, avistamiento = false }) {
   const C = useTheme();
-  const isLost = tipo === "perdida";
-  const bg = resuelto ? C.greenSolid : isLost ? C.redSolid : C.orangeInkSolid;
+  const estado = estadoReporte({ tipo, resuelto, detalles: { avistamiento } });
+  const bg = { reencontrada: C.greenSolid, perdida: C.redSolid, avistamiento: C.sightingSolid, encontrada: C.orangeInkSolid }[estado];
   return (
     <span
       className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-bold tracking-wide uppercase text-white"
       style={{ background: bg }}
     >
-      {resuelto ? "Reencontrada" : isLost ? "Perdida" : avistamiento ? "Vista suelta" : "Encontrada"}
+      {ESTADO_LABEL[estado]}
     </span>
   );
 }
@@ -410,8 +410,10 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
               <span className="block underline" style={{ color: C.text }}>{zonaConCiudad(report)}</span>
             </button>
             <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
-              <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>{fechaLabel(report.tipo)}</p>
-              <p style={{ color: C.text }}>{formatFechaAR(report.fecha)}</p>
+              <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>
+                {isSighting(report) ? "Cuándo la vieron" : fechaLabel(report.tipo)}
+              </p>
+              <p style={{ color: C.text }}>{avistamientoCuando(report) || formatFechaAR(report.fecha)}</p>
             </div>
             {report.sexo && (
               <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">

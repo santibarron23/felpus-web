@@ -478,7 +478,9 @@ export async function buildFlyerBlob(report, colorText) {
   const isLost = report.tipo === "perdida";
   // Mismos tokens que la app (paleta 2026-10-20) — antes el flyer tenía su
   // propia copia de los colores, incluido un naranja ya descartado.
-  const accent = isLost ? C.redSolid : C.orangeInkSolid;
+  // Avistamiento (sighting.js): nadie la tiene; alguien la vio suelta.
+  const isSighting = !isLost && report.detalles?.avistamiento === true;
+  const accent = isLost ? C.redSolid : isSighting ? C.sightingSolid : C.orangeInkSolid;
   const cream = C.surfaceSubtle;
   const ink = C.ink;
   const muted = C.muted;
@@ -602,7 +604,7 @@ export async function buildFlyerBlob(report, colorText) {
   roundRectPath(ctx, MARGIN, y, CONTENT_W, bandH, 22);
   ctx.fillStyle = accent;
   ctx.fill();
-  const titleText = isLost ? "MASCOTA PERDIDA" : "MASCOTA ENCONTRADA";
+  const titleText = isLost ? "MASCOTA PERDIDA" : isSighting ? "MASCOTA VISTA SUELTA" : "MASCOTA ENCONTRADA";
   const titleSize = fitFontSize(ctx, titleText, CONTENT_W - 64, 46, 26);
   ctx.fillStyle = "#ffffff";
   ctx.textAlign = "center";
@@ -733,7 +735,7 @@ export async function buildFlyerBlob(report, colorText) {
     ctx.textAlign = "left";
     ctx.fillStyle = "#ffffff";
     ctx.font = `800 18px ${FONT_FAMILY}`;
-    const label = (isLost ? "SI LA VISTE, CONTACTANOS" : "SI RECONOCÉS A ESTA MASCOTA, CONTACTANOS");
+    const label = isLost ? "SI LA VISTE, CONTACTANOS" : isSighting ? "¿ES TUYA? MIRÁ DÓNDE LA VIERON" : "SI RECONOCÉS A ESTA MASCOTA, CONTACTANOS";
     const labelWords = label.split(" ");
     let labelLine = "";
     const labelLines = [];

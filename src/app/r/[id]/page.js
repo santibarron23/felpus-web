@@ -77,7 +77,7 @@ export default async function ReportPage({ params }) {
     ? {
         "@context": "https://schema.org",
         "@type": "WebPage",
-        name: `${report.tipo === "perdida" ? "Perdida" : "Encontrada"}: ${petTitle(report)} en ${report.zona}`,
+        name: `${report.tipo === "perdida" ? "Perdida" : report.detalles?.avistamiento === true ? "Vista suelta" : "Encontrada"}: ${petTitle(report)} en ${report.zona}`,
         description: report.descripcion || undefined,
         url: `${SITE_URL}/r/${id}`,
         image: report.foto_url || undefined,

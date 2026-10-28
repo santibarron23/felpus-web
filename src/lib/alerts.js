@@ -95,8 +95,10 @@ export function zoneNotification({ report, distanceM, siteUrl = "" }) {
   const dist = roundedDistance(distanceM != null ? distanceM / 1000 : null);
   const detalle = [rasgos, dist].filter(Boolean).join(", ");
   const perdida = report.tipo === "perdida";
+  // Avistamiento (sighting.js): alguien lo vio suelto, nadie lo tiene.
+  const visto = !perdida && report.detalles?.avistamiento === true;
   return {
-    title: perdida ? `Se perdió un ${especie} cerca tuyo` : `Encontraron un ${especie} cerca tuyo`,
+    title: perdida ? `Se perdió un ${especie} cerca tuyo` : visto ? `Vieron un ${especie} suelto cerca tuyo` : `Encontraron un ${especie} cerca tuyo`,
     body: `${detalle ? `${capitalize(detalle)}. ` : ""}${perdida ? "Si lo ves, avisá en Felpus." : "¿Lo conocés?"}`,
     url: `${siteUrl}/r/${encodeURIComponent(report.id)}`,
     tag: `felpus-zona-${report.id}`,

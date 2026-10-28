@@ -7,7 +7,7 @@ import SocialLinks from "./felpus/SocialLinks";
 import FelpusAssistant from "./felpus/FelpusAssistant";
 import ImportPostCard from "./felpus/ImportPostCard";
 import SightingSheet from "./felpus/SightingSheet";
-import { buildSightingDraft, PUNTOS_AVISTAMIENTO } from "../lib/sighting";
+import { buildSightingDraft, PUNTOS_AVISTAMIENTO, pasaFiltroTipo } from "../lib/sighting";
 import { novedadesDue, NOVEDADES_KEY_PREFIX } from "../lib/emailAvisos";
 import { findDuplicates, duplicateMessage } from "../lib/duplicates";
 import { REPORT_DRAFT_KEY, serializeReportDraft, parseReportDraft } from "../lib/reportDraft";
@@ -985,7 +985,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   const adminBreakdowns = useMemo(() => computeAdminBreakdowns(adminAllReports), [adminAllReports]);
 
   const adminSearchNormalized = normalizeText(adminSearch.trim());
-  const tieneFotoDudosa = (r) => (r.fotos || []).some((f) => f.dudosa);
+  const tieneFotoDudosa = (r) => !r.detalles?.sin_foto && (r.fotos || []).some((f) => f.dudosa);
   const adminFotosDudosasCount = adminAllReports.filter(tieneFotoDudosa).length;
   const adminFilteredReports = adminAllReports.filter(
     (r) =>
@@ -2252,10 +2252,10 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
         nickname: nickname.trim(),
         userId: user?.id || null,
       });
-      await publishAndMatch(draft, { puntos: draft.detalles.avistamiento ? PUNTOS_AVISTAMIENTO : PUNTOS_ENCONTRADA, navigateFirst: false });
+      await publishAndMatch(draft, { puntos: PUNTOS_AVISTAMIENTO, navigateFirst: false });
       setSighting(null);
       try {
-        window.gtag?.("event", "avistamiento_publicado", { tipo: draft.detalles.avistamiento ? "avistamiento" : "encontrada", desde_ficha: !!input.vistaDe });
+        window.gtag?.("event", "avistamiento_publicado", { sin_foto: !!input.sinFoto, desde_ficha: !!input.vistaDe });
       } catch {
         // sin analytics no pasa nada
       }
@@ -2563,7 +2563,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     // reportes activos, muestra solo los reencuentros confirmados.
     const soloResueltas = filterTipo === "resuelto";
     let list = (soloResueltas ? resueltas : activeReports).filter((r) => {
-      if (!soloResueltas && filterTipo !== "todos" && r.tipo !== filterTipo) return false;
+      if (!soloResueltas && !pasaFiltroTipo(r, filterTipo)) return false;
       if (filterEspecie !== "todos" && r.especie !== filterEspecie) return false;
       if (filterTamano !== "todos" && r.tamano !== filterTamano) return false;
       if (filterColor !== "todos" && r.color !== filterColor) return false;
@@ -3034,8 +3034,9 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                     className="felpus-cta flex-1 text-white text-sm font-bold rounded-xl py-3 transition-all duration-200 flex flex-col items-center justify-center gap-1 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--felpus-focus)]"
                     style={{ background: C.redSolid }}
                   >
-                    <Heart className="w-5 h-5" fill="currentColor" />
+                    <Heart className="w-5 h-5" aria-hidden="true" />
                     Perdí a mi mascota
+                    <span className="text-[11px] font-medium opacity-90">Quiero encontrarla</span>
                   </button>
                   <button
                     onClick={() => {
@@ -3049,23 +3050,27 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                     className="felpus-cta flex-1 text-white text-sm font-bold rounded-xl py-3 transition-all duration-200 flex flex-col items-center justify-center gap-1 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--felpus-focus)]"
                     style={{ background: C.orangeInkSolid }}
                   >
-                    <MapPin className="w-5 h-5" fill="currentColor" strokeWidth={1.5} />
+                    <MapPin className="w-5 h-5" aria-hidden="true" />
                     Encontré una mascota
+                    <span className="text-[11px] font-medium opacity-90">La tengo conmigo</span>
                   </button>
                 </div>
-                {/* "Lo vi suelto": quien solo vio una mascota en la calle no
-                    tiene que pasar por el formulario completo (SightingSheet). */}
+                {/* Avistamiento (sighting.js): quien solo VIO una mascota en la
+                    calle no la "encontró": tiene su propio camino y estado. */}
                 <button
                   type="button"
                   onClick={() => {
                     playTap();
                     setSighting({ vistaDe: null });
                   }}
-                  className="w-full mt-2 min-h-[48px] rounded-xl border text-sm font-bold flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                  className="w-full mt-2 min-h-[56px] rounded-xl border py-2.5 flex flex-col items-center justify-center gap-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
                   style={{ borderColor: C.border, color: C.text, background: C.surface }}
                 >
-                  <Eye className="w-4 h-4" style={{ color: C.orangeInk }} aria-hidden="true" />
-                  Vi una mascota suelta · avisá en 3 toques
+                  <span className="flex items-center gap-2 text-sm font-bold">
+                    <Eye className="w-4 h-4" style={{ color: C.sightingSolid }} aria-hidden="true" />
+                    Vi una mascota suelta
+                  </span>
+                  <span className="text-[11px]" style={{ color: C.muted }}>No la tengo conmigo · Avisá en 3 toques</span>
                 </button>
               </div>
             </div>
@@ -4382,6 +4387,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                 <option value="todos">Tipo: todos</option>
                 <option value="perdida">Solo perdidas</option>
                 <option value="encontrada">Solo encontradas</option>
+                <option value="avistamiento">Solo avistamientos</option>
                 <option value="resuelto">Solo reencontradas</option>
               </select>
               <select
@@ -5932,6 +5938,11 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
           savedWhatsapp={savedWhatsapp || ""}
           defaultCountry={form.contactoWhatsappCountry || "AR"}
           onPublish={handlePublishSighting}
+          onTengo={() => {
+            setSighting(null);
+            setReportKind("encontrada");
+            goToTab("reportar");
+          }}
           onClose={() => setSighting(null)}
         />
       )}

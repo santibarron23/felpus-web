@@ -109,7 +109,7 @@ export default async function CityPage({ params }) {
             "@type": "ListItem",
             position: i + 1,
             url: `${SITE_URL}/r/${r.id}`,
-            name: `${r.tipo === "perdida" ? "Perdida" : "Encontrada"}: ${petTitle(r)} en ${r.zona}`,
+            name: `${r.tipo === "perdida" ? "Perdida" : r.detalles?.avistamiento === true ? "Vista suelta" : "Encontrada"}: ${petTitle(r)} en ${r.zona}`,
           })),
         },
       },
