@@ -4,6 +4,21 @@ Se corren a mano en Supabase → SQL Editor, en orden por nombre, **recién
 después de que el dueño del proyecto vea el SQL y dé el OK**. Nunca hacen
 DROP de nada que ya exista ni borran datos.
 
+## Regla: cada migración va también al final de `schema.sql`
+
+`schema.sql` es lo que se pega entero para armar (o rearmar) la base. Si le
+falta una migración, correrlo **deshace** lo que esa migración arregló. Pasó el
+2026-10-28: volvió la policy que dejaba listar el bucket de fotos con la clave
+pública y se perdió el permiso de `inactivo` (`/api/health` en 503).
+
+Por eso, al crear una migración, copiala completa al final de `schema.sql`
+precedida por la línea `-- >>> migración <archivo>.sql`.
+`src/lib/schemaSync.test.js` frena el CI si falta.
+
+**Ojo con el SQL Editor de Supabase:** puede abrir por defecto una consulta
+guardada vieja. Antes de pegar una migración, borrá todo el contenido del
+editor.
+
 ## Regla: columna nueva en `reports` que lea el sitio
 
 `reports` NO tiene el SELECT abierto: para `anon` y `authenticated` está

@@ -1,6 +1,9 @@
 -- ---------------------------------------------------------------------------
 -- Felpus — esquema de base de datos para Supabase
 -- Pegá todo este archivo en el SQL Editor de tu proyecto Supabase y ejecutalo.
+-- Incluye al final TODAS las migraciones de supabase/migrations (en orden):
+-- correrlo deja la base igual que producción. schemaSync.test.js lo verifica.
+-- Una migración nueva se agrega a supabase/migrations Y al final de este archivo.
 -- ---------------------------------------------------------------------------
 
 -- Reportes de mascotas perdidas / encontradas
@@ -703,10 +706,12 @@ set file_size_limit = 8388608,
     allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml']
 where id = 'felpus-photos';
 
+-- Sin policy de SELECT abierta: listar el bucket quedaba al alcance de la
+-- clave pública (fotos de reportes ocultos o borrados incluidas). Las fotos
+-- se siguen viendo igual por /object/public/...; listar queda para el dueño
+-- y el admin (felpus_photos_owner_read, migración 20261023_01, incluida al
+-- final de este archivo).
 drop policy if exists "felpus_photos_public_read" on storage.objects;
-create policy "felpus_photos_public_read"
-  on storage.objects for select
-  using (bucket_id = 'felpus-photos');
 
 -- Auditoría integral (2026-08-09): se evaluó mover el insert detrás de una
 -- ruta server-side (service_role) para poder además atarlo al mismo rate
@@ -2111,3 +2116,768 @@ drop trigger if exists points_events_referral_reward on public.points_events;
 create trigger points_events_referral_reward
   after insert on public.points_events
   for each row execute function public.points_events_referral_reward();
+
+-- ===========================================================================
+-- Migraciones que faltaban en este archivo (sincronizado 2026-10-28). Se
+-- agregan completas y en orden; son re-ejecutables (if not exists, drop ... if
+-- exists, create or replace). Las que ya estaban más arriba (20261022_01,
+-- 20261022_02, 20261026_02, 20261027_02) llevan su marca acá también.
+-- ===========================================================================
+-- >>> migración 20261022_01_perfil_foto_ubicacion.sql: ya incluida más arriba en este archivo.
+-- >>> migración 20261022_02_bucket_fotos_seguro.sql: ya incluida más arriba en este archivo.
+-- >>> migración 20261026_02_apoyos_y_antifraude.sql: ya incluida más arriba en este archivo.
+-- >>> migración 20261027_02_historial_y_referidos.sql: ya incluida más arriba en este archivo.
+
+-- >>> migración 20261020_01_alertas.sql
+-- Alertas automáticas (ver PLAN-alertas.md y PROGRESO.md, 2026-10-20).
+--
+-- Puramente ADITIVA: crea extensiones, columnas, tablas, índices, funciones
+-- y un trigger nuevos. No hace DROP de nada existente ni modifica datos ya
+-- cargados (la única escritura es completar la columna NUEVA actividad_en
+-- con la fecha de carga de cada reporte). Se puede correr más de una vez.
+--
+-- Se corre a mano en Supabase → SQL Editor, recién después del OK.
+
+-- ---------------------------------------------------------------------------
+-- PostGIS (gratis en Supabase): distancias reales para las zonas de alerta.
+-- ---------------------------------------------------------------------------
+create extension if not exists postgis with schema extensions;
+
+-- Punto geográfico del reporte, calculado solo a partir de lat/lng (nunca se
+-- escribe a mano). Null si el reporte no marcó ubicación en el mapa.
+alter table public.reports
+  add column if not exists location extensions.geography(Point, 4326)
+  generated always as (
+    case
+      when lat is not null and lng is not null
+        then extensions.st_setsrid(extensions.st_makepoint(lng, lat), 4326)::extensions.geography
+    end
+  ) stored;
+create index if not exists reports_location_gist on public.reports using gist (location);
+
+-- Ciclo de vida: un reporte sin actividad en 60 días pasa a inactivo y deja
+-- de generar alertas (se reactiva con "Renovar"). actividad_en arranca en la
+-- fecha de carga de cada reporte.
+alter table public.reports add column if not exists actividad_en timestamptz;
+update public.reports set actividad_en = creado_en where actividad_en is null;
+alter table public.reports alter column actividad_en set default now();
+alter table public.reports add column if not exists inactivo boolean not null default false;
+alter table public.reports add column if not exists aviso_inactividad_en timestamptz;
+
+-- ---------------------------------------------------------------------------
+-- Suscripciones push POR USUARIO (todos sus dispositivos). Las de invitados
+-- siguen viviendo en reports.push_subscription, como hasta ahora.
+-- ---------------------------------------------------------------------------
+create table if not exists public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users on delete cascade,
+  endpoint text unique not null,
+  p256dh text not null,
+  auth text not null,
+  user_agent text,
+  created_at timestamptz default now()
+);
+create index if not exists push_subscriptions_user_idx on public.push_subscriptions (user_id);
+alter table public.push_subscriptions enable row level security;
+drop policy if exists push_subscriptions_own on public.push_subscriptions;
+create policy push_subscriptions_own on public.push_subscriptions
+  for all to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
+-- Zona de alerta de cada usuario. El centro nunca se expone a otros: no hay
+-- política de lectura pública y las rutas de API solo devuelven la propia.
+-- ---------------------------------------------------------------------------
+create table if not exists public.alert_zones (
+  user_id uuid primary key references auth.users on delete cascade,
+  center extensions.geography(Point, 4326) not null,
+  radius_m int not null check (radius_m in (1000, 3000, 5000, 10000)),
+  species text[] not null default '{perro,gato}',
+  report_types text[] not null default '{perdida,encontrada}',
+  active boolean not null default true,
+  updated_at timestamptz default now()
+);
+create index if not exists alert_zones_center_gist on public.alert_zones using gist (center);
+alter table public.alert_zones enable row level security;
+drop policy if exists alert_zones_own on public.alert_zones;
+create policy alert_zones_own on public.alert_zones
+  for all to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
+-- Registro de avisos enviados/pendientes. recipient = 'user:<uuid>' o
+-- 'report:<id>' (invitados, que no tienen user_id). El unique evita avisar
+-- dos veces lo mismo. Sin políticas: solo lo usa el servidor (service_role).
+-- ---------------------------------------------------------------------------
+create table if not exists public.notifications_log (
+  id bigint generated always as identity primary key,
+  recipient text not null,
+  user_id uuid,
+  report_id text not null,
+  kind text not null check (kind in ('zona', 'match', 'inactividad')),
+  status text not null default 'enviada' check (status in ('enviada', 'pendiente')),
+  payload jsonb,
+  created_at timestamptz default now(),
+  unique (recipient, report_id, kind)
+);
+create index if not exists notifications_log_user_day_idx on public.notifications_log (user_id, kind, created_at);
+create index if not exists notifications_log_pending_idx on public.notifications_log (status) where status = 'pendiente';
+alter table public.notifications_log enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Coincidencias guardadas (no existía ninguna tabla de matches).
+-- ---------------------------------------------------------------------------
+create table if not exists public.matches (
+  id bigint generated always as identity primary key,
+  report_lost_id text not null references public.reports (id) on delete cascade,
+  report_found_id text not null references public.reports (id) on delete cascade,
+  score real not null,
+  estado text not null default 'nuevo' check (estado in ('nuevo', 'visto', 'descartado', 'confirmado', 'cerrado')),
+  notificado boolean not null default false,
+  created_at timestamptz default now(),
+  unique (report_lost_id, report_found_id)
+);
+create index if not exists matches_found_idx on public.matches (report_found_id);
+alter table public.matches enable row level security;
+-- Cada dueño (con cuenta) lee las coincidencias de sus propios reportes. Los
+-- cambios de estado pasan por /api/matches (service_role).
+drop policy if exists matches_owner_read on public.matches;
+create policy matches_owner_read on public.matches
+  for select to authenticated
+  using (
+    exists (
+      select 1 from public.reports r
+      where r.user_id = auth.uid() and r.id in (matches.report_lost_id, matches.report_found_id)
+    )
+  );
+
+-- ---------------------------------------------------------------------------
+-- Zonas que contienen el punto de un reporte (ST_DWithin), filtradas por
+-- especie y tipo. Solo service_role: nunca devuelve el centro de la zona.
+-- ---------------------------------------------------------------------------
+create or replace function public.alert_zone_recipients(p_report_id text)
+returns table (user_id uuid, distance_m double precision)
+language sql
+stable
+security definer
+set search_path = public, extensions
+as $$
+  select z.user_id, extensions.st_distance(z.center, r.location) as distance_m
+  from public.reports r
+  join public.alert_zones z
+    on z.active
+   and extensions.st_dwithin(z.center, r.location, z.radius_m)
+   and r.especie = any (z.species)
+   and r.tipo = any (z.report_types)
+  where r.id = p_report_id
+    and r.location is not null
+    and (r.user_id is null or z.user_id <> r.user_id);
+$$;
+revoke all on function public.alert_zone_recipients(text) from public, anon, authenticated;
+grant execute on function public.alert_zone_recipients(text) to service_role;
+
+-- Guarda o actualiza la zona de un usuario a partir de lat/lng (PostgREST no
+-- sabe armar un geography). Solo service_role: la ruta /api/alerts/zone
+-- verifica la sesión y pasa el user_id real.
+create or replace function public.upsert_alert_zone(
+  p_user_id uuid, p_lat double precision, p_lng double precision, p_radius_m int,
+  p_species text[], p_report_types text[], p_active boolean
+)
+returns void
+language sql
+security definer
+set search_path = public, extensions
+as $$
+  insert into public.alert_zones (user_id, center, radius_m, species, report_types, active, updated_at)
+  values (
+    p_user_id,
+    extensions.st_setsrid(extensions.st_makepoint(p_lng, p_lat), 4326)::extensions.geography,
+    p_radius_m, p_species, p_report_types, p_active, now()
+  )
+  on conflict (user_id) do update set
+    center = excluded.center,
+    radius_m = excluded.radius_m,
+    species = excluded.species,
+    report_types = excluded.report_types,
+    active = excluded.active,
+    updated_at = now();
+$$;
+revoke all on function public.upsert_alert_zone(uuid, double precision, double precision, int, text[], text[], boolean) from public, anon, authenticated;
+grant execute on function public.upsert_alert_zone(uuid, double precision, double precision, int, text[], text[], boolean) to service_role;
+
+-- La zona propia, con lat/lng legibles (solo para su dueño, vía la ruta).
+create or replace function public.get_alert_zone(p_user_id uuid)
+returns table (lat double precision, lng double precision, radius_m int, species text[], report_types text[], active boolean)
+language sql
+stable
+security definer
+set search_path = public, extensions
+as $$
+  select extensions.st_y(center::extensions.geometry), extensions.st_x(center::extensions.geometry),
+         radius_m, species, report_types, active
+  from public.alert_zones where user_id = p_user_id;
+$$;
+revoke all on function public.get_alert_zone(uuid) from public, anon, authenticated;
+grant execute on function public.get_alert_zone(uuid) to service_role;
+
+-- ---------------------------------------------------------------------------
+-- Reencuentro confirmado → sus coincidencias se cierran (y el reporte ya no
+-- genera alertas: el despacho filtra resuelto = false).
+-- ---------------------------------------------------------------------------
+create or replace function public.close_matches_on_resolve()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.resuelto and not coalesce(old.resuelto, false) then
+    update public.matches set estado = 'cerrado'
+      where (report_lost_id = new.id or report_found_id = new.id)
+        and estado in ('nuevo', 'visto');
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists trg_close_matches_on_resolve on public.reports;
+create trigger trg_close_matches_on_resolve
+  after update of resuelto on public.reports
+  for each row
+  execute function public.close_matches_on_resolve();
+
+-- >>> migración 20261020_02_alertas_cron.sql
+-- Tarea diaria de las 8:00 (hora de Argentina = 11:00 UTC; Argentina no
+-- tiene horario de verano). Llama a /api/alerts/flush, que:
+--   1. manda las alertas de zona que quedaron "pendiente" durante la noche;
+--   2. pasa a inactivos los reportes sin actividad en 60 días y avisa a los
+--      dueños 7 días antes.
+--
+-- Requiere: pg_cron activado (Supabase → Database → Extensions → pg_cron) y
+-- pg_net (ya está, lo usa trg_notify_new_report). Usa el MISMO secreto que el
+-- trigger existente (Vault: 'notify_webhook_secret'), así no hay que guardar
+-- otro. Aditiva: si el job ya existe con este nombre, cron.schedule lo
+-- reemplaza (no toca ningún otro job).
+
+create extension if not exists pg_cron;
+
+select cron.schedule(
+  'felpus-alertas-8am',
+  '0 11 * * *',
+  $job$
+  select net.http_post(
+    url := 'https://felpus.com/api/alerts/flush',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'x-webhook-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'notify_webhook_secret' limit 1)
+    ),
+    body := '{}'::jsonb
+  );
+  $job$
+);
+
+-- >>> migración 20261020_03_alertas_grant_inactivo.sql
+-- Arreglo urgente (2026-10-20): la lista pública de reportes pide la columna
+-- nueva "inactivo", pero reports usa permisos POR COLUMNA para anon y
+-- authenticated (ver schema.sql: "revoke select on reports" + "grant select
+-- (...)"). Sin este grant, Supabase rechaza toda la consulta con 42501 y el
+-- sitio muestra 0 mascotas. Solo permite LEER un booleano; no cambia datos.
+grant select (inactivo) on public.reports to anon, authenticated;
+
+-- >>> migración 20261023_01_datos_privados.sql
+-- Revisión de seguridad (2026-10-23): dos lecturas públicas que no tenían
+-- que serlo, confirmadas en vivo con la anon key (que es pública por diseño:
+-- va en el JS del sitio, así que lo que importa es qué permite leer).
+--
+-- CORRER DESPUÉS de que esté en producción el deploy que cambia
+-- src/lib/store.js (CONTRIBUTOR_PUBLIC_COLUMNS): el código viejo pide
+-- select("*") sobre contributors y, con el SELECT por columnas de abajo,
+-- Supabase rechazaría esa consulta entera (el ranking quedaría vacío).
+-- Nunca hace DROP de datos ni borra filas.
+
+-- 1. contributors.whatsapp (el WhatsApp de perfil de "Mi Felpus") se podía
+--    leer en bloque: GET /rest/v1/contributors?select=whatsapp devolvía los
+--    teléfonos de todos. Mismo esquema que reports: SELECT revocado y
+--    habilitado columna por columna, sin whatsapp. Cada usuario lee el suyo
+--    con get_my_whatsapp() (solo su propia fila, vía auth.uid()).
+revoke select on public.contributors from anon, authenticated;
+grant select (
+  id, nickname, points, reportes, reencuentros, hearts, streak_days,
+  last_active_date, streak_updated_at, updated_at, avatar_url, pais,
+  provincia, ciudad
+) on public.contributors to anon, authenticated;
+
+create or replace function public.get_my_whatsapp()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select whatsapp from public.contributors where id = auth.uid()::text;
+$$;
+revoke all on function public.get_my_whatsapp() from public, anon;
+grant execute on function public.get_my_whatsapp() to authenticated;
+
+-- 2. Bucket felpus-photos: la policy de SELECT abierta permitía LISTAR todos
+--    los archivos (POST /storage/v1/object/list/felpus-photos), incluidas
+--    fotos de reportes ocultos o borrados. Las fotos se siguen viendo igual:
+--    el bucket es público y las URLs /object/public/... no pasan por esta
+--    policy. Listar queda solo para el dueño de cada archivo (lo necesita
+--    remove() al borrar sus fotos) y el admin.
+drop policy if exists "felpus_photos_public_read" on storage.objects;
+drop policy if exists "felpus_photos_owner_read" on storage.objects;
+create policy "felpus_photos_owner_read"
+  on storage.objects for select
+  using (
+    bucket_id = 'felpus-photos'
+    and (owner = auth.uid() or auth.email() = 'santiagobarronlf@gmail.com')
+  );
+
+-- >>> migración 20261023_02_endurecimiento_permisos.sql
+-- Auditoría integral de seguridad (2026-10-23) — endurecimiento de permisos.
+-- Ver AUDITORIA_SEGURIDAD_2026-10-23.md para el detalle de cada hallazgo.
+--
+-- Qué NO hace: no borra filas, no borra tablas ni columnas, no toca datos
+-- de usuarios. Solo cambia permisos (GRANT/REVOKE), una policy del bucket,
+-- la configuración del bucket y una función. Todo es reversible.
+--
+-- Probada en un Postgres local con las mismas tablas, permisos y policies
+-- que producción (scripts/audit-rls/): las lecturas/escrituras que tiene que
+-- poder hacer la app siguen andando y las demás quedan denegadas.
+--
+-- Orden: correr DESPUÉS de que esté en producción el deploy de la rama
+-- auditoria-seguridad-db (no depende del código, pero así se prueba junto).
+
+-- ---------------------------------------------------------------------------
+-- 1. Bucket de fotos (MEDIA): la migración 20261022_02 nunca se corrió en
+--    producción. El bucket público aceptaba SVG (puede llevar JavaScript),
+--    archivos de hasta 8 MB y cualquier nombre, subidos por cualquiera sin
+--    login. Se reaplica igual que en esa migración (el código de la app ya
+--    sube solo JPG/PNG/WebP con nombres de este formato).
+-- ---------------------------------------------------------------------------
+update storage.buckets
+set file_size_limit = 2097152,
+    allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp']
+where id = 'felpus-photos';
+
+drop policy if exists "felpus_photos_public_insert" on storage.objects;
+create policy "felpus_photos_public_insert"
+  on storage.objects for insert
+  with check (
+    bucket_id = 'felpus-photos'
+    and (
+      name ~ '^[A-Za-z0-9-]{10,120}\.(jpg|jpeg|png|webp)$'
+      or (
+        auth.uid() is not null
+        and name ~ ('^avatars/' || auth.uid()::text || '/avatar-[0-9a-f-]{36}\.(jpg|jpeg|png|webp)$')
+      )
+    )
+  );
+
+-- ---------------------------------------------------------------------------
+-- 2. get_report_contact (BAJA): devolvía el contacto también de reportes
+--    ocultados por moderación (oculto = true). Mismo cuerpo, más la
+--    condición. Solo la llama el servidor (service_role).
+-- ---------------------------------------------------------------------------
+create or replace function public.get_report_contact(p_report_id text, p_client_ip text default null)
+returns table(contacto_whatsapp text, contacto_email text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  recent_count integer;
+begin
+  if p_client_ip is not null then
+    delete from contact_requests where created_at < now() - interval '1 day';
+
+    select count(*) into recent_count
+      from contact_requests
+      where ip = p_client_ip and created_at > now() - interval '1 hour';
+
+    if recent_count >= 30 then
+      raise exception 'Demasiadas consultas de contacto desde esta conexión. Probá de nuevo más tarde.';
+    end if;
+
+    insert into contact_requests (ip) values (p_client_ip);
+  end if;
+
+  return query
+    select r.contacto_whatsapp, r.contacto_email
+    from reports r
+    where r.id = p_report_id
+      and r.oculto is distinct from true;
+end;
+$$;
+revoke all on function public.get_report_contact(text, text) from public, anon, authenticated;
+grant execute on function public.get_report_contact(text, text) to service_role;
+
+-- ---------------------------------------------------------------------------
+-- 3. Mínimo privilegio en tablas (BAJA, defensa en profundidad). Hoy RLS ya
+--    bloquea todo esto (comprobado), pero anon/authenticated tenían INSERT,
+--    UPDATE, DELETE y TRUNCATE sobre casi todas las tablas: un solo error en
+--    una policy futura (o desactivar RLS por un rato) las dejaba abiertas.
+-- ---------------------------------------------------------------------------
+
+-- 3a. Nadie del lado del cliente necesita TRUNCATE, TRIGGER ni REFERENCES.
+revoke truncate, trigger, references on all tables in schema public from anon, authenticated;
+
+-- 3b. Tablas internas: solo las tocan el servidor (service_role) o
+--     funciones SECURITY DEFINER (que corren como dueño, no como anon).
+revoke all on table
+  public.chat_requests, public.contact_requests, public.embed_requests,
+  public.report_submissions, public.flag_submissions, public.error_log_submissions,
+  public.error_logs, public.points_award_log, public.points_events,
+  public.heart_sends, public.report_flags, public.notifications_log
+from anon, authenticated;
+
+-- 3c. Tablas por usuario: un visitante sin login no puede tener filas
+--     propias, así que anon no necesita ningún permiso. authenticated
+--     conserva lo que usan sus policies (dueño = auth.uid()).
+revoke all on table public.saved_reports, public.push_subscriptions, public.alert_zones, public.matches from anon;
+revoke update on table public.saved_reports from authenticated;               -- sin policy de UPDATE
+revoke insert, update, delete on table public.matches from authenticated;     -- solo lee; escribe el servidor
+
+-- 3d. reports y contributors: anon solo lee (columnas ya limitadas).
+revoke insert, update, delete on table public.reports from anon;
+revoke insert, update, delete on table public.contributors from anon;
+revoke delete on table public.contributors from authenticated;                -- sin policy de DELETE
+
+-- 3e. Secuencias: las usan solo inserts del servidor.
+revoke all on all sequences in schema public from anon, authenticated;
+
+-- 3f. Funciones de trigger: no se llaman como RPC; nadie necesita EXECUTE.
+revoke all on function public.notify_new_report() from public, anon, authenticated;
+revoke all on function public.close_matches_on_resolve() from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 4. Que no vuelva a pasar (MEDIA, prevención): Supabase da por defecto
+--    TODOS los permisos a anon y authenticated sobre cada tabla, secuencia
+--    y función NUEVA del esquema public. Una tabla nueva creada sin
+--    "enable row level security" quedaba legible y editable por cualquiera.
+--    Desde acá, lo nuevo arranca cerrado y cada migración otorga a mano lo
+--    que haga falta (como ya se hace con reports y contributors).
+-- ---------------------------------------------------------------------------
+alter default privileges in schema public revoke all on tables from anon, authenticated;
+alter default privileges in schema public revoke all on sequences from anon, authenticated;
+alter default privileges in schema public revoke execute on functions from public, anon, authenticated;
+
+-- >>> migración 20261026_01_puntos_y_reencuentro.sql
+-- Revisión de seguridad (2026-10-26) — PROPUESTA, NO APLICADA.
+-- Ver REVISION_SEGURIDAD_2026-10-26.md (hallazgos A2 y M3).
+--
+-- Qué NO hace: no borra filas ni columnas, no toca datos existentes.
+-- Cambia una función (award_points) y agrega un trigger en reports.
+-- Correr DESPUÉS de 20261023_02 (que sigue sin correr en producción).
+--
+-- Antes de correr, comprobá el estado (todo en el SQL Editor):
+--   select has_table_privilege('anon', 'public.error_logs', 'select');
+--   -- true  => 20261023_02 TODAVÍA NO SE CORRIÓ: correla primero.
+--   -- false => ya está; seguí con este archivo.
+
+-- ---------------------------------------------------------------------------
+-- 1. award_points (MEDIA): con el motivo "bono-reporte-original" quien
+--    llama elige p_user_id = OTRA persona y además manda p_display_name,
+--    que se guardaba como nickname de esa otra persona. Resultado:
+--    cualquier cuenta logueada podía cambiarle el nombre público en el
+--    ranking a cualquier colaborador (los user_id son públicos). Ahora el
+--    nombre recibido solo se usa para la fila propia. Mismo cuerpo, cambian
+--    solo las dos líneas de nickname.
+-- ---------------------------------------------------------------------------
+create or replace function public.award_points(p_user_id text, p_display_name text, p_delta integer, p_reason text, p_source_id text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  calls_today integer;
+  rpt record;
+  own_resolved_id text;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión para sumar puntos.';
+  end if;
+  if (p_reason, p_delta) not in (('reencuentro', 50), ('bono-reporte-original', 20), ('reporte', 10), ('reporte', 15)) then
+    raise exception 'Combinación de motivo/puntos no reconocida.';
+  end if;
+  if p_source_id is null or length(trim(p_source_id)) = 0 then
+    raise exception 'Falta el reporte de origen.';
+  end if;
+
+  delete from points_award_log where created_at < now() - interval '2 days';
+  select count(*) into calls_today from points_award_log
+    where caller_id = auth.uid() and created_at > now() - interval '24 hours';
+  if calls_today >= 40 then
+    raise exception 'Demasiadas operaciones de puntos en poco tiempo. Probá de nuevo más tarde.';
+  end if;
+  insert into points_award_log (caller_id) values (auth.uid());
+
+  select id, user_id, tipo, resuelto, nickname into rpt from reports where id = p_source_id;
+  if rpt.id is null then
+    raise exception 'No se encontró el reporte de origen.';
+  end if;
+
+  if p_reason = 'reporte' then
+    if p_user_id <> auth.uid()::text or rpt.user_id is distinct from auth.uid() then
+      raise exception 'Solo podés sumarte puntos por tus propios reportes.';
+    end if;
+  elsif p_reason = 'reencuentro' then
+    if p_user_id <> auth.uid()::text or rpt.user_id is distinct from auth.uid() then
+      raise exception 'Solo podés sumarte puntos por tus propios reencuentros.';
+    end if;
+    if rpt.resuelto is distinct from true then
+      raise exception 'Ese reporte todavía no está marcado como reencontrado.';
+    end if;
+  elsif p_reason = 'bono-reporte-original' then
+    if p_user_id = auth.uid()::text then
+      raise exception 'Este motivo es para acreditarle puntos a otra persona.';
+    end if;
+    if rpt.user_id is null or rpt.user_id::text <> p_user_id then
+      raise exception 'El reporte de origen no pertenece al usuario indicado.';
+    end if;
+    select id into own_resolved_id
+      from reports
+      where resuelto_por_user_id = auth.uid()
+        and resuelto = true
+        and resuelto_en > now() - interval '10 minutes'
+        and tipo is distinct from rpt.tipo
+        and id <> rpt.id
+      limit 1;
+    if own_resolved_id is null then
+      raise exception 'No encontramos un reencuentro reciente propio para acreditar este bono.';
+    end if;
+  end if;
+
+  begin
+    insert into points_events (user_id, reason, source_id, points) values (p_user_id::uuid, p_reason, p_source_id, p_delta);
+  exception when unique_violation then
+    -- Ya se otorgaron puntos por este evento exacto — no es un error, solo
+    -- evita el doble conteo (reintento del cliente, doble-click, o alguien
+    -- probando a mano). No suma de nuevo, pero tampoco rompe el flujo.
+    return;
+  end;
+
+  insert into contributors (id, nickname, points, reportes, reencuentros, updated_at)
+  values (
+    p_user_id,
+    -- Solo se usa el nombre que manda quien llama si es SU propia fila.
+    case when p_user_id = auth.uid()::text then coalesce(p_display_name, p_user_id) else coalesce(rpt.nickname, p_user_id) end,
+    p_delta,
+    case when p_reason = 'reporte' then 1 else 0 end,
+    case when p_reason = 'reencuentro' then 1 else 0 end,
+    now()
+  )
+  on conflict (id) do update set
+    points = contributors.points + excluded.points,
+    reportes = contributors.reportes + excluded.reportes,
+    reencuentros = contributors.reencuentros + excluded.reencuentros,
+    nickname = case when p_user_id = auth.uid()::text then coalesce(p_display_name, contributors.nickname) else contributors.nickname end,
+    updated_at = now();
+end;
+$$;
+
+revoke all on function public.award_points(text, text, integer, text, text) from public, anon, authenticated;
+grant execute on function public.award_points(text, text, integer, text, text) to authenticated;
+
+
+-- ---------------------------------------------------------------------------
+-- 2. Datos del reencuentro (BAJA/MEDIA): resuelto_en y resuelto_por_user_id
+--    tienen GRANT UPDATE para el dueño, así que el navegador elige qué
+--    fecha y qué "resolvedor" quedan. award_points confía en esos dos
+--    campos para el bono ("reencuentro propio en los últimos 10 minutos").
+--    Este trigger los fija la base cuando el cambio viene de anon o
+--    authenticated: al marcar resuelto = now() y auth.uid(); si resuelto no
+--    cambia, quedan como estaban. El código actual (resolveReports en
+--    store.js) ya manda exactamente esos valores, así que no cambia nada
+--    para la app. El servidor (service_role) no pasa por esta regla.
+-- ---------------------------------------------------------------------------
+create or replace function public.reports_guard_resuelto()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if current_user in ('anon', 'authenticated') then
+    if new.resuelto is true and old.resuelto is distinct from true then
+      new.resuelto_en := now();
+      new.resuelto_por_user_id := auth.uid();
+    elsif new.resuelto is not distinct from old.resuelto then
+      new.resuelto_en := old.resuelto_en;
+      new.resuelto_por_user_id := old.resuelto_por_user_id;
+    else
+      new.resuelto_en := null;
+      new.resuelto_por_user_id := null;
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.reports_guard_resuelto() from public, anon, authenticated;
+
+drop trigger if exists reports_guard_resuelto on public.reports;
+create trigger reports_guard_resuelto
+  before update on public.reports
+  for each row execute function public.reports_guard_resuelto();
+
+-- Rollback:
+--   drop trigger if exists reports_guard_resuelto on public.reports;
+--   drop function if exists public.reports_guard_resuelto();
+--   (award_points: volver a correr su bloque de supabase/schema.sql)
+
+-- >>> migración 20261027_01_link_de_cobro.sql
+-- Link de cobro para los apoyos (2026-10-27).
+--
+-- Además del alias, cada colaborador puede cargar su propio link de cobro de
+-- Mercado Pago (link de pago, mpago.la) o de Cafecito. En su ficha aparece el
+-- botón "Pagar con …" que abre ese link: la plata va directo a la persona,
+-- Felpus no cobra ni intermedia nada.
+--
+-- Solo se aceptan esos sitios (check de abajo, mismo criterio que
+-- normalizeLinkCobro en src/lib/support.js), así nadie carga un link de
+-- phishing. Igual que alias_pago, no es legible por SELECT: se obtiene de a
+-- uno con get_support_alias() (servidor, límite por IP) y cada persona lee el
+-- suyo con get_my_support(). Las reglas antifraude (baneo, 3 denuncias) lo
+-- ocultan igual que al alias.
+--
+-- No borra ni cambia datos existentes.
+
+alter table contributors add column if not exists link_cobro text;
+
+alter table contributors drop constraint if exists contributors_link_cobro_formato;
+alter table contributors add constraint contributors_link_cobro_formato check (
+  link_cobro is null
+  or link_cobro ~ '^https://(link\.mercadopago\.com\.ar|mpago\.la|mpago\.li|cafecito\.app)/[A-Za-z0-9._~/-]{1,150}$'
+);
+
+grant update (link_cobro) on public.contributors to authenticated;
+grant insert (link_cobro) on public.contributors to authenticated;
+
+-- Cambia el tipo que devuelven: hay que borrarlas y volver a crearlas.
+drop function if exists public.get_support_alias(text, text);
+create function public.get_support_alias(p_contributor_id text, p_client_ip text default null)
+returns table(alias_pago text, nickname text, link_cobro text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  recent_count integer;
+begin
+  if p_client_ip is not null then
+    delete from support_alias_lookups where created_at < now() - interval '1 day';
+    select count(*) into recent_count from support_alias_lookups
+      where ip = p_client_ip and created_at > now() - interval '1 hour';
+    if recent_count >= 30 then
+      raise exception 'Demasiadas consultas desde esta conexión. Probá de nuevo más tarde.';
+    end if;
+    insert into support_alias_lookups (ip) values (p_client_ip);
+  end if;
+
+  return query
+    select c.alias_pago, c.nickname, c.link_cobro
+    from contributors c
+    where c.id = p_contributor_id
+      and c.acepta_apoyos
+      and (c.alias_pago is not null or c.link_cobro is not null)
+      and not c.baneado
+      and public.support_flag_count(c.id) < 3;
+end;
+$$;
+revoke all on function public.get_support_alias(text, text) from public, anon, authenticated;
+grant execute on function public.get_support_alias(text, text) to service_role;
+
+drop function if exists public.get_my_support();
+create function public.get_my_support()
+returns table(alias_pago text, acepta_apoyos boolean, link_cobro text)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select c.alias_pago, c.acepta_apoyos, c.link_cobro from contributors c where c.id = auth.uid()::text;
+$$;
+revoke all on function public.get_my_support() from public, anon;
+grant execute on function public.get_my_support() to authenticated;
+
+-- El panel de admin muestra "tiene alias" contando también el link.
+-- (admin_user_signals no cambia de tipo: solo la condición.)
+create or replace function public.admin_user_signals()
+returns table(
+  id uuid,
+  email text,
+  nickname text,
+  points integer,
+  baneado boolean,
+  baneado_motivo text,
+  acepta_apoyos boolean,
+  tiene_alias boolean,
+  reportes_total integer,
+  reportes_ocultos integer,
+  reportes_24h integer,
+  denuncias_recibidas integer,
+  denuncias_alias integer,
+  creado_en timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.email() is distinct from 'santiagobarronlf@gmail.com' then
+    raise exception 'No autorizado.';
+  end if;
+  return query
+    select
+      u.id,
+      u.email::text,
+      c.nickname,
+      coalesce(c.points, 0),
+      coalesce(c.baneado, false),
+      c.baneado_motivo,
+      coalesce(c.acepta_apoyos, false),
+      (c.alias_pago is not null or c.link_cobro is not null),
+      (select count(*)::int from reports r where r.user_id = u.id),
+      (select count(*)::int from reports r where r.user_id = u.id and r.oculto),
+      (select count(*)::int from reports r where r.user_id = u.id and r.creado_en > now() - interval '24 hours'),
+      (select count(distinct f.ip)::int from report_flags f join reports r on r.id = f.report_id where r.user_id = u.id),
+      (select count(distinct coalesce(s.ip, s.id::text))::int from support_flags s where s.contributor_id = u.id::text),
+      u.created_at
+    from auth.users u
+    left join contributors c on c.id = u.id::text
+    where u.email is not null
+    order by u.created_at desc;
+end;
+$$;
+
+-- >>> migración 20261028_01_avisos_email.sql
+-- Avisos por email (2026-10-28): pocos y solo cuando importan.
+--
+--  - Coincidencia ALTA con tu reporte: como mucho 1 mail por semana.
+--  - A los 30 días sin novedades: "¿Hubo novedades?" con 3 botones (volvió a
+--    casa / sigo buscando / ya no busco). "Sigo buscando" renueva el reporte
+--    (actividad_en) y el próximo llega 30 días después.
+--  - Tope de mails por día (ver EMAIL_TOPE_DIARIO en src/lib/emailAvisos.js)
+--    para no pasar el plan gratuito de Resend.
+--
+-- Solo se escribe al email que dejó quien publicó (contacto_email), que
+-- sigue sin ser legible con la clave pública. Cada mail trae "No quiero más
+-- avisos" (avisos_email = false).
+--
+-- Todo lo usa el servidor con service_role: no hacen falta grants para anon
+-- ni authenticated. Si esta migración todavía no se corrió, la app publica
+-- igual (create-report reintenta sin avisos_email) y los mails se saltean.
+--
+-- No borra ni cambia datos existentes.
+
+alter table public.reports add column if not exists avisos_email boolean not null default true;
+alter table public.reports add column if not exists seguimiento_email_en timestamptz;
+alter table public.reports add column if not exists ultimo_email_match_en timestamptz;
+
+-- notifications_log: también registra los mails (para el tope diario).
+alter table public.notifications_log drop constraint if exists notifications_log_kind_check;
+alter table public.notifications_log add constraint notifications_log_kind_check
+  check (kind in ('zona', 'match', 'inactividad', 'email_match', 'email_seguimiento'));
