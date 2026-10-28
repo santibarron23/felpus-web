@@ -432,6 +432,8 @@ export async function createReport(report) {
     descripcion: report.descripcion,
     contacto_whatsapp: report.contactoWhatsapp || null,
     contacto_email: report.contactoEmail || null,
+    // Solo tiene sentido con email; sin dato, sí quiere avisos (default).
+    avisos_email: report.avisosEmail !== false,
     foto_url: uploaded[0].url,
     hist: uploaded[0].hist,
     embedding: uploaded[0].embedding,

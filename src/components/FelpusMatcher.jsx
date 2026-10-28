@@ -6,6 +6,7 @@ import Link from "next/link";
 import SocialLinks from "./felpus/SocialLinks";
 import FelpusAssistant from "./felpus/FelpusAssistant";
 import ImportPostCard from "./felpus/ImportPostCard";
+import { novedadesDue, NOVEDADES_KEY_PREFIX } from "../lib/emailAvisos";
 import { findDuplicates, duplicateMessage } from "../lib/duplicates";
 import { REPORT_DRAFT_KEY, serializeReportDraft, parseReportDraft } from "../lib/reportDraft";
 import { importPost } from "../lib/postImportClient";
@@ -1654,6 +1655,39 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading]);
 
+  // "¿Hubo novedades?" dentro de la app (emailAvisos.js): uno de tus
+  // reportes activos cumplió 30 días. Tuyo = de tu cuenta, o publicado desde
+  // este dispositivo (token guardado). Descartarlo lo esconde 30 días.
+  const [novedadesVistas, setNovedadesVistas] = useState(0);
+  const reporteNovedades = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const now = Date.now();
+    return (
+      reports.find((r) => {
+        const mio = (user && r.userId === user.id) || !!reportToken(r.id);
+        if (!mio) return false;
+        let dismissedAt = null;
+        try {
+          dismissedAt = Number(localStorage.getItem(NOVEDADES_KEY_PREFIX + r.id)) || null;
+        } catch {
+          // sin localStorage: se muestra igual
+        }
+        return novedadesDue(r, { dismissedAt, now });
+      }) || null
+    );
+    // novedadesVistas: recalcula al descartar uno.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reports, user, novedadesVistas]);
+
+  function descartarNovedades(reportId) {
+    try {
+      localStorage.setItem(NOVEDADES_KEY_PREFIX + reportId, String(Date.now()));
+    } catch {
+      // sin localStorage: se descarta solo en esta visita
+    }
+    setNovedadesVistas((n) => n + 1);
+  }
+
   async function renewReport(reportId) {
     try {
       const res = await authedFetch("/api/reports/renew", {
@@ -2319,6 +2353,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
         },
         contactoWhatsapp: whatsappResult.isValid ? whatsappResult.digits : "",
         contactoEmail: form.contactoEmail.trim(),
+        avisosEmail: form.avisosEmail !== false,
         fotos: form.fotos.map((foto) => (foto.check?.dudosa ? { ...foto, dudosa: true } : foto)),
         nickname: nickname.trim(),
         userId: user?.id || null,
@@ -2878,6 +2913,52 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
         {/* INICIO */}
         {activeTab === "inicio" && (
           <div key="inicio" className="max-w-2xl mx-auto space-y-5 felpus-fadein">
+            {reporteNovedades && (
+              <div className="bg-white rounded-2xl border p-4 space-y-3 shadow-sm" style={{ borderColor: C.border }} role="status">
+                <div className="flex items-start gap-2">
+                  <p className="flex-1 text-sm" style={{ color: C.text }}>
+                    <span className="font-bold">
+                      {reporteNovedades.tipo === "encontrada" ? "¿Pudiste devolver a " : "¿Hubo novedades de "}
+                      {nombreReal(reporteNovedades) || petTitle(reporteNovedades).toLowerCase()}?
+                    </span>{" "}
+                    Tu reporte lleva {Math.max(1, Math.round((Date.now() - reporteNovedades.creadoEn) / 86400000))} días publicado.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => descartarNovedades(reporteNovedades.id)}
+                    aria-label="Ahora no"
+                    className="shrink-0 w-9 h-9 -mt-1 -mr-1 rounded-full flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                    style={{ color: C.muted }}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      descartarNovedades(reporteNovedades.id);
+                      openReportDetail(reporteNovedades);
+                    }}
+                    className="min-h-[44px] rounded-xl text-sm font-bold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                    style={{ background: C.greenSolid }}
+                  >
+                    {reporteNovedades.tipo === "encontrada" ? "Ya volvió 🎉" : "Volvió a casa 🎉"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      descartarNovedades(reporteNovedades.id);
+                      renewReport(reporteNovedades.id);
+                    }}
+                    className="min-h-[44px] rounded-xl border text-sm font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                    style={{ borderColor: C.border, color: C.text }}
+                  >
+                    Sigo buscando
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl border overflow-hidden shadow-sm" style={{ borderColor: C.border }}>
               <div className="p-5 text-center">
                 <div
@@ -3610,6 +3691,19 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                       className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
                       style={{ borderColor: fieldErrors.contacto ? C.red : C.border, color: C.text }}
                     />
+                    {form.contactoEmail.trim() && (
+                      <label className="flex items-start gap-2 mt-2 text-[12px] leading-snug cursor-pointer" style={{ color: C.text }}>
+                        <input
+                          type="checkbox"
+                          checked={form.avisosEmail !== false}
+                          onChange={(e) => setForm((f) => ({ ...f, avisosEmail: e.target.checked }))}
+                          className="mt-0.5 w-4 h-4 shrink-0"
+                        />
+                        <span>
+                          Avisarme por email solo si hay novedades: una coincidencia muy probable o, cada 30 días, &ldquo;¿hubo novedades?&rdquo;.
+                        </span>
+                      </label>
+                    )}
                   </div>
                 </div>
                 {fieldErrors.contacto && (
