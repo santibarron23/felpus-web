@@ -1,15 +1,15 @@
 "use client";
 
-// "Lo vi suelto" (2026-10-27): reporte express para quien ve una mascota en
-// la calle — foto, dónde y listo. Es la palanca más grande para sumar
-// reportes de "encontrada", que hoy son 1 de cada 5 (y sin ellos el
-// matching de las perdidas no tiene contra qué comparar).
+// "Vi una mascota suelta" (2026-10-27; estado propio "Avistamiento" desde el
+// 2026-10-28, ver sighting.js): para quien ve una mascota en la calle y NO la
+// tiene con ella. Dónde, cuándo y si es perro o gato; la foto es opcional.
+// Quien la tiene con ella usa "Encontré una mascota" (onTengo).
 //
 // - La foto se procesa igual que en el formulario (resizeImageFile,
 //   histograma, embedding DINOv2, revisión de flyer) y la IA (Gemini, modo
 //   "foto") sugiere especie y color.
-// - Si la persona solo la vio, el contacto es opcional (avistamiento, ver
-//   sighting.js); si la tiene con ella, es una encontrada común.
+// - Sin foto se guarda una imagen genérica que no se usa al comparar.
+// - El contacto es opcional.
 // - Desde la ficha de una perdida ("La vi"), llega con especie/color/tamaño
 //   de ese reporte y queda vinculada a él.
 // Publicar va por el mismo camino que el formulario (onPublish).
@@ -29,10 +29,36 @@ import { reverseGeocode } from "../../lib/osmMap";
 import { requestLocation, geolocationErrorMessage } from "../../lib/geolocation";
 import { CITIES } from "../../lib/cities";
 import { petTitle } from "../../lib/petTitle";
-import { sightingMissing } from "../../lib/sighting";
+import { sightingMissing, vistaEnDesdeInput, vistaEnParaInput } from "../../lib/sighting";
 import { logError } from "../../lib/log";
 
-export default function SightingSheet({ vistaDe = null, savedWhatsapp = "", defaultCountry = "AR", onPublish, onClose }) {
+// Imagen genérica para un avistamiento sin foto (JPEG, como cualquier foto).
+function fotoGenerica(especie, C) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 800;
+  canvas.height = 600;
+  const g = canvas.getContext("2d");
+  g.fillStyle = C.surfaceMuted;
+  g.fillRect(0, 0, 800, 600);
+  g.fillStyle = C.sightingSolid;
+  g.beginPath();
+  g.arc(400, 250, 110, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = "#fff";
+  g.font = "bold 110px sans-serif";
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillText("?", 400, 256);
+  g.fillStyle = C.text;
+  g.font = "bold 44px sans-serif";
+  g.fillText(`${especie === "gato" ? "Gato" : "Perro"} visto suelto`, 400, 440);
+  g.fillStyle = C.muted;
+  g.font = "32px sans-serif";
+  g.fillText("Avistamiento sin foto", 400, 500);
+  return canvas.toDataURL("image/jpeg", 0.85);
+}
+
+export default function SightingSheet({ vistaDe = null, savedWhatsapp = "", defaultCountry = "AR", onPublish, onTengo, onClose }) {
   const C = useTheme();
   const panelRef = useRef(null);
   const fileRef = useRef(null);
@@ -44,7 +70,7 @@ export default function SightingSheet({ vistaDe = null, savedWhatsapp = "", defa
   const [loc, setLoc] = useState(null); // { lat, lng }
   const [lugar, setLugar] = useState({ zona: "", ciudad: "", provincia: "" });
   const [geo, setGeo] = useState({ status: "idle", error: "" });
-  const [conmigo, setConmigo] = useState(false);
+  const [vistaInput, setVistaInput] = useState(() => vistaEnParaInput(Date.now()));
   const [especie, setEspecie] = useState(vistaDe?.especie === "perro" || vistaDe?.especie === "gato" ? vistaDe.especie : "");
   const [color, setColor] = useState(vistaDe?.color || "");
   const [tamano, setTamano] = useState(vistaDe?.tamano || "");
@@ -61,7 +87,8 @@ export default function SightingSheet({ vistaDe = null, savedWhatsapp = "", defa
 
   const whatsappDigits = usarGuardado && savedWhatsapp ? savedWhatsapp.replace(/\D/g, "") : parsed.isValid ? parsed.digits : "";
   const phoneInvalido = !usarGuardado && phone.trim() && !parsed.isValid;
-  const faltan = sightingMissing({ fotos: foto ? [foto] : [], lat: loc?.lat, lng: loc?.lng, zona: lugar.zona, especie, conmigo, whatsappOk: !!whatsappDigits });
+  const vistaEn = vistaEnDesdeInput(vistaInput);
+  const faltan = sightingMissing({ lat: loc?.lat, lng: loc?.lng, zona: lugar.zona, especie, vistaEn });
 
   async function handleFoto(e) {
     const file = e.target.files?.[0];
@@ -132,19 +159,24 @@ export default function SightingSheet({ vistaDe = null, savedWhatsapp = "", defa
     setPublishing(true);
     setError("");
     try {
+      // Sin foto: imagen genérica, marcada para no usarse al comparar.
+      const fotos = foto
+        ? [{ dataUrl: foto.dataUrl, hist: foto.hist, embedding: foto.embedding, ...(foto.check?.dudosa ? { dudosa: true } : {}) }]
+        : [{ dataUrl: fotoGenerica(especie, C), hist: null, embedding: null, dudosa: true }];
       await onPublish({
         especie,
         color,
         tamano,
         raza,
-        conmigo,
+        vistaEn,
+        sinFoto: !foto,
         zona: lugar.zona,
         ciudad: lugar.ciudad,
         provincia: lugar.provincia,
         lat: loc?.lat ?? null,
         lng: loc?.lng ?? null,
-        fotos: [{ dataUrl: foto.dataUrl, hist: foto.hist, embedding: foto.embedding, ...(foto.check?.dudosa ? { dudosa: true } : {}) }],
-        fotosDudosas: foto.check?.dudosa ? [0] : [],
+        fotos,
+        fotosDudosas: foto?.check?.dudosa ? [0] : [],
         contactoWhatsapp: whatsappDigits,
         vistaDe: vistaDe?.id || null,
       });
@@ -186,7 +218,7 @@ export default function SightingSheet({ vistaDe = null, savedWhatsapp = "", defa
               {vistaDe ? `¿Viste a ${petTitle(vistaDe)}?` : "Vi una mascota suelta"}
             </h2>
             <p className="text-[12px]" style={{ color: C.muted }}>
-              {vistaDe ? "Avisá dónde: le llega a quien la busca." : "Foto y lugar alcanzan. Felpus la compara con las perdidas."}
+              {vistaDe ? "Avisá dónde y cuándo: le llega a quien la busca." : "Dónde y cuándo alcanzan. Felpus lo cruza con las perdidas."}
             </p>
           </div>
           <button
@@ -201,33 +233,9 @@ export default function SightingSheet({ vistaDe = null, savedWhatsapp = "", defa
         </header>
 
         <div className="px-4 pb-2 space-y-4 overflow-y-auto">
-          {/* 1. Foto */}
+          {/* 1. Dónde */}
           <div>
-            <p className={paso} style={{ color: C.text }}>{num(1, !!foto)} Foto</p>
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              disabled={fotoBusy}
-              className="w-full rounded-xl border-2 border-dashed overflow-hidden flex items-center justify-center gap-2 text-sm font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
-              style={{ borderColor: foto ? C.green : C.border, color: C.text, background: C.surfaceSubtle, minHeight: foto ? 0 : 96 }}
-            >
-              {foto ? (
-                // eslint-disable-next-line @next/next/no-img-element -- data URL local, sin optimizar
-                <img src={foto.dataUrl} alt="Foto elegida (tocá para cambiarla)" className="w-full max-h-48 object-cover" />
-              ) : fotoBusy ? (
-                <Loader2 className="w-5 h-5 animate-spin" aria-label="Procesando la foto" />
-              ) : (
-                <>
-                  <Camera className="w-5 h-5" aria-hidden="true" /> Sacar o elegir foto
-                </>
-              )}
-            </button>
-            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFoto} aria-label="Foto de la mascota" />
-          </div>
-
-          {/* 2. Dónde */}
-          <div>
-            <p className={paso} style={{ color: C.text }}>{num(2, !!loc)} Dónde la viste</p>
+            <p className={paso} style={{ color: C.text }}>{num(1, !!loc)} Dónde la viste</p>
             {loc ? (
               <div className="flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-sm" style={{ background: C.successBg, color: C.successText }}>
                 <span className="min-w-0 truncate">{[lugar.zona, lugar.ciudad].filter(Boolean).join(", ") || "Punto marcado"}</span>
@@ -261,6 +269,23 @@ export default function SightingSheet({ vistaDe = null, savedWhatsapp = "", defa
               <p className="text-[12px] mt-1" style={{ color: C.redDark }}>
                 {geo.error} Podés marcarlo en el mapa.
               </p>
+            )}
+          </div>
+
+          {/* 2. Cuándo */}
+          <div>
+            <label htmlFor="sighting-cuando" className={paso} style={{ color: C.text }}>{num(2, vistaEn != null)} Cuándo la viste</label>
+            <input
+              id="sighting-cuando"
+              type="datetime-local"
+              value={vistaInput}
+              max={vistaEnParaInput(Date.now())}
+              onChange={(e) => setVistaInput(e.target.value)}
+              className="felpus-input w-full border rounded-lg px-3 py-2.5 text-sm"
+              style={{ borderColor: vistaEn == null ? C.red : C.border, color: C.text, background: C.surfaceSubtle }}
+            />
+            {vistaEn == null && (
+              <p className="text-[12px] mt-1" style={{ color: C.redDark }}>Elegí una fecha y hora de los últimos 30 días.</p>
             )}
           </div>
 
@@ -304,29 +329,35 @@ export default function SightingSheet({ vistaDe = null, savedWhatsapp = "", defa
             )}
           </div>
 
-          {/* 4. ¿La tenés? + contacto */}
+          {/* 4. Foto (opcional) */}
           <div>
-            <p className={paso} style={{ color: C.text }}>¿La tenés con vos?</p>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                [false, "No, solo la vi"],
-                [true, "Sí, la tengo"],
-              ].map(([v, label]) => (
-                <button
-                  key={label}
-                  type="button"
-                  aria-pressed={conmigo === v}
-                  onClick={() => setConmigo(v)}
-                  className="min-h-[44px] rounded-xl border text-sm font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
-                  style={chip(conmigo === v)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <div className="mt-2">
-              <p className="text-[12px] mb-1" style={{ color: C.muted }}>
-                {conmigo ? "Tu WhatsApp, para que te contacten:" : "Tu WhatsApp (opcional), por si quieren preguntarte algo:"}
+            <p className={paso} style={{ color: C.text }}>{num(4, !!foto)} Foto <span className="font-normal" style={{ color: C.muted }}>(opcional)</span></p>
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={fotoBusy}
+              className="w-full rounded-xl border-2 border-dashed overflow-hidden flex items-center justify-center gap-2 text-sm font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+              style={{ borderColor: foto ? C.green : C.border, color: C.text, background: C.surfaceSubtle, minHeight: foto ? 0 : 64 }}
+            >
+              {foto ? (
+                // eslint-disable-next-line @next/next/no-img-element -- data URL local, sin optimizar
+                <img src={foto.dataUrl} alt="Foto elegida (tocá para cambiarla)" className="w-full max-h-48 object-cover" />
+              ) : fotoBusy ? (
+                <Loader2 className="w-5 h-5 animate-spin" aria-label="Procesando la foto" />
+              ) : (
+                <>
+                  <Camera className="w-5 h-5" aria-hidden="true" /> Sacar o elegir foto
+                </>
+              )}
+            </button>
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFoto} aria-label="Foto de la mascota" />
+          </div>
+
+          {/* Contacto (opcional) */}
+          <div>
+            <div>
+              <p className={paso} style={{ color: C.text }}>
+                Tu WhatsApp <span className="font-normal" style={{ color: C.muted }}>(opcional, por si quieren preguntarte algo)</span>
               </p>
               {savedWhatsapp && usarGuardado ? (
                 <div className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm" style={{ borderColor: C.border, color: C.text }}>
@@ -360,14 +391,19 @@ export default function SightingSheet({ vistaDe = null, savedWhatsapp = "", defa
             onClick={publicar}
             disabled={!!faltan.length || publishing || phoneInvalido}
             className="w-full min-h-[48px] rounded-xl text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
-            style={{ background: C.orangeInkSolid }}
+            style={{ background: C.sightingSolid }}
           >
             {publishing && <Loader2 className="w-4 h-4 animate-spin" />}
-            {conmigo ? "Publicar y buscar a su familia" : "Avisar y buscar coincidencias"}
+            Avisar que la vi
           </button>
           <p className="text-[11px] text-center" style={{ color: C.muted }} aria-live="polite">
-            {faltan.length ? `Falta: ${faltan.join(", ")}.` : phoneInvalido ? "Revisá el WhatsApp o dejalo vacío." : "Se publica con la zona aproximada, no el punto exacto."}
+            {faltan.length ? `Falta: ${faltan.join(", ")}.` : phoneInvalido ? "Revisá el WhatsApp o dejalo vacío." : "Se publica como avistamiento, con la zona aproximada."}
           </p>
+          {onTengo && (
+            <button type="button" onClick={onTengo} className="w-full min-h-[36px] text-[12px] font-semibold underline" style={{ color: C.muted }}>
+              ¿La tenés con vos? Publicala como encontrada
+            </button>
+          )}
         </footer>
       </section>
     </div>

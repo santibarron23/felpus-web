@@ -1,46 +1,114 @@
-// "Lo vi suelto" (2026-10-27): reporte express para quien ve una mascota en
-// la calle. Es un reporte "encontrada" de siempre (entra al matching, a los
-// avisos de coincidencia y a las alertas sin cambios) con dos datos más en
-// `detalles`:
-//  - avistamiento: true → quien avisa NO la tiene con ella: solo la vio.
-//    En ese caso el contacto es opcional (ver validateReportContact).
-//  - avistamiento_de: id del reporte de perdida desde el que se tocó "La vi",
-//    si se avisó desde una ficha.
-// Si la persona sí la tiene con ella, es una encontrada común (con contacto
-// obligatorio), cargada por el mismo camino rápido.
+// Avistamientos ("Vi una mascota suelta", 2026-10-27; estado propio desde el
+// 2026-10-28). Una mascota vista en la calle que nadie tiene NO es una
+// "encontrada": en toda la app se muestra como "Avistamiento", con su
+// etiqueta, color, filtro y textos (estadoReporte más abajo).
+//
+// En la base se guarda como tipo "encontrada" + detalles.avistamiento = true:
+// así se sigue cruzando contra las PERDIDAS (matching, avisos de coincidencia
+// y alertas, sin cambios) — que es lo que le sirve a quien la busca.
+// Además, en `detalles`:
+//  - hora: "HH:MM" en que la vieron (la fecha va en `fecha`).
+//  - sin_foto: true → no había foto; la imagen guardada es una genérica, que
+//    va en fotos_dudosas para no usarse al comparar fotos.
+//  - avistamiento_de: id del reporte de perdida desde el que se tocó "La vi".
+// El contacto es opcional (ver validateReportContact).
 import { composeDescripcionBase } from "./matching";
 
 export const PUNTOS_AVISTAMIENTO = 10; // award_points acepta ("reporte", 10)
 const ID_RE = /^[A-Za-z0-9-]{1,64}$/;
+const TZ = "America/Argentina/Salta";
 
 export function isSighting(report) {
   return report?.detalles?.avistamiento === true;
 }
 
+// Estado que se MUESTRA: perdida | encontrada | avistamiento | reencontrada.
+export function estadoReporte(report) {
+  if (report?.resuelto) return "reencontrada";
+  if (report?.tipo === "perdida") return "perdida";
+  return isSighting(report) ? "avistamiento" : "encontrada";
+}
+
+export const ESTADO_LABEL = {
+  perdida: "Perdida",
+  encontrada: "Encontrada",
+  avistamiento: "Avistamiento",
+  reencontrada: "Reencontrada",
+};
+
+export function estadoLabel(report) {
+  return ESTADO_LABEL[estadoReporte(report)];
+}
+
+// Color del estado (claves del tema: ver theme.js).
+export function estadoColor(report, C) {
+  const e = estadoReporte(report);
+  if (e === "reencontrada") return C.greenSolid;
+  if (e === "perdida") return C.redSolid;
+  if (e === "avistamiento") return C.sightingSolid;
+  return C.mapFound;
+}
+
+// ¿El reporte pasa el filtro de tipo de Explorar? ("todos" | "perdida" |
+// "encontrada" | "avistamiento"; "resuelto" lo maneja quien llama).
+export function pasaFiltroTipo(report, filtro) {
+  if (!filtro || filtro === "todos") return true;
+  return estadoReporte({ ...report, resuelto: false }) === filtro;
+}
+
 // "Vista el 27 de octubre a las 18:30." en hora argentina.
 export function sightingWhen(ms) {
   const d = new Date(ms);
-  const fecha = d.toLocaleDateString("es-AR", { day: "numeric", month: "long", timeZone: "America/Argentina/Salta" });
-  const hora = d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "America/Argentina/Salta" });
-  return `Vista el ${fecha} a las ${hora}.`;
+  const fecha = d.toLocaleDateString("es-AR", { day: "numeric", month: "long", timeZone: TZ });
+  return `Vista el ${fecha} a las ${horaLocal(ms)}.`;
 }
 
 // Fecha AAAA-MM-DD en hora argentina (no UTC: a las 22 h de Salta ya es
 // "mañana" en UTC).
 export function fechaLocal(ms) {
-  return new Date(ms).toLocaleDateString("en-CA", { timeZone: "America/Argentina/Salta" });
+  return new Date(ms).toLocaleDateString("en-CA", { timeZone: TZ });
+}
+
+// "HH:MM" en hora argentina.
+export function horaLocal(ms) {
+  return new Date(ms).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: TZ });
+}
+
+// "AAAA-MM-DDTHH:MM" (input datetime-local) en hora argentina → ms. Argentina
+// no tiene horario de verano: siempre UTC-3. null si no es válido, si es en
+// el futuro (más de 10 min de margen) o de hace más de 30 días.
+export function vistaEnDesdeInput(value, now = Date.now()) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return null;
+  const ms = new Date(`${value}:00-03:00`).getTime();
+  if (!Number.isFinite(ms) || ms > now + 10 * 60 * 1000 || now - ms > 30 * 864e5) return null;
+  return ms;
+}
+
+// ms → valor para el input datetime-local, en hora argentina.
+export function vistaEnParaInput(ms) {
+  return `${fechaLocal(ms)}T${horaLocal(ms)}`;
+}
+
+// "Visto el 27/10 a las 21:30" para la ficha, si el reporte tiene hora.
+export function avistamientoCuando(report) {
+  if (!isSighting(report) || !report?.fecha) return "";
+  const [, m, d] = String(report.fecha).split("-");
+  const hora = /^\d{2}:\d{2}$/.test(report.detalles?.hora || "") ? ` a las ${report.detalles.hora}` : "";
+  return d && m ? `${Number(d)}/${Number(m)}${hora}` : "";
 }
 
 // Datos de la hoja → el mismo objeto que arma handleSubmit para createReport.
+// vistaEn: cuándo la vieron (ms); por defecto, ahora.
 export function buildSightingDraft(input, now = Date.now()) {
   const i = input || {};
-  const conmigo = i.conmigo === true;
+  const vistaEn = Number.isFinite(i.vistaEn) ? i.vistaEn : now;
+  const sinFoto = i.sinFoto === true;
   const form = { especie: i.especie, color: i.color || "", colorOtro: "", raza: i.raza || "", tamano: i.tamano || "", sexo: "", edad: "" };
-  const detalleLibre = [
-    sightingWhen(now),
-    conmigo ? "La tengo conmigo." : "La vi suelta; no la tengo conmigo.",
-  ].join(" ");
+  const detalleLibre = [sightingWhen(vistaEn), "La vieron suelta; quien avisó no la tiene.", sinFoto ? "Sin foto." : ""]
+    .filter(Boolean)
+    .join(" ");
   const vistaDe = typeof i.vistaDe === "string" && ID_RE.test(i.vistaDe) ? i.vistaDe : null;
+  const dudosas = sinFoto ? [0] : Array.isArray(i.fotosDudosas) ? i.fotosDudosas : [];
   return {
     id: i.id,
     tipo: "encontrada",
@@ -58,12 +126,14 @@ export function buildSightingDraft(input, now = Date.now()) {
     provincia: (i.provincia || "").trim().slice(0, 80),
     lat: i.lat ?? null,
     lng: i.lng ?? null,
-    fecha: fechaLocal(now),
+    fecha: fechaLocal(vistaEn),
     descripcion: `${composeDescripcionBase(form)} ${detalleLibre}`.trim(),
     detalles: {
-      ...(conmigo ? {} : { avistamiento: true }),
+      avistamiento: true,
+      hora: horaLocal(vistaEn),
+      ...(sinFoto ? { sin_foto: true } : {}),
       ...(vistaDe ? { avistamiento_de: vistaDe } : {}),
-      ...(Array.isArray(i.fotosDudosas) && i.fotosDudosas.length ? { fotos_dudosas: i.fotosDudosas } : {}),
+      ...(dudosas.length ? { fotos_dudosas: dudosas } : {}),
     },
     contactoWhatsapp: i.contactoWhatsapp || "",
     contactoEmail: "",
@@ -75,13 +145,12 @@ export function buildSightingDraft(input, now = Date.now()) {
   };
 }
 
-// Qué falta para poder publicar (vacío = listo). La especie es lo único
-// obligatorio aparte de foto y ubicación: sin ella no hay con qué comparar.
-export function sightingMissing({ fotos, lat, lng, zona, especie, conmigo, whatsappOk }) {
+// Qué falta para poder publicar (vacío = listo). La foto es opcional: con
+// dónde, cuándo y si es perro o gato ya sirve para cruzar con las perdidas.
+export function sightingMissing({ lat, lng, zona, especie, vistaEn }) {
   const faltan = [];
-  if (!fotos?.length) faltan.push("foto");
   if ((lat == null || lng == null) && !(zona || "").trim()) faltan.push("ubicación");
   if (especie !== "perro" && especie !== "gato") faltan.push("perro o gato");
-  if (conmigo && !whatsappOk) faltan.push("tu WhatsApp");
+  if (vistaEn === null) faltan.push("cuándo la viste");
   return faltan;
 }

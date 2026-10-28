@@ -77,3 +77,14 @@ describe("whatsappUrl", () => {
     expect(whatsappUrl("Hola", "+54 9 387 412-3456")).toBe("https://api.whatsapp.com/send?phone=5493874123456&text=Hola");
   });
 });
+
+describe("avistamientos al compartir", () => {
+  it("badge, cuándo (con hora) y mensaje propios", () => {
+    const r = { tipo: "encontrada", especie: "perro", sexo: "Hembra", zona: "Centro", fecha: "2026-10-20", detalles: { avistamiento: true, hora: "21:30" } };
+    const d = shareCardData(r, NOW);
+    expect(d.estado).toBe("avistamiento");
+    expect(d.badge).toBe("VISTA SUELTA");
+    expect(d.cuando).toBe("Vista suelta el 20 de octubre a las 21:30");
+    expect(buildShareMessage(r, NOW)).toMatch(/^👀 VISTA SUELTA: /);
+  });
+});

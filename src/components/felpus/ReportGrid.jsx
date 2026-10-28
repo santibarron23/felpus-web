@@ -9,7 +9,7 @@ import Image from "next/image";
 import { useTheme } from "./ThemeProvider";
 import { reportPhotoAlt } from "../../lib/matching";
 import { petTitle } from "../../lib/petTitle";
-import { isSighting } from "../../lib/sighting";
+import { estadoLabel, estadoColor } from "../../lib/sighting";
 
 export function formatDistancia(km) {
   if (km == null || !Number.isFinite(km)) return null;
@@ -27,8 +27,8 @@ export default function ReportGrid({ reports, onOpen }) {
       {reports.map((r) => {
         const dist = formatDistancia(r._dist);
         const perdida = r.tipo === "perdida";
-        const color = r.resuelto ? C.greenSolid : perdida ? C.redSolid : C.mapFound;
-        const estado = r.resuelto ? "Reencontrada" : perdida ? "Perdida" : isSighting(r) ? "Vista suelta" : "Encontrada";
+        const color = estadoColor(r, C);
+        const estado = estadoLabel(r);
         return (
           <li key={r.id}>
             <button

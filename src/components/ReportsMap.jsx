@@ -10,6 +10,7 @@ import { requestLocation, geolocationErrorMessage, MAP_GEOLOCATION_OPTIONS } fro
 import { CITIES } from "../lib/cities";
 import { zonaConCiudad } from "../lib/zona";
 import { approxLocation } from "../lib/approxLocation";
+import { estadoLabel, estadoColor } from "../lib/sighting";
 import { useTheme } from "./felpus/ThemeProvider";
 
 // Mapa de sólo lectura que pinta un marcador por cada reporte que tenga
@@ -144,8 +145,8 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
         try {
           // Encontrada en azul (C.mapFound): el naranja de antes se confundía
           // con el rojo de "perdida" en los pines chicos.
-          const color = r.tipo === "perdida" ? C.redSolid : C.mapFound;
-          const label = `${r.tipo === "perdida" ? "Perdida" : "Encontrada"} · ${zonaConCiudad(r)}`;
+          const color = estadoColor({ ...r, resuelto: false }, C);
+          const label = `${estadoLabel({ ...r, resuelto: false })} · ${zonaConCiudad(r)}`;
           // keyboard: true + title: el pin se puede alcanzar y activar con el
           // teclado (Leaflet lo hace foco y responde a Enter).
           const marker = L.marker([pos.lat, pos.lng], { icon: photoIcon(L, { foto: r.foto, color }), title: label, alt: label, keyboard: true }).addTo(map);
@@ -212,6 +213,9 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="w-3 h-3 rounded-full" style={{ background: C.mapFound }} /> Encontrada
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-full" style={{ background: C.sightingSolid }} /> Avistamiento
         </span>
       </div>
     </>

@@ -115,7 +115,8 @@ export function matchEmail({ report, otro, score, verUrl, bajaUrl }) {
   const nombre = nombreDe(report);
   const pct = Math.round(score * 100);
   const subject = report.tipo === "perdida" ? `Puede que hayan encontrado a ${nombre}` : `Puede que estén buscando a ${nombre}`;
-  const quien = otro.tipo === "encontrada" ? "una mascota encontrada" : "una mascota perdida";
+  const quien =
+    otro.tipo !== "encontrada" ? "una mascota perdida" : otro.detalles?.avistamiento === true ? "que vio una mascota suelta" : "una mascota encontrada";
   const f = pie(bajaUrl);
   const html = `<div style="${ESTILO.wrap}">
   <h2 style="color:#D71925;margin:0 0 12px;">🐾 ${escapeHtml(subject)}</h2>

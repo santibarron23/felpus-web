@@ -63,6 +63,10 @@ export const C = {
   // es el opuesto del rojo y se distingue también con daltonismo
   // (rojo-verde). 6.1:1 sobre blanco.
   mapFound: "#1F5FD6",
+  // Avistamiento (2026-10-28): una mascota vista suelta, que nadie tiene.
+  // Violeta: distinto de perdida (rojo), encontrada (azul) y reencontrada
+  // (verde). 6.4:1 sobre blanco, y texto blanco encima también pasa AA.
+  sightingSolid: "#6D46B8",
 
   // --- Neutros cálidos ---
   ink: "#382C25",

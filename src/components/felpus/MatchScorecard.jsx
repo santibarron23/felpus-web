@@ -12,6 +12,7 @@ import { useTheme } from "./ThemeProvider";
 import { formatFechaAR, matchBreakdown, reportPhotoAlt, scoreLabel } from "../../lib/matching";
 import { petTitle } from "../../lib/petTitle";
 import { zonaConCiudad } from "../../lib/zona";
+import { estadoLabel, isSighting } from "../../lib/sighting";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -40,9 +41,9 @@ function ReportSide({ report }) {
         <Image src={report.foto} alt={reportPhotoAlt(report)} fill sizes="(max-width: 640px) 45vw, 200px" className="object-cover" />
       </div>
       <div className="px-2.5 py-2">
-        <p className="text-[11px] font-bold flex items-center gap-1.5" style={{ color: perdida ? C.redDark : C.orangeInk }}>
-          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: perdida ? C.redSolid : C.orangeInkSolid }} aria-hidden="true" />
-          {perdida ? "Perdida" : "Encontrada"}
+        <p className="text-[11px] font-bold flex items-center gap-1.5" style={{ color: perdida ? C.redDark : isSighting(report) ? C.sightingSolid : C.orangeInk }}>
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: perdida ? C.redSolid : isSighting(report) ? C.sightingSolid : C.orangeInkSolid }} aria-hidden="true" />
+          {estadoLabel({ ...report, resuelto: false })}
         </p>
         <p className="text-[13px] font-semibold truncate" style={{ color: C.text }}>{petTitle(report)}</p>
         <p className="text-[11px] truncate" style={{ color: C.muted }}>{zonaConCiudad(report)}</p>

@@ -1386,7 +1386,7 @@ export function buildDetallesEstructurados({ accesorios, comportamientos, marcaD
 }
 
 export function buildShareText(report) {
-  const tipoTxt = report.tipo === "perdida" ? "PERDIDA" : "ENCONTRADA";
+  const tipoTxt = report.tipo === "perdida" ? "PERDIDA" : report.detalles?.avistamiento === true ? "VISTA SUELTA" : "ENCONTRADA";
   const nombreTxt = report.nombre ? `${report.nombre} — ` : "";
   const razaTxt = report.raza && !razaSinSenal(normalizeText(report.raza)) ? ` (${report.raza})` : "";
   return `🐾 Mascota ${tipoTxt}: ${nombreTxt}${report.especie}${razaTxt}, color ${report.color}, tamaño ${report.tamano}.\nZona: ${report.zona}.\n${report.descripcion}\n\n¿La reconocés? Ayudemos a reencontrarla. Publicado en Felpus.`;
@@ -1398,7 +1398,7 @@ export function buildShareText(report) {
 // verdad: tipo (perdida/encontrada) + nombre si tiene + color.
 export function reportPhotoAlt(report) {
   if (!report) return "";
-  const tipoTxt = report.tipo === "perdida" ? "Perdida" : "Encontrada";
+  const tipoTxt = report.tipo === "perdida" ? "Perdida" : report.detalles?.avistamiento === true ? "Vista suelta" : "Encontrada";
   const especieTxt = report.especie === "gato" ? "gato" : report.especie === "perro" ? "perro" : "mascota";
   const colorTxt = report.color === "Otro color" && report.colorOtro ? report.colorOtro : report.color;
   const nombreTxt = report.nombre ? `${report.nombre}, ` : "";
