@@ -96,6 +96,8 @@ import {
 } from "../lib/matching";
 import {
   fetchReports,
+  fetchReportVectors,
+  mergeReportVectors,
   fetchReportContact,
   createReport,
   resolveReports,
@@ -345,6 +347,14 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   const [reportKind, setReportKind] = useState("perdida");
   const [form, setForm] = useState(emptyForm());
   const [reports, setReports] = useState([]);
+  // Carga en dos pasos (2026-10-28): primero el listado liviano, sin
+  // histogramas ni embeddings (Explorar y el mapa aparecen enseguida), y
+  // después, en segundo plano, los vectores de las fotos. Todo lo que compara
+  // fotos espera a vectoresListos o a reportesParaComparar().
+  const [vectoresListos, setVectoresListos] = useState(false);
+  const vectoresRef = useRef({ promise: null, rows: null });
+  const reportsRef = useRef(reports);
+  reportsRef.current = reports;
   const [loadingReports, setLoadingReports] = useState(true);
   // Antes reports=[] significaba lo mismo para "todavía no hay reportes" que
   // para "no se pudo conectar" — el empty-state mostraba siempre el mismo
@@ -1174,7 +1184,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   // directamente CUÁL reporte tuyo tiene una coincidencia nueva y con qué,
   // para poder ir directo al detalle en vez de tener que buscarlo.
   const newMatchItems = useMemo(() => {
-    if (!user) return [];
+    if (!user || !vectoresListos) return [];
     const myActive = reports.filter((r) => r.userId === user.id && !r.resuelto);
     if (myActive.length === 0) return [];
     const items = [];
@@ -1187,7 +1197,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
       }
     }
     return items;
-  }, [reports, user, matchesSeenAt]);
+  }, [reports, user, matchesSeenAt, vectoresListos]);
   const newMatchesCount = newMatchItems.length;
 
   // Rediseño de "Detalles para reconocerlo" (ver CHIP_BTN_CLASS/
@@ -1350,7 +1360,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   // contra reportes activos del mismo tipo. Solo con foto, zona y color —
   // antes no hay con qué comparar en serio. Es un aviso: nunca bloquea.
   const posibleDuplicado = useMemo(() => {
-    if (!form.fotos.length || !form.color || !(form.zona.trim() || (form.lat != null && form.lng != null))) return null;
+    if (!vectoresListos || !form.fotos.length || !form.color || !(form.zona.trim() || (form.lat != null && form.lng != null))) return null;
     const draft = {
       id: "_nuevo",
       tipo: reportKind,
@@ -1371,7 +1381,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
       creadoEn: Date.now(),
     };
     return findDuplicates(draft, reports, { userId: user?.id || null, nickname })[0] || null;
-  }, [form.fotos, form.color, form.colorOtro, form.zona, form.lat, form.lng, form.especie, form.raza, form.tamano, form.sexo, form.edad, form.provincia, form.fecha, reportKind, reports, user, nickname]);
+  }, [form.fotos, form.color, form.colorOtro, form.zona, form.lat, form.lng, form.especie, form.raza, form.tamano, form.sexo, form.edad, form.provincia, form.fecha, reportKind, reports, user, nickname, vectoresListos]);
   const dupVisible = posibleDuplicado && posibleDuplicado.report.id !== dupDescartado ? posibleDuplicado : null;
 
   // Borrador en el dispositivo: se recupera una sola vez al montar y se
@@ -1582,9 +1592,19 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   const loadAll = useCallback(async () => {
     setLoadingReports(true);
     try {
-      const items = await fetchReports();
+      const items = await fetchReports({ light: true });
       setReports(items);
       setLoadError(false);
+      // Sin await: el listado ya se muestra; los vectores llegan solos. Si
+      // fallan, el matching compara sin fotos (mejor que no mostrar nada).
+      setVectoresListos(false);
+      vectoresRef.current.promise = fetchReportVectors()
+        .then((rows) => {
+          vectoresRef.current.rows = rows;
+          setReports((prev) => mergeReportVectors(prev, rows));
+        })
+        .catch((e) => logError("No se pudieron cargar los vectores de las fotos", e))
+        .finally(() => setVectoresListos(true));
       await loadLeaderboard();
     } catch (e) {
       logError("No se pudieron cargar los reportes", e);
@@ -2164,6 +2184,13 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     }
   }
 
+  // Reportes con los vectores de las fotos ya cargados (ver vectoresListos):
+  // si todavía están llegando, espera; si fallaron, devuelve lo que hay.
+  async function reportesParaComparar() {
+    await vectoresRef.current.promise;
+    return vectoresRef.current.rows ? mergeReportVectors(reportsRef.current, vectoresRef.current.rows) : reportsRef.current;
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     if (submittingRef.current) return;
@@ -2300,7 +2327,6 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
       };
 
       const opposite = reportKind === "perdida" ? "encontrada" : "perdida";
-      const candidates = reports.filter((r) => r.tipo === opposite && !r.resuelto);
 
       goToTab("resultado");
       setScanning(true);
@@ -2309,6 +2335,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
 
       const savedReport = await createReport(draft);
       await new Promise((r) => setTimeout(r, SUBMIT_PERCEIVED_DELAY_MS));
+      const candidates = (await reportesParaComparar()).filter((r) => r.tipo === opposite && !r.resuelto);
 
       const scored = findMatches(savedReport, candidates, { limit: 6 });
 
@@ -2380,7 +2407,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     setExpandedCard(report.id);
     if (cardMatches[report.id]) return;
     const opposite = report.tipo === "perdida" ? "encontrada" : "perdida";
-    const candidates = reports.filter((r) => r.id !== report.id && r.tipo === opposite && !r.resuelto);
+    const candidates = (await reportesParaComparar()).filter((r) => r.id !== report.id && r.tipo === opposite && !r.resuelto);
     const scored = findMatches(report, candidates, { limit: 6 });
     let descartados = new Set();
     try {

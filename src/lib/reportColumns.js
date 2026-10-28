@@ -30,3 +30,10 @@ export const REPORT_LIST_BASE_FIELDS = [
 export const REPORT_LIST_OPTIONAL_COLUMNS = ["raza", "detalles", "oculto", "ciudad", "provincia", "inactivo"];
 
 export const REPORT_LIST_ALL_COLUMNS = [...REPORT_LIST_BASE_FIELDS, ...REPORT_LIST_OPTIONAL_COLUMNS];
+
+// Carga en dos pasos (2026-10-28): estas columnas (histograma y embedding de
+// cada foto) son el ~85 % del peso del listado (~1 MB de 1,2 MB) y solo las
+// usa el matching. El listado se pide primero sin ellas (Explorar y el mapa
+// aparecen enseguida) y después, en segundo plano, solo id + vectores (ver
+// fetchReports({ light }) y fetchReportVectors en store.js).
+export const REPORT_VECTOR_FIELDS = ["hist", "embedding", "hists", "embeddings"];
