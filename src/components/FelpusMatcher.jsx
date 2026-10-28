@@ -2947,9 +2947,13 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
               </div>
             )}
             <div className="bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl border overflow-hidden shadow-sm" style={{ borderColor: C.border }}>
-              <div className="p-5 text-center">
+              {/* Más baja en el celular (2026-10-28): que los números de abajo
+                  se vean al entrar, sin scrollear. Desde sm, como antes. En
+                  pantallas bajas (Safari con sus barras ronda los 660px) se
+                  omite la ilustración. */}
+              <div className="px-4 pt-4 pb-3 sm:p-5 text-center">
                 <div
-                  className="relative w-28 h-28 rounded-full overflow-hidden mx-auto mb-2 border-4"
+                  className="relative w-20 h-20 sm:w-28 sm:h-28 rounded-full overflow-hidden mx-auto mb-1.5 sm:mb-2 border-4 [@media(max-height:740px)]:hidden"
                   style={{ borderColor: C.cream }}
                 >
                   <Image
@@ -2961,20 +2965,20 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                     style={{ objectPosition: "50% 35%" }}
                   />
                 </div>
-                <h2 className="felpus-display text-xl sm:text-2xl mb-2" style={{ color: C.text }}>
+                <h2 className="felpus-display text-lg sm:text-2xl mb-1 sm:mb-2" style={{ color: C.text }}>
                   Cada mascota merece volver a casa
                 </h2>
-                <p className="text-sm leading-relaxed max-w-sm mx-auto" style={{ color: C.muted }}>
+                <p className="text-[13px] sm:text-sm leading-snug sm:leading-relaxed max-w-sm mx-auto" style={{ color: C.muted }}>
                   Publicá una mascota perdida o encontrada. Nuestra IA te ayuda a encontrar posibles coincidencias.
                 </p>
-                <div className="flex gap-2 mt-4">
+                <div className="flex gap-2 mt-3 sm:mt-4">
                   <button
                     onClick={() => {
                       playTap();
                       setReportKind("perdida");
                       goToTab("reportar");
                     }}
-                    className="felpus-cta flex-1 text-white text-sm font-bold rounded-xl py-3 transition-all duration-200 flex flex-col items-center justify-center gap-1 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--felpus-focus)]"
+                    className="felpus-cta flex-1 text-white text-sm font-bold rounded-xl py-2.5 sm:py-3 transition-all duration-200 flex flex-col items-center justify-center gap-0.5 sm:gap-1 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--felpus-focus)]"
                     style={{ background: C.redSolid }}
                   >
                     <Heart className="w-5 h-5" aria-hidden="true" />
@@ -2990,7 +2994,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                     // Antes ring-[#E36525] — un naranja descartado en la
                     // auditoría de contraste (ver theme.js); además no
                     // coincidía con el color real del botón (C.orangeInk).
-                    className="felpus-cta flex-1 text-white text-sm font-bold rounded-xl py-3 transition-all duration-200 flex flex-col items-center justify-center gap-1 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--felpus-focus)]"
+                    className="felpus-cta flex-1 text-white text-sm font-bold rounded-xl py-2.5 sm:py-3 transition-all duration-200 flex flex-col items-center justify-center gap-0.5 sm:gap-1 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--felpus-focus)]"
                     style={{ background: C.orangeInkSolid }}
                   >
                     <MapPin className="w-5 h-5" aria-hidden="true" />
@@ -3006,7 +3010,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                     playTap();
                     setSighting({ vistaDe: null });
                   }}
-                  className="w-full mt-2 min-h-[56px] rounded-xl border py-2.5 flex flex-col items-center justify-center gap-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                  className="w-full mt-2 min-h-[52px] sm:min-h-[56px] rounded-xl border py-2 sm:py-2.5 flex flex-col items-center justify-center gap-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
                   style={{ borderColor: C.border, color: C.text, background: C.surface }}
                 >
                   <span className="flex items-center gap-2 text-sm font-bold">
@@ -3029,7 +3033,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                     setShowResueltas(false);
                     goToTab("explorar");
                   }}
-                  className="mx-auto mt-3 px-3 min-h-[44px] flex items-center justify-center gap-1.5 text-sm font-bold underline underline-offset-4 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                  className="mx-auto mt-1 sm:mt-3 px-3 min-h-[44px] flex items-center justify-center gap-1.5 text-sm font-bold underline underline-offset-4 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
                   style={{ color: C.text }}
                 >
                   <Search className="w-4 h-4" aria-hidden="true" />
