@@ -2,6 +2,7 @@ import { supabase } from "./supabaseClient";
 import { logError } from "./log";
 import { REPORT_LIST_BASE_FIELDS, REPORT_LIST_OPTIONAL_COLUMNS, REPORT_VECTOR_FIELDS } from "./reportColumns";
 import { marcarDudosas } from "./matching";
+import { conReintentos } from "./retry";
 
 const REPORTS_TABLE = "reports";
 const CONTRIBUTORS_TABLE = "contributors";
@@ -90,12 +91,17 @@ export async function uploadPhoto(dataUrl, path) {
   const blob = await res.blob();
   const ext = UPLOAD_EXT[blob.type];
   if (!ext) throw new Error("Formato de imagen no permitido. Subí una foto JPG, PNG o WebP.");
-  const fullPath = `${path}-${crypto.randomUUID()}.${ext}`;
-  const { error } = await supabase.storage.from(PHOTOS_BUCKET).upload(fullPath, blob, {
-    contentType: blob.type,
-    upsert: false,
+  // Reintenta si se corta la red (ver lib/retry.js), con un nombre nuevo en
+  // cada intento: si el anterior llegó a subirse, no choca.
+  const fullPath = await conReintentos(async () => {
+    const intento = `${path}-${crypto.randomUUID()}.${ext}`;
+    const { error } = await supabase.storage.from(PHOTOS_BUCKET).upload(intento, blob, {
+      contentType: blob.type,
+      upsert: false,
+    });
+    if (error) throw error;
+    return intento;
   });
-  if (error) throw error;
   const { data } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(fullPath);
   return data.publicUrl;
 }
@@ -459,14 +465,19 @@ export async function createReport(report) {
   const { data: sessionData } = await supabase.auth.getSession();
   const accessToken = sessionData?.session?.access_token;
 
-  const res = await fetch("/api/create-report", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-    },
-    body: JSON.stringify({ row }),
-  });
+  // Reintenta si se corta la red (ver lib/retry.js). Si el primer intento
+  // llegó a guardar el reporte y se perdió la respuesta, la ruta contesta
+  // ok al reintento (mismo id).
+  const res = await conReintentos(() =>
+    fetch("/api/create-report", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify({ row }),
+    })
+  );
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(data?.error || "No se pudo publicar el reporte. Probá de nuevo.");
