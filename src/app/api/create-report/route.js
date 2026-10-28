@@ -149,6 +149,13 @@ export async function POST(request) {
     finalError = result.error;
   }
 
+  // Reintento del cliente (lib/retry.js) después de un corte de red: el
+  // primer intento ya guardó el reporte y se perdió la respuesta. Se contesta
+  // ok, sin push_token (no se entrega el de un reporte ya existente).
+  if (finalError?.code === "23505") {
+    return Response.json({ ok: true, pushToken: null });
+  }
+
   if (finalError) {
     logError("No se pudo publicar el reporte", finalError);
     // Mensaje genérico: el texto de Postgres (nombres de tablas, columnas y
