@@ -2306,7 +2306,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     setFormError("");
     setFieldErrors({});
     if (!nickname.trim()) {
-      const msg = "Escribí tu apodo arriba — así te reconocemos por ayudar.";
+      const msg = "Escribí tu apodo — así te reconocemos por ayudar.";
       setFormError(msg);
       setFieldErrors({ apodo: msg });
       focusField("apodo-input");
@@ -2840,116 +2840,58 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
         </div>
       </header>
 
-      {/* Identificación del contribuyente — tarjeta propia, no un buscador:
-          ícono en placa circular + micro-label arriba dejan claro que esto
-          identifica a la persona, no busca nada. */}
-      <div className="max-w-2xl mx-auto px-4 pt-3 space-y-2">
-        <div className="flex items-center gap-2.5 bg-white dark:bg-[var(--felpus-dark-card)] rounded-xl border px-3 py-2.5 shadow-sm" style={{ borderColor: C.border }}>
-          {user ? (
-            <>
-              {myAvatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <Image src={myAvatarUrl} alt="" unoptimized width={32} height={32} className="w-8 h-8 rounded-full shrink-0" referrerPolicy="no-referrer" />
-              ) : (
-                <span
-                  className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-white text-xs font-bold"
-                  style={{ background: C.redSolid }}
-                >
-                  {(profile?.nickname || googleDisplayName || "?").charAt(0).toUpperCase()}
-                </span>
-              )}
-              <span className="flex-1 min-w-0">
-                <span className="block text-[11px] font-bold uppercase tracking-wide" style={{ color: C.muted }}>
-                  Colaborador
-                </span>
-                <span className="block text-sm font-semibold truncate" style={{ color: C.text }}>
-                  {profile?.nickname || googleDisplayName}
-                </span>
+      {/* Identificación (2026-10-28, más compacta): antes era una tarjeta con
+          el campo del apodo arriba de TODAS las pantallas, antes de que la
+          persona decidiera qué hacer — una distracción para alguien que
+          acaba de perder a su mascota. Ahora: con sesión, una fila fina
+          (foto, nombre, huellitas, salir); sin sesión, una línea para iniciar
+          sesión, y el apodo se pide en el formulario de reporte (donde hace
+          falta). */}
+      <div className="max-w-2xl mx-auto px-4 pt-2">
+        {user ? (
+          <div className="flex items-center gap-2 rounded-xl border px-2.5 py-1.5" style={{ borderColor: C.border, background: C.surface }}>
+            {myAvatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <Image src={myAvatarUrl} alt="" unoptimized width={24} height={24} className="w-6 h-6 rounded-full shrink-0" referrerPolicy="no-referrer" />
+            ) : (
+              <span className="w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-white text-[11px] font-bold" style={{ background: C.redSolid }}>
+                {(profile?.nickname || googleDisplayName || "?").charAt(0).toUpperCase()}
               </span>
-            </>
-          ) : (
-            <>
-              <span
-                className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center"
-                style={{ background: C.cream }}
-              >
-                <PawPrint className="w-4 h-4" style={{ color: C.red }} fill="currentColor" strokeWidth={1.5} />
-              </span>
-              <span className="flex-1 min-w-0">
-                <label
-                  htmlFor="apodo-input"
-                  className="block text-[11px] font-bold uppercase tracking-wide"
-                  style={{ color: C.muted }}
-                >
-                  Elegí un apodo
-                </label>
-                <input
-                  id="apodo-input"
-                  value={nickname}
-                  onChange={(e) => setNickname(e.target.value)}
-                  maxLength={40}
-                  // Auditoría integral (2026-08-09): decía "Para sumar
-                  // puntos como colaborador" — para alguien SIN sesión (la
-                  // mayoría en un momento de pánico por una mascota
-                  // perdida), este es el único campo de identificación
-                  // visible y handleSubmit lo exige primero de todos, pero
-                  // el texto daba a entender que era opcional/solo para
-                  // gamificación. Mismo texto que ya usa el mensaje de
-                  // error de más abajo, para no decir dos cosas distintas.
-                  placeholder="Así te reconocemos"
-                  className="block w-full text-sm font-semibold outline-none bg-transparent min-w-0 py-1"
-                  style={{ color: fieldErrors.apodo ? C.red : C.text }}
-                />
-                {fieldErrors.apodo && (
-                  <span className="block text-[11px] font-semibold mt-0.5" style={{ color: C.red }}>{fieldErrors.apodo}</span>
-                )}
-              </span>
-            </>
-          )}
-          {/* Antes la racha y los puntos eran dos píldoras casi idénticas
-              (mismo tono naranja, mismo tamaño) pegadas una a la otra — se
-              leían como un solo bloque en vez de dos datos distintos. Ahora
-              los puntos/nivel (el dato principal) llevan la píldora sólida
-              con más peso visual, y la racha queda como un indicador chico
-              y discreto al lado, sin competir por atención. */}
-          {!!myRank?.streak_days && (
-            <span
-              className="felpus-mono text-[12px] font-bold shrink-0 flex items-center gap-0.5"
-              style={{ color: C.orangeInkDark }}
-              title={`Racha de ${myRank.streak_days} ${myRank.streak_days === 1 ? "día" : "días"} seguidos`}
-            >
-              <Flame className="w-3.5 h-3.5" fill="currentColor" /> {myRank.streak_days}
+            )}
+            <span className="flex-1 min-w-0 text-sm font-semibold truncate" style={{ color: C.text }}>
+              {profile?.nickname || googleDisplayName}
             </span>
-          )}
-          {nickname.trim() && (
-            <span
-              className="felpus-mono text-[12px] font-extrabold shrink-0 px-2.5 py-1.5 rounded-full text-white shadow-sm"
-              style={{ background: myTier.bg }}
-            >
+            {!!myRank?.streak_days && (
+              <span
+                className="felpus-mono text-[12px] font-bold shrink-0 flex items-center gap-0.5"
+                style={{ color: C.orangeInkDark }}
+                title={`Racha de ${myRank.streak_days} ${myRank.streak_days === 1 ? "día" : "días"} seguidos`}
+              >
+                <Flame className="w-3.5 h-3.5" fill="currentColor" /> {myRank.streak_days}
+              </span>
+            )}
+            <span className="felpus-mono text-[11px] font-extrabold shrink-0 px-2 py-1 rounded-full text-white" style={{ background: myTier.bg }}>
               🐾 {myRank?.points || 0} · {myTier.label}
             </span>
-          )}
-          {!authLoading && (
             <button
-              onClick={user ? handleLogout : handleGoogleLogin}
-              aria-label={user ? "Cerrar sesión" : "Iniciar sesión con Google"}
-              title={user ? "Cerrar sesión" : "Iniciar sesión con Google"}
-              className="shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border"
-              style={{ borderColor: C.border, color: C.muted }}
+              onClick={handleLogout}
+              aria-label="Cerrar sesión"
+              title="Cerrar sesión"
+              className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg"
+              style={{ color: C.muted }}
             >
-              {user ? <LogOut className="w-3.5 h-3.5" /> : <LogIn className="w-3.5 h-3.5" />}
+              <LogOut className="w-3.5 h-3.5" />
             </button>
-          )}
-        </div>
-        {!user && (
-          <p className="text-[12px] leading-snug px-1" style={{ color: C.muted }}>
-            Podés reportar mascotas como invitado con solo un apodo, pero para sumar huellitas y confirmar
-            reencuentros necesitás{" "}
-            <button onClick={handleGoogleLogin} className="font-bold underline py-1.5" style={{ color: C.text }}>
-              iniciar sesión con Google
-            </button>
-            .
-          </p>
+          </div>
+        ) : (
+          !authLoading && (
+            <p className="flex items-center justify-end gap-1.5 text-[12px]" style={{ color: C.muted }}>
+              ¿Colaborás seguido?
+              <button onClick={handleGoogleLogin} className="inline-flex items-center gap-1 font-bold underline min-h-[36px]" style={{ color: C.text }}>
+                <LogIn className="w-3.5 h-3.5" aria-hidden="true" /> Iniciá sesión y sumá huellitas
+              </button>
+            </p>
+          )
         )}
       </div>
 
@@ -3701,6 +3643,34 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                   <Sparkles className="w-3.5 h-3.5 shrink-0" style={{ color: C.orangeInk }} aria-hidden="true" />
                   {`Sugerido por la foto: ${aiSugeridos.map((k) => ({ especie: "especie", color: "color", tamano: "tamaño", raza: "raza" })[k]).join(", ")}. Podés cambiarlo.`}
                 </p>
+              )}
+
+              {!user && (
+                <div>
+                  <label htmlFor="apodo-input" className="text-xs font-bold mb-1.5 block" style={{ color: C.text }}>
+                    Tu apodo <span style={{ color: C.red }}>*</span>
+                  </label>
+                  <input
+                    id="apodo-input"
+                    value={nickname}
+                    onChange={(e) => setNickname(e.target.value)}
+                    maxLength={40}
+                    placeholder="Así te reconocemos (ej: Santi)"
+                    className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)]"
+                    style={{ borderColor: fieldErrors.apodo ? C.red : C.border, color: C.text }}
+                  />
+                  {fieldErrors.apodo ? (
+                    <p className="text-[12px] mt-1" style={{ color: C.red }}>{fieldErrors.apodo}</p>
+                  ) : (
+                    <p className="text-[12px] mt-1" style={{ color: C.muted }}>
+                      No hace falta cuenta.{" "}
+                      <button type="button" onClick={handleGoogleLogin} className="font-semibold underline" style={{ color: C.text }}>
+                        Con Google
+                      </button>{" "}
+                      sumás huellitas y podés confirmar reencuentros.
+                    </p>
+                  )}
+                </div>
               )}
 
               <div>
