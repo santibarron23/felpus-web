@@ -298,7 +298,7 @@ export default function MapPicker({
           <button
             type="button"
             onClick={() => setFullscreen(true)}
-            aria-label="Abrir el mapa para marcar la ubicación"
+            // Sin aria-label: el nombre es el texto visible (WCAG 2.5.3).
             className="absolute inset-0 rounded-xl flex items-end justify-center pb-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
           >
             <span className="rounded-full px-3.5 py-2 text-[13px] font-bold text-white shadow-md" style={{ background: C.emphasisBg }}>

@@ -181,6 +181,32 @@ test.describe("flujos", () => {
     expect(await axe(page, "main")).toEqual([]);
   });
 
+  test("foto movida: avisa sin frenar; una nítida no", async ({ page }) => {
+    const sharp = require("sharp");
+    const W = 600;
+    const H = 450;
+    // Degradé suave (como una foto movida) y un damero de bordes nítidos.
+    const raw = (f) => {
+      const b = Buffer.alloc(W * H * 3);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) b.fill(f(x, y), (y * W + x) * 3, (y * W + x) * 3 + 3);
+      return sharp(b, { raw: { width: W, height: H, channels: 3 } }).jpeg().toBuffer();
+    };
+    const movida = await raw((x, y) => 90 + Math.round((x + y) / 12));
+    const nitida = await raw((x, y) => (((x >> 3) + (y >> 3)) % 2 ? 220 : 40));
+    await setup(page);
+    await page.goto("/");
+    await page.getByRole("button", { name: /Perdí a mi mascota/ }).click();
+    const aviso = page.getByText(/parece movida o fuera de foco/);
+
+    await page.locator("#foto-input").setInputFiles({ name: "nitida.jpg", mimeType: "image/jpeg", buffer: nitida });
+    await expect(page.getByRole("button", { name: "Quitar la foto 1" })).toBeVisible();
+    await expect(aviso).toHaveCount(0);
+
+    await page.locator("#foto-input").setInputFiles({ name: "movida.jpg", mimeType: "image/jpeg", buffer: movida });
+    await expect(aviso).toBeVisible();
+    await expect(aviso).toContainText("podés publicar igual");
+  });
+
   test("un invitado edita su aviso desde el mismo dispositivo", async ({ page }) => {
     const calls = await setup(page, { tokens: { "e2e-0": TOKEN } });
     await page.goto("/");

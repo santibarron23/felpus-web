@@ -120,7 +120,9 @@ test.describe("Configuración de alertas", () => {
     await page.getByLabel("Gatos").uncheck();
     await page.getByLabel("Encontradas").uncheck();
     await page.getByRole("button", { name: "Guardar mi zona" }).click();
-    await expect(page.getByRole("status")).toContainText("Guardado");
+    // Hay dos zonas de estado (la de la zona y la del dispositivo).
+    await expect(page.getByRole("status").filter({ hasText: "Guardado" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Zona guardada" })).toBeVisible();
     expect(calls.zonePut).toHaveLength(1);
     expect(calls.zonePut[0]).toMatchObject({
       lat: -24.78,
@@ -138,8 +140,9 @@ test.describe("Configuración de alertas", () => {
     });
     await page.goto("/configuracion/alertas");
     await page.getByRole("switch", { name: "Pausar todas las alertas" }).check();
-    await page.getByRole("button", { name: "Guardar mi zona" }).click();
-    await expect(page.getByRole("status")).toContainText("pausa");
+    // Con una zona ya guardada el botón dice "Guardar cambios" (42fb87f).
+    await page.getByRole("button", { name: "Guardar cambios" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "pausa" })).toBeVisible();
     expect(calls.zonePut[0]).toMatchObject({ active: false, radius_m: 3000 });
   });
 
@@ -147,10 +150,10 @@ test.describe("Configuración de alertas", () => {
     const calls = await setup(page);
     await page.goto("/configuracion/alertas");
     await page.getByRole("button", { name: "Activar notificaciones en este dispositivo" }).click();
-    await expect(page.getByRole("status")).toContainText("este dispositivo va a recibir");
+    await expect(page.getByRole("status").filter({ hasText: "este dispositivo va a recibir" })).toBeVisible();
     expect(calls.subscribe[0]).toMatchObject({ method: "POST", body: { subscription: { endpoint: "https://push.example.test/e2e" } } });
     await page.getByRole("button", { name: "Desactivar notificaciones en este dispositivo" }).click();
-    await expect(page.getByRole("status")).toContainText("ya no va a recibir");
+    await expect(page.getByRole("status").filter({ hasText: "ya no va a recibir" })).toBeVisible();
     expect(calls.subscribe[1]).toMatchObject({ method: "DELETE", body: { endpoint: "https://push.example.test/e2e" } });
   });
 

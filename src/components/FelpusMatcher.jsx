@@ -15,7 +15,7 @@ import { novedadesDue, NOVEDADES_KEY_PREFIX } from "../lib/emailAvisos";
 import { findDuplicates, duplicateMessage } from "../lib/duplicates";
 import { REPORT_DRAFT_KEY, serializeReportDraft, parseReportDraft } from "../lib/reportDraft";
 import { track } from "../lib/analytics";
-import { isTooDark, photoLuminance } from "../lib/photoQuality";
+import { isTooDark, isBlurry, photoAnalysis } from "../lib/photoQuality";
 import { importPost } from "../lib/postImportClient";
 import {
   PawPrint,
@@ -2048,10 +2048,12 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
       const dataUrl = await resizeImageFile(file);
       const hist = await computeHistogram(dataUrl);
       // Solo para avisar (ver photoQuality.js): no se guarda ni frena nada.
-      const oscura = isTooDark(await photoLuminance(dataUrl));
-      if (oscura) track("foto_error", { motivo: "oscura" });
+      const calidad = await photoAnalysis(dataUrl);
+      const oscura = isTooDark(calidad?.luminance);
+      const movida = isBlurry(calidad?.sharpness, calidad?.luminance);
+      if (oscura || movida) track("foto_error", { motivo: oscura ? "oscura" : "movida" });
       const esPrimera = form.fotos.length === 0;
-      setForm((f) => ({ ...f, fotos: [...f.fotos, { dataUrl, hist, embedding: null, oscura }] }));
+      setForm((f) => ({ ...f, fotos: [...f.fotos, { dataUrl, hist, embedding: null, oscura, movida }] }));
       revisarFoto(dataUrl);
       if (esPrimera) sugerirDesdeFoto(dataUrl);
       setVisionStatus("analyzing");
@@ -3636,6 +3638,14 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                   <p className="text-[12px] mt-2 rounded-lg px-3 py-2" style={{ background: C.surfaceMuted, color: C.text }} role="status">
                     💡 {form.fotos.length > 1 ? "Una de las fotos quedó" : "La foto quedó"} bastante oscura. Si tenés otra con más
                     luz, sumala: ayuda a reconocerla. Si no, podés publicar igual.
+                  </p>
+                )}
+                {/* Foto movida (photoQuality.js, calibrado con fotos reales):
+                    mismo tono que el de la oscura, nunca frena publicar. */}
+                {form.fotos.some((foto) => foto.movida && !foto.check?.dudosa) && (
+                  <p className="text-[12px] mt-2 rounded-lg px-3 py-2" style={{ background: C.surfaceMuted, color: C.text }} role="status">
+                    💡 {form.fotos.length > 1 ? "Una de las fotos parece" : "La foto parece"} movida o fuera de foco. Si tenés otra más
+                    nítida, sumala: ayuda a reconocerla. Si no, podés publicar igual.
                   </p>
                 )}
                 <p className="text-[12px] mt-1.5" style={{ color: C.muted }}>

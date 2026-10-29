@@ -40,7 +40,7 @@ export const VALUES = new Set([
   // desde dónde
   "inicio", "formulario", "pie", "confirmacion", "ficha", "resultado",
   // motivo
-  "oscura", "procesar", "tamano", "tipo_archivo",
+  "oscura", "movida", "procesar", "tamano", "tipo_archivo",
 ]);
 
 export function cleanParams(params) {

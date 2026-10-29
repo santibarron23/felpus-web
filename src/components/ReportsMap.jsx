@@ -237,7 +237,8 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
         <button
           type="button"
           onClick={() => setFullscreen(true)}
-          aria-label="Abrir el mapa en pantalla completa"
+          // Sin aria-label: el nombre es el texto visible ("Tocá para abrir
+          // el mapa"), así el control por voz encuentra lo que se ve (WCAG 2.5.3).
           className="absolute inset-0 top-12 bottom-12 flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--felpus-focus)]"
         >
           <span

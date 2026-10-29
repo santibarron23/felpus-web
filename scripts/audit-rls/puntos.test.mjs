@@ -2,7 +2,7 @@
 // reencuentro, en la misma réplica local que rls.test.mjs (PGlite, sin tocar
 // producción). "antes" = award_points tal como está en schema.sql hoy;
 // "después" = con la migración propuesta 20261026_01.
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import fs from "fs";
 import path from "path";
@@ -31,6 +31,11 @@ insert into reports (id, tipo, especie, zona, descripcion, user_id, nickname) va
   ('rep-b', 'encontrada', 'perro', 'Centro', 'de B', '${B.sub}', 'Beto');
 insert into contributors (id, nickname, points) values ('${A.sub}', 'Ana', 10), ('${B.sub}', 'Beto', 5);
 `;
+
+// Cada prueba levanta su propio Postgres (PGlite): la primera paga el
+// arranque en frío del WASM, que con toda la suite corriendo en paralelo
+// pasaba a veces los 5 s por defecto (falla intermitente, 2026-10-29).
+vi.setConfig({ testTimeout: 60_000 });
 
 async function makeDb(withProposal) {
   const db = new PGlite();
