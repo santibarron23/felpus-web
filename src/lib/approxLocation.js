@@ -14,6 +14,14 @@ export const APPROX_MIN_M = 150;
 export const APPROX_MAX_M = 350;
 export const APPROX_RADIUS_M = 400;
 
+// Desde la migración 20261029_01 el listado público ya trae coordenadas
+// aproximadas (grilla de 0,004°, hasta ~315 m del punto real: media
+// diagonal en el ecuador) y el punto exacto no sale de la base. Ahí el
+// corrimiento es solo para que no se encimen los pines de una misma celda:
+// 315 + 90 < APPROX_RADIUS_M, así que el círculo sigue conteniendo el punto real.
+export const JITTER_MIN_M = 20;
+export const JITTER_MAX_M = 90;
+
 const METROS_POR_GRADO = 111_320;
 
 // FNV-1a de 32 bits + el mezclador final de MurmurHash3: sin el mezclador,
@@ -38,7 +46,8 @@ export function approxLocation(report) {
   const lng = report?.lng;
   if (typeof lat !== "number" || typeof lng !== "number" || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   const id = String(report.id ?? `${lat},${lng}`);
-  const distancia = APPROX_MIN_M + (hash32(id) / 0xffffffff) * (APPROX_MAX_M - APPROX_MIN_M);
+  const [min, max] = report.coordAprox ? [JITTER_MIN_M, JITTER_MAX_M] : [APPROX_MIN_M, APPROX_MAX_M];
+  const distancia = min + (hash32(id) / 0xffffffff) * (max - min);
   const angulo = (hash32(id, 0x9747b28c) / 0xffffffff) * 2 * Math.PI;
   const dLat = (distancia * Math.cos(angulo)) / METROS_POR_GRADO;
   const dLng = (distancia * Math.sin(angulo)) / (METROS_POR_GRADO * Math.max(0.01, Math.cos((lat * Math.PI) / 180)));

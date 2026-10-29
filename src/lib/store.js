@@ -1,6 +1,12 @@
 import { supabase } from "./supabaseClient";
 import { logError } from "./log";
-import { REPORT_LIST_BASE_FIELDS, REPORT_LIST_OPTIONAL_COLUMNS, REPORT_VECTOR_FIELDS } from "./reportColumns";
+import {
+  REPORT_LIST_BASE_FIELDS,
+  REPORT_LIST_OPTIONAL_COLUMNS,
+  REPORT_VECTOR_FIELDS,
+  missingCoordAprox,
+  withLegacyCoords,
+} from "./reportColumns";
 import { marcarDudosas } from "./matching";
 import { conReintentos } from "./retry";
 
@@ -42,8 +48,11 @@ function rowToReport(row) {
     // vacías para reportes viejos o publicados con zona tipeada a mano.
     ciudad: row.ciudad || "",
     provincia: row.provincia || "",
-    lat: row.lat,
-    lng: row.lng,
+    // El listado público trae lat_aprox/lng_aprox (ver reportColumns.js);
+    // el panel de admin y los reportes viejos sin migración, lat/lng.
+    lat: row.lat_aprox ?? row.lat,
+    lng: row.lng_aprox ?? row.lng,
+    coordAprox: row.lat_aprox != null,
     fecha: row.fecha,
     descripcion: row.descripcion,
     contactoWhatsapp: row.contacto_whatsapp || "",
@@ -135,8 +144,14 @@ export async function deleteReport(reportId, ownerUserId, fotoUrls) {
 // Las listas de columnas viven en reportColumns.js (ver ahí por qué cada
 // columna nueva necesita su grant select).
 
+// Sin la migración de coordenadas aproximadas (20261029_01), lat_aprox no
+// existe: después del primer intento fallido se piden lat/lng por el resto
+// de la sesión, sin volver a probar en cada carga.
+let coordsLegacy = false;
+
 function reportListColumns(excluded, { light = false } = {}) {
-  const fields = REPORT_LIST_BASE_FIELDS.filter((f) => !light || !REPORT_VECTOR_FIELDS.includes(f));
+  let fields = REPORT_LIST_BASE_FIELDS.filter((f) => !light || !REPORT_VECTOR_FIELDS.includes(f));
+  if (coordsLegacy) fields = withLegacyCoords(fields);
   const insertAt = fields.indexOf("especie") + 1;
   const optional = REPORT_LIST_OPTIONAL_COLUMNS.filter((c) => !excluded.has(c));
   fields.splice(insertAt, 0, ...optional);
@@ -175,6 +190,11 @@ export async function fetchReports({ includeHidden = false, light = false } = {}
   for (let attempt = 0; attempt <= REPORT_LIST_OPTIONAL_COLUMNS.length; attempt++) {
     const columns = reportListColumns(excluded, { light });
     const result = await supabase.from(REPORTS_TABLE).select(columns).order("creado_en", { ascending: false });
+    if (!coordsLegacy && missingCoordAprox(result.error)) {
+      coordsLegacy = true;
+      attempt--;
+      continue;
+    }
     const missing = missingOptionalColumn(result.error, REPORT_LIST_OPTIONAL_COLUMNS, excluded);
     if (!missing || excluded.has(missing)) {
       if (result.error) throw result.error;
