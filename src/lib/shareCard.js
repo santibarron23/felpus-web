@@ -7,7 +7,7 @@ import { estadoReporte } from "./sighting";
 
 const COLORES = {
   perdida: { accent: "#D71925", label: "SE BUSCA" },
-  encontrada: { accent: "#D45516", label: "ENCONTRAD" },
+  encontrada: { accent: "#C64F15", label: "ENCONTRAD" },
   avistamiento: { accent: "#6D46B8", label: "VISTA SUELTA" },
   reencontrada: { accent: "#2F7955", label: "¡VOLVIÓ A CASA!" },
 };

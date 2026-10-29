@@ -28,7 +28,7 @@
      repetían el hex a mano en ~45 lugares. */
   --felpus-surface-subtle: #FBF7F0;
   --felpus-surface-muted: #F0E7D8;
-  --felpus-muted: #776C64;
+  --felpus-muted: #756A62; /* = theme.js muted (WCAG AA sobre cream) */
   /* Fondo de .felpus-input (todos los campos de texto/select/textarea del
      formulario de reportar) — antes cada campo repetía "bg-[#FBF7F0]" en su
      className, SIN ningún equivalente "dark:", así que en modo oscuro los

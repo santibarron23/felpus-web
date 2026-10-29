@@ -195,10 +195,12 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
   // Botón "Vigilar esta zona" y leyenda: iguales en los dos modos.
   const overlays = status === "ready" && (
     <>
+      {/* Arriba a la DERECHA (2026-10-29): a la izquierda tapaba el botón
+          "+" del zoom del mapa, que quedaba sin poder tocarse. */}
       <Link
         href="/configuracion/alertas"
         onClick={watchZone}
-        className="absolute top-2 left-2 inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-bold shadow-md border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+        className="absolute top-2 right-2 z-[500] inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-bold shadow-md border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
         style={{ background: C.surface, borderColor: C.border, color: C.text }}
       >
         <Bell className="w-3.5 h-3.5" aria-hidden="true" style={{ color: C.red }} /> Vigilar esta zona
@@ -236,7 +238,7 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
           type="button"
           onClick={() => setFullscreen(true)}
           aria-label="Abrir el mapa en pantalla completa"
-          className="absolute inset-0 top-12 bottom-12 flex items-center justify-center focus:outline-none"
+          className="absolute inset-0 top-12 bottom-12 flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--felpus-focus)]"
         >
           <span
             className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-bold text-white shadow-md"

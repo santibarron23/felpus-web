@@ -56,7 +56,10 @@ export const C = {
   // criterio de contraste real, no a ojo: 5.18:1 sobre blanco, en línea con
   // redSolid/greenSolid). El anterior pasaba AA pero leía como marrón/rust
   // más que naranja.
-  orangeInkSolid: "#D45516",
+  // 2026-10-29 (auditoría WCAG 2.2 AA): #D45516 daba 4.11:1 con blanco
+  // encima (botón "Encontré una mascota", badge ENCONTRADA), por debajo del
+  // 4.5:1 de AA. #C64F15 es el mismo matiz un 6,5 % más oscuro: 4.64:1.
+  orangeInkSolid: "#C64F15",
   greenSolid: "#2F7955",
   // Pin de "encontrada" en el mapa (2026-10-21, a pedido): el naranja se
   // confundía con el rojo de "perdida" en fotos chicas sobre el mapa. Azul
@@ -71,7 +74,9 @@ export const C = {
   // --- Neutros cálidos ---
   ink: "#382C25",
   text: "#382C25",
-  muted: "#776C64",
+  // 2026-10-29 (auditoría WCAG 2.2 AA): #776C64 daba 4.48:1 sobre cream
+  // (#F8F1E8), apenas por debajo de 4.5:1. #756A62: 4.69:1.
+  muted: "#756A62",
   cream: "#F8F1E8", // fondo de página
   border: "#E9DED2", // bordes y separadores
   surface: "#FFFFFF", // tarjetas y paneles
@@ -278,3 +283,9 @@ export const CD = {
 export function displayColor(report) {
   return report.color === "Otro color" && report.colorOtro ? report.colorOtro : report.color;
 }
+
+// WhatsApp (botones de contactar y compartir): su verde de marca, que la
+// gente reconoce, con SU texto oscuro encima. Blanco sobre este verde da
+// 1.98:1 (auditoría WCAG 2.2 AA, 2026-10-29); el oscuro, 8.8:1.
+export const WHATSAPP_GREEN = "#25D366";
+export const WHATSAPP_INK = "#111B21";

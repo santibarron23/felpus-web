@@ -198,7 +198,9 @@ export default function PhoneInput({ id, country, onCountryChange, value, onChan
           onClick={() => setOpen((v) => !v)}
           aria-haspopup="listbox"
           aria-expanded={open}
-          aria-label={`País del WhatsApp: ${countryName || "elegir país"}`}
+          // El nombre incluye el "+54" visible (WCAG 2.5.3: quien usa control
+          // por voz dice lo que ve).
+          aria-label={`País del WhatsApp: ${countryName || "elegir país"} +${current?.callingCode || ""}`}
           className="flex items-center gap-1 pl-2.5 pr-1.5 shrink-0 border-r focus:outline-none"
           style={{ borderColor: C.border }}
         >

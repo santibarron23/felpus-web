@@ -39,13 +39,14 @@ import {
   Bookmark,
   Eye,
   ShieldCheck,
+  Pencil,
 } from "lucide-react";
 import { track } from "../../lib/analytics";
 import { scoreLabel, isRecent, formatFechaAR, reportPhotoAlt, COLOR_OPTIONS, REPORT_FLAG_REASONS, fechaLabel, getRazaOptions, RAZA_ESPECIALES } from "../../lib/matching";
 import { SITE_URL } from "../../lib/site";
 import { logError } from "../../lib/log";
 import { useFocusTrap } from "./useFocusTrap";
-import { displayColor } from "../../lib/theme";
+import { displayColor, WHATSAPP_GREEN, WHATSAPP_INK } from "../../lib/theme";
 import { useTheme } from "./ThemeProvider";
 import ShareSheet from "./ShareSheet";
 
@@ -250,7 +251,7 @@ function contactMessage(report) {
   return `Hola! Vi en Felpus tu publicación de ${nombre} en ${zonaConCiudad(report)}. Creo que puedo ayudar.\n${SITE_URL}/r/${report.id}`;
 }
 
-export function DetailModal({ report, contactStatus, onRetryContact, onClose, onResolve, confirming, resolving, onConfirm, onCancelConfirm, isLoggedIn, isOwner, onDelete, onFlagReport, saved, onToggleSaved, onAskAssistant, onSawIt }) {
+export function DetailModal({ report, contactStatus, onRetryContact, onClose, onResolve, confirming, resolving, onConfirm, onCancelConfirm, isLoggedIn, isOwner, onDelete, onFlagReport, saved, onToggleSaved, onAskAssistant, onSawIt, onEdit }) {
   const C = useTheme();
   const [activeIndex, setActiveIndex] = useState(0);
   const [generatingFlyer, setGeneratingFlyer] = useState(false);
@@ -403,13 +404,13 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
             <button
               type="button"
               onClick={() => setLocationOpen(true)}
-              aria-label={`Ver en el mapa: ${zonaConCiudad(report)}`}
-              className="felpus-input text-left bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5 hover:bg-[var(--felpus-surface-muted)] dark:hover:bg-[var(--felpus-dark-muted-surface)] transition-colors focus:outline-none"
+              className="felpus-input text-left bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5 hover:bg-[var(--felpus-surface-muted)] dark:hover:bg-[var(--felpus-dark-muted-surface)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
             >
               <span className="text-[11px] uppercase font-bold flex items-center gap-1" style={{ color: C.muted }}>
                 <MapPin className="w-3 h-3" /> Zona
               </span>
               <span className="block underline" style={{ color: C.text }}>{zonaConCiudad(report)}</span>
+              <span className="sr-only">, ver en el mapa</span>
             </button>
             <div className="bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)] rounded-lg p-2.5">
               <p className="text-[11px] uppercase font-bold" style={{ color: C.muted }}>
@@ -504,12 +505,13 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
                       onClick={() => track("contacto_iniciado", { canal: "whatsapp", tipo: report.tipo })}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold text-white"
+                      className="flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--felpus-focus)]"
                       // Verde oficial de marca de WhatsApp — a propósito no usa
-                      // C.green (5.95:1 vs. blanco): la gente reconoce este botón
-                      // por su color exacto, igual que el "F" azul de Facebook.
-                      // Es la única excepción de marca de terceros en toda la app.
-                      style={{ background: "#25D366" }}
+                      // C.green: la gente reconoce este botón por su color
+                      // exacto, igual que el "F" azul de Facebook. El texto va
+                      // oscuro (el de WhatsApp): blanco encima daba 1.98:1
+                      // (auditoría WCAG 2.2 AA, 2026-10-29); oscuro, 8.8:1.
+                      style={{ background: WHATSAPP_GREEN, color: WHATSAPP_INK }}
                     >
                       <MessageCircle className="w-4 h-4" /> WhatsApp
                     </a>
@@ -597,6 +599,18 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
               style={{ color: C.red }}
             >
               🐾 Preguntale al Asistente Felpus sobre esta publicación
+            </button>
+          )}
+          {/* Editar (2026-10-29): solo llega onEdit si es su aviso (sesión o
+              token del dispositivo con el que publicó, ver FelpusMatcher). */}
+          {onEdit && !report.resuelto && (
+            <button
+              type="button"
+              onClick={() => onEdit(report)}
+              className="w-full min-h-[44px] flex items-center justify-center gap-1.5 border rounded-xl py-2.5 text-sm font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+              style={{ borderColor: C.border, color: C.text }}
+            >
+              <Pencil className="w-4 h-4" aria-hidden="true" /> Editar mi aviso
             </button>
           )}
           {!report.resuelto && (
