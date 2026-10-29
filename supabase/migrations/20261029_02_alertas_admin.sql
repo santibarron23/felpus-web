@@ -1,6 +1,6 @@
 -- Alertas al administrador (2026-10-29): cuándo se mandó por última vez
 -- cada tipo de alerta, para no mandar la misma más de una vez cada 30
--- minutos (ver src/lib/adminAlerts.js). Solo la usa el servidor con
+-- minutos (ver src/lib/serverAdminAlerts.js). Solo la usa el servidor con
 -- service_role; nadie la lee con la clave pública.
 --
 -- Sin esta tabla las alertas igual salen (con el límite en memoria de cada
