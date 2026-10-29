@@ -14,7 +14,8 @@ export const runtime = "nodejs";
 
 const ID_RE = /^[A-Za-z0-9-]{1,64}$/;
 const TOKEN_RE = /^[0-9a-f-]{36}$/i;
-const PHOTO_COLUMNS = "foto_url,foto_urls,hist,hists,embedding,embeddings";
+// detalles: para mover la marca de foto dudosa al reordenar (rebuildPhotos).
+const PHOTO_COLUMNS = "foto_url,foto_urls,hist,hists,embedding,embeddings,detalles";
 
 // Filtro PostgREST "es tuyo": por cuenta, por token del dispositivo, o
 // cualquiera de los dos. null si no hay con qué probarlo.

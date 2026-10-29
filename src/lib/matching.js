@@ -492,7 +492,39 @@ function loadImageElement(src) {
   });
 }
 
-export function resizeImageFile(file) {
+// Marca de agua: logo de Felpus en la esquina inferior derecha. Si por
+// algún motivo no carga, seguimos sin marca de agua en vez de bloquear la
+// subida de la foto.
+async function drawWatermark(ctx, width, height) {
+  try {
+    const logo = await loadImageElement("/assets/icon_c.png");
+    const logoSize = Math.max(28, Math.round(Math.min(width, height) * 0.16));
+    const margin = Math.round(logoSize * 0.3);
+    ctx.globalAlpha = 0.9;
+    ctx.drawImage(logo, width - logoSize - margin, height - logoSize - margin, logoSize, logoSize);
+    ctx.globalAlpha = 1;
+  } catch {
+    // sin marca de agua, no es bloqueante
+  }
+}
+
+// Le pone la marca de agua a una foto ya achicada (data URL). Lo usa el
+// recorte del formulario (2026-10-29): se recorta la versión sin marca y
+// después se marca, así el recorte no corta el logo.
+export async function addWatermark(dataUrl) {
+  const img = await loadImageElement(dataUrl);
+  const canvas = document.createElement("canvas");
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0);
+  await drawWatermark(ctx, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.85);
+}
+
+// { watermark: false } devuelve la foto achicada sin marca de agua y con un
+// poco más de calidad (es la base para recortar; ver addWatermark).
+export function resizeImageFile(file, { watermark = true } = {}) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -520,21 +552,8 @@ export function resizeImageFile(file) {
           canvas.height = height;
           const ctx = canvas.getContext("2d");
           ctx.drawImage(img, 0, 0, width, height);
-
-          // Marca de agua: logo de Felpus en la esquina inferior derecha.
-          // Si por algún motivo no carga, seguimos sin marca de agua en vez
-          // de bloquear la subida de la foto.
-          try {
-            const logo = await loadImageElement("/assets/icon_c.png");
-            const logoSize = Math.max(28, Math.round(Math.min(width, height) * 0.16));
-            const margin = Math.round(logoSize * 0.3);
-            ctx.globalAlpha = 0.9;
-            ctx.drawImage(logo, width - logoSize - margin, height - logoSize - margin, logoSize, logoSize);
-            ctx.globalAlpha = 1;
-          } catch {
-            // sin marca de agua, no es bloqueante
-          }
-
+          if (!watermark) return resolve(canvas.toDataURL("image/jpeg", 0.92));
+          await drawWatermark(ctx, width, height);
           resolve(canvas.toDataURL("image/jpeg", 0.85));
         } catch (err) {
           reject(err);

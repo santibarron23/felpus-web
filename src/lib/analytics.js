@@ -17,6 +17,7 @@ export const EVENTS = new Set([
   "contacto_iniciado",
   "reporte_compartido",
   "reencuentro_confirmado",
+  "foto_recortada",
   "tutorial_abierto",
   "tutorial_paso",
   "tutorial_completado",
@@ -38,7 +39,7 @@ export const VALUES = new Set([
   // canal
   "whatsapp", "email", "facebook", "instagram", "copiar", "nativo", "flyer",
   // desde dónde
-  "inicio", "formulario", "pie", "confirmacion", "ficha", "resultado",
+  "inicio", "formulario", "pie", "confirmacion", "ficha", "resultado", "admin",
   // motivo
   "oscura", "movida", "procesar", "tamano", "tipo_archivo",
 ]);

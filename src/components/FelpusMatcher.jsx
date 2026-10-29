@@ -61,11 +61,13 @@ import {
   MessageCircle,
   Download,
   Star,
+  Crop,
 } from "lucide-react";
 import {
   normalizeText,
   computeHistogram,
   resizeImageFile,
+  addWatermark,
   getImageEmbedding,
   findMatches,
   scoreLabel,
@@ -158,6 +160,7 @@ import {
 import AlertOptInModal from "./felpus/AlertOptInModal";
 import OnboardingTutorial, { markWelcomeSeen, welcomeSeen } from "./felpus/OnboardingTutorial";
 import ImpactPanel from "./felpus/ImpactPanel";
+import PhotoCropper from "./felpus/PhotoCropper";
 import { computeImpactMetrics } from "../lib/impactMetrics";
 import { logError } from "../lib/log";
 import { useTheme, useThemeToggle } from "./felpus/ThemeProvider";
@@ -580,6 +583,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     el.focus({ preventScroll: true });
   }
   const [visionStatus, setVisionStatus] = useState("idle"); // idle | analyzing | ai | basic
+  const [cropFoto, setCropFoto] = useState(null); // foto del formulario que se está recortando
   const [nickname, setNickname] = useState("");
   const [leaderboard, setLeaderboard] = useState([]);
   // Colaborador al que se está por apoyar (ventana SupportModal).
@@ -2058,31 +2062,60 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     }
     setFormError("");
     try {
-      const dataUrl = await resizeImageFile(file);
-      const hist = await computeHistogram(dataUrl);
-      // Solo para avisar (ver photoQuality.js): no se guarda ni frena nada.
-      const calidad = await photoAnalysis(dataUrl);
-      const oscura = isTooDark(calidad?.luminance);
-      const movida = isBlurry(calidad?.sharpness, calidad?.luminance);
-      if (oscura || movida) track("foto_error", { motivo: oscura ? "oscura" : "movida" });
-      const esPrimera = form.fotos.length === 0;
-      setForm((f) => ({ ...f, fotos: [...f.fotos, { dataUrl, hist, embedding: null, oscura, movida }] }));
-      revisarFoto(dataUrl);
-      if (esPrimera) sugerirDesdeFoto(dataUrl);
-      setVisionStatus("analyzing");
-      const embedding = await getImageEmbedding(dataUrl);
-      // Se busca la foto por su dataUrl y no por posición: mientras se
-      // calcula el embedding la persona puede quitar o reordenar fotos
-      // ("Hacer principal"), y el índice original ya no sería esta foto.
-      setForm((f) => ({
-        ...f,
-        fotos: f.fotos.map((foto) => (foto.dataUrl === dataUrl ? { ...foto, embedding } : foto)),
-      }));
-      setVisionStatus(embedding ? "ai" : "basic");
+      // Sin marca de agua: es la base para recortar (ver handleCropDone);
+      // la que se muestra y se sube la lleva (analizarFoto).
+      const base = await resizeImageFile(file, { watermark: false });
+      await analizarFoto(base, { esPrimera: form.fotos.length === 0 });
     } catch (err) {
       logError(err);
       setFormError("No pudimos procesar esa imagen. Probá de nuevo o elegí otra foto.");
       track("foto_error", { motivo: "procesar" });
+      setVisionStatus("idle");
+    }
+  }
+
+  // Marca de agua, histograma, calidad, chequeo de flyer y embedding de una
+  // foto (base = achicada, sin marca). Con `reemplaza` (el dataUrl de una
+  // foto ya cargada, al recortarla) ocupa su lugar; si no, se suma al final.
+  async function analizarFoto(base, { esPrimera = false, reemplaza = null } = {}) {
+    const dataUrl = await addWatermark(base);
+    const hist = await computeHistogram(dataUrl);
+    // Solo para avisar (ver photoQuality.js): no se guarda ni frena nada.
+    const calidad = await photoAnalysis(dataUrl);
+    const oscura = isTooDark(calidad?.luminance);
+    const movida = isBlurry(calidad?.sharpness, calidad?.luminance);
+    if (oscura || movida) track("foto_error", { motivo: oscura ? "oscura" : "movida" });
+    const nueva = { dataUrl, base, hist, embedding: null, oscura, movida };
+    setForm((f) => ({
+      ...f,
+      fotos: reemplaza ? f.fotos.map((foto) => (foto.dataUrl === reemplaza ? nueva : foto)) : [...f.fotos, nueva],
+    }));
+    revisarFoto(dataUrl);
+    if (esPrimera) sugerirDesdeFoto(dataUrl);
+    setVisionStatus("analyzing");
+    const embedding = await getImageEmbedding(dataUrl);
+    // Se busca la foto por su dataUrl y no por posición: mientras se
+    // calcula el embedding la persona puede quitar o reordenar fotos
+    // ("Hacer principal"), y el índice original ya no sería esta foto.
+    setForm((f) => ({
+      ...f,
+      fotos: f.fotos.map((foto) => (foto.dataUrl === dataUrl ? { ...foto, embedding } : foto)),
+    }));
+    setVisionStatus(embedding ? "ai" : "basic");
+  }
+
+  // Recorte (PhotoCropper): reemplaza la foto en su mismo lugar y la vuelve
+  // a analizar entera (el color, la calidad y el embedding cambian).
+  async function handleCropDone(cropped) {
+    const anterior = cropFoto?.dataUrl;
+    setCropFoto(null);
+    if (!anterior) return;
+    try {
+      track("foto_recortada", { desde: "formulario" });
+      await analizarFoto(cropped, { reemplaza: anterior });
+    } catch (err) {
+      logError(err);
+      setFormError("No pudimos recortar esa foto. Probá de nuevo.");
       setVisionStatus("idle");
     }
   }
@@ -3549,7 +3582,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                       <img src={foto.dataUrl} alt={`Foto ${i + 1} de la mascota que estás reportando`} className="w-full h-full object-cover" />
                       {foto.check?.dudosa && (
                         <span
-                          className="absolute bottom-1 left-1 right-1 text-[10px] font-bold text-white rounded-md px-1.5 py-0.5 text-center"
+                          className="absolute top-10 left-1 right-1 text-[10px] font-bold text-white rounded-md px-1.5 py-0.5 text-center"
                           style={{ background: foto.keep ? "rgba(0,0,0,0.6)" : C.orangeInkSolid }}
                         >
                           {foto.keep ? "Para revisar" : "¿Foto real?"}
@@ -3578,6 +3611,16 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                         className="absolute top-1 right-1 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
                       >
                         <X className="w-4 h-4" aria-hidden="true" />
+                      </button>
+                      {/* Recortar (2026-10-29): abajo a la derecha, con texto
+                          para quien no reconoce el ícono. */}
+                      <button
+                        type="button"
+                        onClick={() => setCropFoto(foto)}
+                        aria-label={`Recortar la foto ${i + 1}`}
+                        className="absolute bottom-1 right-1 h-8 px-2 rounded-full bg-black/60 text-white text-[12px] font-bold flex items-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                      >
+                        <Crop className="w-3.5 h-3.5" aria-hidden="true" /> Recortar
                       </button>
                     </div>
                   ))}
@@ -6246,6 +6289,10 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
             dismissWelcome();
           }}
         />
+      )}
+
+      {cropFoto && (
+        <PhotoCropper src={cropFoto.base || cropFoto.dataUrl} onCancel={() => setCropFoto(null)} onDone={handleCropDone} />
       )}
 
       {ownerEditing && (

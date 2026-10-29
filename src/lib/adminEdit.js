@@ -45,31 +45,78 @@ export function buildAdminPatch(input, { allowTipo = true } = {}) {
   return { patch };
 }
 
-// Reordena las fotos de una fila de reports. `order` son las URLs en el
-// orden nuevo y tiene que ser exactamente las mismas fotos (no se puede
-// agregar ni sacar ninguna por acá). Mueve juntas URL, histograma de color
-// y embedding de cada foto, para que el matching siga comparando cada foto
-// con sus propios datos; la primera pasa a ser la principal (foto_url, hist,
-// embedding), que es la que se ve en las tarjetas.
+// Rearma las fotos de una fila de reports (2026-10-29): reordenar, sacar o
+// reemplazar por una recortada. `fotos` es la lista nueva en orden:
+//  - { url } de una foto que ya tenía la fila (conserva su histograma y su
+//    embedding), o
+//  - { url, hist, embedding } de una foto nueva, que tiene que estar en el
+//    bucket de Felpus con el prefijo de ESTE reporte (`nuevaPrefijo`); sin
+//    prefijo no se aceptan fotos nuevas.
+// Mueve juntos URL, histograma, embedding y la marca de foto dudosa
+// (detalles.fotos_dudosas va por posición: antes, reordenar la dejaba en la
+// foto equivocada). La primera es la principal. Devuelve { patch, quitadas }
+// (URLs que ya no usa la fila, para borrarlas del bucket) o { error }.
+export const MAX_FOTOS_REPORTE = 3;
+
+function vectorValido(v, max) {
+  return v == null || (Array.isArray(v) && v.length <= max && v.every((x) => typeof x === "number" && Number.isFinite(x)));
+}
+
+export function rebuildPhotos(row, fotos, { nuevaPrefijo = null } = {}) {
+  const urls = Array.isArray(row?.foto_urls) && row.foto_urls.length ? row.foto_urls : row?.foto_url ? [row.foto_url] : [];
+  if (!Array.isArray(fotos) || fotos.length < 1) return { error: "La publicación tiene que quedar con al menos una foto." };
+  if (fotos.length > MAX_FOTOS_REPORTE) return { error: `Como mucho ${MAX_FOTOS_REPORTE} fotos.` };
+  const porFoto = (arr, i) => (Array.isArray(arr) && arr.length === urls.length ? arr[i] : i === 0 ? undefined : null);
+  const dudosas = new Set(
+    (Array.isArray(row?.detalles?.fotos_dudosas) ? row.detalles.fotos_dudosas : []).map((i) => urls[i]).filter(Boolean)
+  );
+  const vistas = new Set();
+  const salida = [];
+  for (const f of fotos) {
+    const url = typeof f?.url === "string" ? f.url : "";
+    if (!url || vistas.has(url)) return { error: "Las fotos no coinciden con la publicación." };
+    vistas.add(url);
+    const i = urls.indexOf(url);
+    if (i >= 0) {
+      const hist = porFoto(row.hists, i) ?? (i === 0 ? row.hist ?? null : null);
+      const embedding = porFoto(row.embeddings, i) ?? (i === 0 ? row.embedding ?? null : null);
+      salida.push({ url, hist, embedding, dudosa: dudosas.has(url) });
+    } else {
+      if (!nuevaPrefijo || !url.startsWith(nuevaPrefijo) || !/^[A-Za-z0-9-]+\.(jpg|jpeg|png|webp)$/.test(url.slice(nuevaPrefijo.lastIndexOf("/") + 1))) {
+        return { error: "Las fotos no coinciden con la publicación." };
+      }
+      if (!vectorValido(f.hist, 256) || !vectorValido(f.embedding, 4096)) return { error: "Datos de la foto inválidos." };
+      salida.push({ url, hist: f.hist ?? null, embedding: f.embedding ?? null, dudosa: false });
+    }
+  }
+  const mismas = salida.length === urls.length && salida.every((f, i) => f.url === urls[i]);
+  if (mismas) return { patch: {}, quitadas: [] };
+  const patch = {
+    foto_urls: salida.map((f) => f.url),
+    foto_url: salida[0].url,
+    hists: salida.map((f) => f.hist),
+    hist: salida[0].hist,
+    embeddings: salida.map((f) => f.embedding),
+    embedding: salida[0].embedding,
+  };
+  const nuevasDudosas = salida.map((f, i) => (f.dudosa ? i : -1)).filter((i) => i >= 0);
+  const antes = Array.isArray(row?.detalles?.fotos_dudosas) ? row.detalles.fotos_dudosas : [];
+  if (antes.length || nuevasDudosas.length) {
+    const { fotos_dudosas: _fuera, ...resto } = row.detalles || {};
+    patch.detalles = nuevasDudosas.length ? { ...resto, fotos_dudosas: nuevasDudosas } : resto;
+  }
+  return { patch, quitadas: urls.filter((u) => !vistas.has(u)) };
+}
+
+// Reordenar: las mismas fotos en otro orden (no agrega ni saca). Lo usan el
+// admin y la edición del dueño.
 export function reorderPhotos(row, order) {
   const urls = Array.isArray(row?.foto_urls) && row.foto_urls.length ? row.foto_urls : row?.foto_url ? [row.foto_url] : [];
   if (!Array.isArray(order) || order.length !== urls.length) return { error: "El orden tiene que incluir todas las fotos." };
-  const index = order.map((u) => urls.indexOf(u));
-  if (index.some((i) => i < 0) || new Set(index).size !== urls.length) return { error: "Las fotos no coinciden con la publicación." };
+  if (order.some((u) => !urls.includes(u)) || new Set(order).size !== urls.length) return { error: "Las fotos no coinciden con la publicación." };
   if (urls.length < 2) return { patch: {} };
-  const pick = (arr) => (Array.isArray(arr) && arr.length === urls.length ? index.map((i) => arr[i]) : arr);
-  const hists = pick(row.hists);
-  const embeddings = pick(row.embeddings);
-  const patch = { foto_urls: order, foto_url: order[0] };
-  if (Array.isArray(row.hists) && row.hists.length === urls.length) {
-    patch.hists = hists;
-    patch.hist = hists[0];
-  }
-  if (Array.isArray(row.embeddings) && row.embeddings.length === urls.length) {
-    patch.embeddings = embeddings;
-    patch.embedding = embeddings[0];
-  }
-  return { patch };
+  const r = rebuildPhotos(row, order.map((url) => ({ url })));
+  return r.error ? r : { patch: r.patch };
 }
 
 // Edición por quien publicó (2026-10-29): los mismos campos que el admin,
