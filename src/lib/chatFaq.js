@@ -69,6 +69,12 @@ export const FAQ_TOPICS = [
       "Tu contacto no aparece en los listados: se muestra recién al abrir tu publicación, con un límite de consultas para evitar abusos, y se borra cuando confirmás el reencuentro. Te recomendamos marcar una zona aproximada en el mapa, no la puerta de tu casa.",
   },
   {
+    id: "seguridad",
+    label: "¿Cómo contacto de forma segura?",
+    answer:
+      "Pedí que te cuenten una seña de la mascota que no se vea en la foto. No mandes plata por adelantado, aunque te la pidan para el traslado o como recompensa. Para encontrarte, elegí un lugar público y de día, y si podés andá acompañado. Si una publicación te parece una estafa, denunciala desde la ficha.",
+  },
+  {
     id: "cuenta",
     label: "Iniciar sesión y mis publicaciones",
     answer:

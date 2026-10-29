@@ -4,6 +4,7 @@ import { SITE_URL } from "../../../lib/site";
 import { petTitle } from "../../../lib/petTitle";
 import { fetchReportForShare as fetchReport } from "../../../lib/reportOg";
 import { shareCardData } from "../../../lib/shareCard";
+import { zonaConCiudad } from "../../../lib/zona";
 
 // Cada mascota compartida tiene que mostrar SU foto real al pegar el link
 // en WhatsApp/Facebook/X, no el banner genérico de la marca — esos
@@ -31,7 +32,9 @@ export async function generateMetadata({ params }) {
   const tipoTxt =
     card.estado === "reencontrada" ? "¡Volvió a casa!" : card.badge.charAt(0) + card.badge.slice(1).toLowerCase();
   const nombre = petTitle(report);
-  const title = `${tipoTxt}: ${nombre} en ${report.zona} — Felpus`;
+  // Con la ciudad (2026-10-29): "Perdida: Gata negra en Centro (Salta)" —
+  // al compartir en grupos de otras ciudades, la zona sola no ubica.
+  const title = `${tipoTxt}: ${nombre} en ${zonaConCiudad(report)} — Felpus`;
   // Descripción de la vista previa: cuándo + la descripción del reporte,
   // así se entiende de un vistazo sin abrir el link.
   const description =
@@ -77,7 +80,7 @@ export default async function ReportPage({ params }) {
     ? {
         "@context": "https://schema.org",
         "@type": "WebPage",
-        name: `${report.tipo === "perdida" ? "Perdida" : report.detalles?.avistamiento === true ? "Vista suelta" : "Encontrada"}: ${petTitle(report)} en ${report.zona}`,
+        name: `${report.tipo === "perdida" ? "Perdida" : report.detalles?.avistamiento === true ? "Vista suelta" : "Encontrada"}: ${petTitle(report)} en ${zonaConCiudad(report)}`,
         description: report.descripcion || undefined,
         url: `${SITE_URL}/r/${id}`,
         image: report.foto_url || undefined,

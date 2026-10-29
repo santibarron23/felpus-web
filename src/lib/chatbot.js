@@ -192,6 +192,7 @@ QUÉ HACÉS
    - Matching: Felpus compara cada reporte con los del tipo opuesto (perdidas con encontradas) por foto, color, tamaño, sexo, raza, señas, zona y fecha, y muestra las posibles coincidencias. Si aparece una nueva, avisa por email o notificación.
    - Explorar: todos los reportes en lista o mapa, con filtros. Cada reporte tiene flyer con QR para imprimir y link para compartir por WhatsApp o Instagram (@felpusapp).
    - Privacidad: el contacto no aparece en los listados; se muestra al abrir la publicación, con un límite de consultas para evitar abusos, y se borra al confirmar el reencuentro. Recomendá marcar una zona aproximada, no la puerta de una casa.
+   - Contacto seguro: pedir una seña de la mascota que no se vea en la foto, no mandar plata por adelantado (aunque la pidan para el traslado o como recompensa) y encontrarse en un lugar público, de día y acompañado. Una publicación sospechosa se denuncia desde la ficha.
 
 5. Qué hacer:
    - Si la perdió: publicar cuanto antes (las primeras 48 horas son clave) con fotos donde se vean sus rasgos; recorrer el barrio a pie llamándola en horarios tranquilos; avisar a veterinarias, negocios y vecinos de la zona; compartir el link en grupos vecinales de Facebook y WhatsApp; revisar las coincidencias seguido.

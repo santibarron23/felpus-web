@@ -7,10 +7,14 @@ import SocialLinks from "./felpus/SocialLinks";
 import FelpusAssistant from "./felpus/FelpusAssistant";
 import ImportPostCard from "./felpus/ImportPostCard";
 import SightingSheet from "./felpus/SightingSheet";
-import { buildSightingDraft, PUNTOS_AVISTAMIENTO, pasaFiltroTipo } from "../lib/sighting";
+import { buildSightingDraft, PUNTOS_AVISTAMIENTO, pasaFiltroTipo, isSighting } from "../lib/sighting";
+import { buildShareMessage, whatsappUrl } from "../lib/shareCard";
+import { SITE_URL } from "../lib/site";
 import { novedadesDue, NOVEDADES_KEY_PREFIX } from "../lib/emailAvisos";
 import { findDuplicates, duplicateMessage } from "../lib/duplicates";
 import { REPORT_DRAFT_KEY, serializeReportDraft, parseReportDraft } from "../lib/reportDraft";
+import { track } from "../lib/analytics";
+import { isTooDark, photoLuminance } from "../lib/photoQuality";
 import { importPost } from "../lib/postImportClient";
 import {
   PawPrint,
@@ -150,6 +154,7 @@ import {
   reportToken,
 } from "../lib/push";
 import AlertOptInModal from "./felpus/AlertOptInModal";
+import OnboardingTutorial, { markWelcomeSeen, welcomeSeen } from "./felpus/OnboardingTutorial";
 import { logError } from "../lib/log";
 import { useTheme, useThemeToggle } from "./felpus/ThemeProvider";
 import MapPicker from "./MapPicker";
@@ -348,6 +353,10 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   const C = useTheme();
   const { mode: themeMode } = useThemeToggle();
   const [activeTab, setActiveTab] = useState("inicio");
+  // Primera visita (OnboardingTutorial.jsx): null hasta montar, para no
+  // mostrar la tarjeta en el HTML del servidor y sacarla al hidratar.
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
   const [reportKind, setReportKind] = useState("perdida");
   const [form, setForm] = useState(emptyForm());
   const [reports, setReports] = useState([]);
@@ -1389,6 +1398,19 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     return findDuplicates(draft, reports, { userId: user?.id || null, nickname })[0] || null;
   }, [form.fotos, form.color, form.colorOtro, form.zona, form.lat, form.lng, form.especie, form.raza, form.tamano, form.sexo, form.edad, form.provincia, form.fecha, reportKind, reports, user, nickname, vectoresListos]);
   const dupVisible = posibleDuplicado && posibleDuplicado.report.id !== dupDescartado ? posibleDuplicado : null;
+  // Una vez por cada posible duplicado que se le muestra a la persona.
+  const dupTrackedRef = useRef(null);
+  // Al terminar de publicar, el foco va al "¡Listo!" para que un lector de
+  // pantalla lo anuncie (la pantalla cambia entera sin recargar).
+  const resultHeadingRef = useRef(null);
+  useEffect(() => {
+    if (!scanning && matchResult) resultHeadingRef.current?.focus({ preventScroll: true });
+  }, [scanning, matchResult?.source?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!dupVisible || dupTrackedRef.current === dupVisible.report.id) return;
+    dupTrackedRef.current = dupVisible.report.id;
+    track("duplicado_detectado", { tipo: reportKind });
+  }, [dupVisible, reportKind]);
 
   // Borrador en el dispositivo: se recupera una sola vez al montar y se
   // guarda (sin fotos ni contacto) con cada cambio. Ver reportDraft.js.
@@ -1456,6 +1478,40 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   const reportProgressDone = reportChecklist.filter((s) => s.done).length;
   const reportProgressPct = Math.round((reportProgressDone / reportChecklist.length) * 100);
 
+  // Embudo del formulario para analytics (ver lib/analytics.js): cuándo se
+  // empieza un reporte, en qué paso se deja (primer ítem sin completar del
+  // checklist) y cuánto tarda en publicarse. Ir a "resultado" no es
+  // abandonar: es publicar.
+  const reportFunnelRef = useRef(null); // { startedAt, tipo } mientras hay uno en curso
+  const reportChecklistRef = useRef(reportChecklist);
+  reportChecklistRef.current = reportChecklist;
+  const prevTabRef = useRef(activeTab);
+  useEffect(() => {
+    const prev = prevTabRef.current;
+    prevTabRef.current = activeTab;
+    if (activeTab === "reportar" && !reportFunnelRef.current) {
+      reportFunnelRef.current = { startedAt: Date.now(), tipo: reportKind };
+      track("reporte_iniciado", { tipo: reportKind });
+    } else if (activeTab === "reportar" && reportFunnelRef.current) {
+      reportFunnelRef.current.tipo = reportKind;
+    } else if (prev === "reportar" && activeTab !== "reportar" && activeTab !== "resultado" && reportFunnelRef.current) {
+      // En el orden en que aparecen los campos (el checklist pone "Apodo"
+      // primero, pero en el formulario está después del color).
+      const pendiente = ["fotos", "zona", "color", "apodo", "contacto"]
+        .map((id) => reportChecklistRef.current.find((st) => st.id === id))
+        .find((st) => st && !st.done);
+      const algoCargado = reportChecklistRef.current.some((st) => st.done && st.id !== "apodo" && st.id !== "contacto");
+      if (algoCargado) {
+        track("reporte_abandonado", {
+          tipo: reportFunnelRef.current.tipo,
+          paso: pendiente?.id || "listo",
+          segundos: Math.round((Date.now() - reportFunnelRef.current.startedAt) / 1000),
+        });
+      }
+      reportFunnelRef.current = null;
+    }
+  }, [activeTab, reportKind]);
+
   // Celebración (estilo Duolingo) en el momento exacto en que el checklist
   // pasa de incompleto a 100% — no en cada render mientras ya está completo
   // (si no, reabrir el tab o tocar cualquier cosa la volvería a disparar).
@@ -1489,6 +1545,31 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
 
   // Cambiar de pestaña siempre vuelve al tope — si no, se entra a una vista
   // nueva ya scrolleada a la mitad porque quedó así en la pestaña anterior.
+  // Tarjeta "¿Es tu primera vez?": no a quien ya la descartó ni a quien ya
+  // usó Felpus en este dispositivo (contacto guardado de una publicación).
+  useEffect(() => {
+    let usado = false;
+    try {
+      usado = !!localStorage.getItem("felpus_saved_whatsapp");
+    } catch {
+      // sin localStorage: se muestra
+    }
+    if (!welcomeSeen() && !usado) setShowWelcome(true);
+  }, []);
+  useEffect(() => {
+    if (user) setShowWelcome(false);
+  }, [user]);
+
+  function openTutorial(desde) {
+    track("tutorial_abierto", { desde });
+    setShowTutorial(true);
+  }
+
+  function dismissWelcome() {
+    markWelcomeSeen();
+    setShowWelcome(false);
+  }
+
   const goToTab = useCallback((tabId) => {
     setActiveTab(tabId);
     if (typeof window !== "undefined") {
@@ -1841,6 +1922,9 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     try {
       const ids = ownedRepObjs.map((r) => r.id);
       await resolveReports(ids, user.id, resolverDisplayName);
+      // con_coincidencia: se confirmó desde una coincidencia de Felpus (dos
+      // reportes), no solo "volvió a casa" desde la ficha.
+      track("reencuentro_confirmado", { tipo: ownedRepObjs[0]?.tipo, con_coincidencia: repObjs.length > 1 });
 
       const updatedList = ownedRepObjs.map((r) => ({
         ...r,
@@ -1948,17 +2032,23 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     if (!file || form.fotos.length >= MAX_FOTOS) return;
     if (!file.type.startsWith("image/")) {
       setFormError("Ese archivo no es una imagen.");
+      track("foto_error", { motivo: "tipo_archivo" });
       return;
     }
     if (file.size > MAX_FOTO_MB * 1024 * 1024) {
       setFormError(`La foto pesa demasiado — subí una de menos de ${MAX_FOTO_MB}MB.`);
+      track("foto_error", { motivo: "tamano" });
       return;
     }
+    setFormError("");
     try {
       const dataUrl = await resizeImageFile(file);
       const hist = await computeHistogram(dataUrl);
+      // Solo para avisar (ver photoQuality.js): no se guarda ni frena nada.
+      const oscura = isTooDark(await photoLuminance(dataUrl));
+      if (oscura) track("foto_error", { motivo: "oscura" });
       const esPrimera = form.fotos.length === 0;
-      setForm((f) => ({ ...f, fotos: [...f.fotos, { dataUrl, hist, embedding: null }] }));
+      setForm((f) => ({ ...f, fotos: [...f.fotos, { dataUrl, hist, embedding: null, oscura }] }));
       revisarFoto(dataUrl);
       if (esPrimera) sugerirDesdeFoto(dataUrl);
       setVisionStatus("analyzing");
@@ -1973,7 +2063,8 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
       setVisionStatus(embedding ? "ai" : "basic");
     } catch (err) {
       logError(err);
-      setFormError("No pudimos procesar esa imagen. Probá con otra foto.");
+      setFormError("No pudimos procesar esa imagen. Probá de nuevo o elegí otra foto.");
+      track("foto_error", { motivo: "procesar" });
       setVisionStatus("idle");
     }
   }
@@ -2438,6 +2529,14 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
       };
 
       await publishAndMatch(draft, { puntos: reportKind === "perdida" ? PUNTOS_PERDIDA : PUNTOS_ENCONTRADA });
+      track("reporte_publicado", {
+        tipo: reportKind,
+        segundos: reportFunnelRef.current ? Math.round((Date.now() - reportFunnelRef.current.startedAt) / 1000) : undefined,
+        fotos: draft.fotos.length,
+        con_mapa: draft.lat != null,
+        desde_asistente: !!chatOriginRef.current,
+      });
+      reportFunnelRef.current = null;
       if (chatOriginRef.current) {
         try {
           window.gtag?.("event", "asistente_reporte_publicado", {
@@ -2470,7 +2569,11 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
       logError(err);
-      setFormError(describeSubmitError(err));
+      const motivo = describeSubmitError(err);
+      track("reporte_error", { tipo: reportKind, paso: /conectar/.test(motivo) ? "red" : "servidor" });
+      // Lo cargado no se borra (el reset es solo al publicar): decirlo
+      // evita que alguien angustiado crea que tiene que empezar de cero.
+      setFormError(`${motivo} Lo que cargaste sigue acá.`);
       goToTab("reportar");
     } finally {
       setScanning(false);
@@ -3110,6 +3213,48 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
               ))}
             </div>
 
+            {/* Primera visita (2026-10-29): debajo de los botones principales
+                para no competir con ellos. Se cierra con la X y no vuelve. */}
+            {showWelcome && (
+              <section
+                aria-labelledby="bienvenida-title"
+                className="relative bg-white rounded-2xl border p-4 shadow-sm flex items-start gap-3"
+                style={{ borderColor: C.border }}
+              >
+                <span className="shrink-0 w-11 h-11 rounded-full flex items-center justify-center" style={{ background: C.brandTintBg, color: C.red }} aria-hidden="true">
+                  <PawPrint className="w-5 h-5" />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <h2 id="bienvenida-title" className="text-[15px] font-bold leading-snug pr-8" style={{ color: C.text }}>
+                    ¿Es tu primera vez en Felpus?
+                  </h2>
+                  <p className="text-[13px] leading-snug mt-0.5" style={{ color: C.muted }}>
+                    Te mostramos cómo usarlo. Es fácil, gratuito y no necesitás instalar nada.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => openTutorial("inicio")}
+                    className="mt-2.5 min-h-[44px] px-4 rounded-xl border text-sm font-bold flex items-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                    style={{ borderColor: C.text, color: C.text }}
+                  >
+                    Conocer cómo funciona <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    track("tutorial_descartado", { desde: "inicio" });
+                    dismissWelcome();
+                  }}
+                  aria-label="Cerrar y no volver a mostrar"
+                  className="absolute top-1.5 right-1.5 w-11 h-11 rounded-full flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                  style={{ color: C.muted }}
+                >
+                  <X className="w-5 h-5" aria-hidden="true" />
+                </button>
+              </section>
+            )}
+
             {/* Cómo funciona — tarjetas con más aire y jerarquía visual clara,
                 estilo Duolingo: ícono grande en placa de color + un solo
                 renglón de texto, conectados por una flecha vertical. */}
@@ -3144,6 +3289,14 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                   </li>
                 ))}
               </ol>
+              <button
+                type="button"
+                onClick={() => openTutorial("inicio")}
+                className="mt-2 w-full min-h-[44px] flex items-center justify-center gap-1.5 text-sm font-bold underline underline-offset-4 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                style={{ color: C.text }}
+              >
+                <HelpCircle className="w-4 h-4" aria-hidden="true" /> Ver la guía paso a paso
+              </button>
             </div>
 
             <button
@@ -3228,6 +3381,24 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                   {k === "perdida" ? "Perdí una mascota" : "Encontré una mascota"}
                 </button>
               ))}
+            </div>
+
+            {/* Ayuda durante la publicación (2026-10-29): abre el asistente,
+                que ya muestra "Ayudame a completar el reporte" y las
+                preguntas frecuentes cuando se abre desde acá. Discreto, en
+                su propia fila, para no tapar campos ni botones. */}
+            <div className="flex justify-end -mt-2 -mb-2">
+              <button
+                type="button"
+                onClick={() => {
+                  track("ayuda_abierta", { desde: "formulario" });
+                  setChatOpenToken((t) => t + 1);
+                }}
+                className="min-h-[44px] px-2 flex items-center gap-1.5 text-[13px] font-semibold underline underline-offset-2 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                style={{ color: C.text }}
+              >
+                <HelpCircle className="w-4 h-4" aria-hidden="true" /> ¿Necesitás ayuda?
+              </button>
             </div>
 
             <ImportPostCard onImport={handleImportPost} />
@@ -3331,7 +3502,8 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                     "Es falsa o engañosa" (ver REPORT_FLAG_REASONS en
                     matching.js) y el panel de admin. */}
                 <p className="text-[12px] mb-1.5" style={{ color: C.muted }}>
-                  Una foto real de la mascota (no un flyer ni una captura): es la que se compara para buscar coincidencias.
+                  Elegí una foto real donde se vea bien la mascota (no un flyer ni una captura): es la que se compara para
+                  buscar coincidencias. Si no tenés una buena, usá la que tengas.
                 </p>
                 {form.fotos.length > 1 && (
                   <p className="text-[12px] mb-1.5" style={{ color: C.muted }}>
@@ -3375,28 +3547,39 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                             onClick={() => handleMakeMainPhoto(i)}
                             aria-label={`Hacer principal la foto ${i + 1}`}
                             title="Hacer principal"
-                            className="absolute top-1 left-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center"
+                            className="absolute top-1 left-1 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
                           >
-                            <Star className="w-3.5 h-3.5" aria-hidden="true" />
+                            <Star className="w-4 h-4" aria-hidden="true" />
                           </button>
                         ))}
                       <button
                         type="button"
                         onClick={() => handleRemovePhoto(i)}
-                        aria-label="Quitar foto"
-                        className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center"
+                        aria-label={`Quitar la foto ${i + 1}`}
+                        className="absolute top-1 right-1 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
                       >
-                        <X className="w-3 h-3" />
+                        <X className="w-4 h-4" aria-hidden="true" />
                       </button>
                     </div>
                   ))}
                   {form.fotos.length < MAX_FOTOS && (
+                    // El input está oculto (display: none), así que el label
+                    // no recibía el foco: sin tabIndex/teclas no se podía
+                    // subir una foto con el teclado.
                     <label
                       htmlFor="foto-input"
-                      className="flex flex-col items-center justify-center gap-1 border-2 border-dashed rounded-xl h-24 cursor-pointer text-[12px] text-center transition-colors"
+                      tabIndex={0}
+                      role="button"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          fileInputRef.current?.click();
+                        }
+                      }}
+                      className="flex flex-col items-center justify-center gap-1 border-2 border-dashed rounded-xl h-24 cursor-pointer text-[13px] font-semibold text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
                       style={{ borderColor: C.border, color: C.muted }}
                     >
-                      <Camera className="w-4 h-4" />
+                      <Camera className="w-5 h-5" aria-hidden="true" />
                       {form.fotos.length === 0 ? "Subir foto" : "Agregar otra"}
                     </label>
                   )}
@@ -3444,6 +3627,12 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                       </div>
                     </div>
                   ) : null
+                )}
+                {form.fotos.some((foto) => foto.oscura && !foto.check?.dudosa) && (
+                  <p className="text-[12px] mt-2 rounded-lg px-3 py-2" style={{ background: C.surfaceMuted, color: C.text }} role="status">
+                    💡 {form.fotos.length > 1 ? "Una de las fotos quedó" : "La foto quedó"} bastante oscura. Si tenés otra con más
+                    luz, sumala: ayuda a reconocerla. Si no, podés publicar igual.
+                  </p>
                 )}
                 <p className="text-[12px] mt-1.5" style={{ color: C.muted }}>
                   Subí distintos ángulos o poses — ayuda a un matching más preciso.
@@ -3529,7 +3718,8 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                 )}
                 {avisoFalta("zona")}
                 <p className="text-[12px] mt-1" style={{ color: C.muted }}>
-                  Cuanto más precisa, mejor la búsqueda. Marcá dónde se perdió o se vio, no tu casa.
+                  No necesitás la dirección exacta: alcanza con el barrio o con marcar el lugar en el mapa. Marcá dónde se
+                  {reportKind === "perdida" ? " perdió" : " encontró"}, no tu casa. En el aviso se muestra una zona aproximada.
                 </p>
                 {geoStatus === "done" && (
                   <p className="text-[12px] mt-1" style={{ color: C.green }}>Ubicación capturada — mejora mucho la precisión del match.</p>
@@ -3704,7 +3894,8 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                   Contacto <span style={{ color: C.red }}>*</span>
                 </label>
                 <p className="text-[12px] mb-2" style={{ color: C.muted }}>
-                  Para que puedan avisarte si la reconocen. Completá al menos uno.
+                  Para que puedan avisarte si la reconocen. Completá al menos uno. Se muestran en tu aviso y en el flyer a
+                  quien quiera contactarte; no aparecen en el listado ni en el mapa.
                 </p>
                 <div className="space-y-3">
                   <div>
@@ -3819,9 +4010,15 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                         onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
                         maxLength={60}
                         placeholder={reportKind === "encontrada" ? "Si no lo sabés, dejalo vacío" : "Ej: Luna"}
+                        aria-describedby="form-nombre-ayuda"
                         className="felpus-input w-full border rounded-lg px-3 py-2 text-sm bg-[var(--felpus-surface-subtle)] dark:bg-[var(--felpus-dark-hover)]"
                         style={{ borderColor: C.border, color: C.text }}
                       />
+                      {/* Mucha gente escribía el color acá ("Blanco"), y se leía
+                          como el nombre (ver petTitle.js). */}
+                      <p id="form-nombre-ayuda" className="text-[12px] mt-1" style={{ color: C.muted }}>
+                        Si no sabés cómo se llama, dejalo vacío: el título se arma solo (ej.: &ldquo;Perra blanca&rdquo;).
+                      </p>
                     </div>
 
                     <div>
@@ -4204,18 +4401,81 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
 
             {!scanning && matchResult && (
               <>
+                {/* Confirmación (2026-10-29): que quede claro que el aviso ya
+                    está publicado, qué hacer ahora (ver, compartir, volver) y
+                    qué va a pasar después. Las alertas que se mencionan son
+                    solo las que de verdad quedaron activas. */}
                 <div className="bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl border p-4" style={{ borderColor: C.border }}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <Mascot mood="celebrating" size={40} />
-                    <p className="text-xs font-bold flex items-center gap-1.5" style={{ color: C.green }}>
-                      <Check className="w-4 h-4" /> Reporte publicado (
-                      <span className="felpus-points-pop">
-                        +{matchResult.source.tipo === "perdida" ? PUNTOS_PERDIDA : PUNTOS_ENCONTRADA} huellitas
-                      </span>
-                      )
-                    </p>
+                  <div className="flex items-center gap-3 mb-3">
+                    <Mascot mood="celebrating" size={48} />
+                    <div className="min-w-0">
+                      <h2 ref={resultHeadingRef} tabIndex={-1} className="felpus-display text-xl leading-tight focus:outline-none" style={{ color: C.text }}>
+                        ¡Listo! Tu aviso ya está publicado.
+                      </h2>
+                      <p className="text-[13px] leading-snug mt-0.5" style={{ color: C.muted }}>
+                        Ahora otras personas pueden verlo y ayudarte a{" "}
+                        {matchResult.source.tipo === "perdida" ? "encontrar a tu mascota" : "encontrar a su familia"}.
+                      </p>
+                    </div>
                   </div>
                   <ReportCard report={matchResult.source} onOpenDetail={openReportDetail} />
+                  <div className="grid gap-2 mt-3">
+                    <a
+                      href={whatsappUrl(`${buildShareMessage(matchResult.source)}
+${SITE_URL}/r/${matchResult.source.id}`)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => track("reporte_compartido", { canal: "whatsapp", desde: "confirmacion", tipo: matchResult.source.tipo })}
+                      className="min-h-[48px] rounded-xl flex items-center justify-center gap-2 text-sm font-bold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--felpus-focus)]"
+                      // Verde oficial de WhatsApp, igual que en la ficha (ver PureViews).
+                      style={{ background: "#25D366" }}
+                    >
+                      <MessageCircle className="w-5 h-5" aria-hidden="true" /> Compartir por WhatsApp
+                    </a>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openReportDetail(matchResult.source)}
+                        className="min-h-[48px] rounded-xl border flex items-center justify-center gap-1.5 text-sm font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                        style={{ borderColor: C.border, color: C.text }}
+                      >
+                        <Eye className="w-4 h-4" aria-hidden="true" /> Ver mi aviso
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => goToTab("inicio")}
+                        className="min-h-[48px] rounded-xl border flex items-center justify-center gap-1.5 text-sm font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                        style={{ borderColor: C.border, color: C.text }}
+                      >
+                        <Home className="w-4 h-4" aria-hidden="true" /> Volver al inicio
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-4 rounded-xl p-3" style={{ background: C.surfaceSubtle }}>
+                    <h3 className="text-[13px] font-bold mb-1.5" style={{ color: C.text }}>
+                      ¿Qué pasa ahora?
+                    </h3>
+                    <ul className="text-[13px] leading-snug space-y-1.5 list-disc pl-4" style={{ color: C.text }}>
+                      <li>Tu aviso aparece en Explorar y en el mapa, con una zona aproximada (no el punto exacto).</li>
+                      {!isSighting(matchResult.source) && (
+                        <li>
+                          Felpus lo comparó con los avisos de mascotas {matchResult.source.tipo === "perdida" ? "encontradas" : "perdidas"}
+                          {" "}de la zona: abajo ves las posibles coincidencias. Cada vez que entres se vuelve a comparar con los nuevos.
+                        </li>
+                      )}
+                      {pushSubState === "active" && <li>Te avisamos en este dispositivo si aparece una coincidencia.</li>}
+                      {matchResult.source.contactoEmail && matchResult.source.avisosEmail !== false && (
+                        <li>Te escribimos por email solo si aparece una coincidencia muy probable.</li>
+                      )}
+                      <li>Compartilo en grupos del barrio y de mascotas: es lo que más ayuda.</li>
+                    </ul>
+                    {user && (
+                      <p className="text-[12px] mt-2" style={{ color: C.muted }}>
+                        +{isSighting(matchResult.source) ? PUNTOS_AVISTAMIENTO : matchResult.source.tipo === "perdida" ? PUNTOS_PERDIDA : PUNTOS_ENCONTRADA}{" "}
+                        huellitas por este aviso.
+                      </p>
+                    )}
+                  </div>
                   {isPushSupported() && pushSubState !== "active" && (
                     <button
                       type="button"
@@ -4259,7 +4519,10 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                       >
                         <button
                           type="button"
-                          onClick={() => openReportDetail(m.report)}
+                          onClick={() => {
+                            track("coincidencias_vistas", { desde: "resultado", puntaje: Math.round(m.score * 100) });
+                            openReportDetail(m.report);
+                          }}
                           className="w-full flex items-center gap-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded-xl"
                         >
                           <MatchScoreRing score={m.score} />
@@ -5899,6 +6162,16 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
         />
       )}
 
+      {showTutorial && (
+        <OnboardingTutorial
+          onClose={() => setShowTutorial(false)}
+          onFinish={() => {
+            setShowTutorial(false);
+            dismissWelcome();
+          }}
+        />
+      )}
+
       {alertOptIn && (
         <AlertOptInModal
           tipo={alertOptIn.tipo}
@@ -5991,6 +6264,16 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
               sitemap y le da mucho menos peso. */}
           <Link href="/mascotas-perdidas/salta" className="inline-block py-2.5 whitespace-nowrap underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded">
             Mascotas perdidas en Salta
+          </Link>
+          <button
+            type="button"
+            onClick={() => openTutorial("pie")}
+            className="inline-block py-2.5 whitespace-nowrap underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded"
+          >
+            Cómo funciona
+          </button>
+          <Link href="/sobre" className="inline-block py-2.5 whitespace-nowrap underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded">
+            Sobre Felpus
           </Link>
           <Link href="/privacidad" className="inline-block py-2.5 whitespace-nowrap underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40 rounded">
             Política de Privacidad
