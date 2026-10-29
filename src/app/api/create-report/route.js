@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { logError } from "../../../lib/log";
+import { alertarAdmin, esFallaDePublicacion } from "../../../lib/serverAdminAlerts";
 import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
 import { validateReportContact } from "../../../lib/reportValidation";
 import { sanitizeReportRow } from "../../../lib/reportRow";
@@ -158,6 +159,15 @@ export async function POST(request) {
 
   if (finalError) {
     logError("No se pudo publicar el reporte", finalError);
+    // Alguien quiso publicar y no pudo por una falla de la plataforma (no
+    // por sus datos): se avisa al admin al instante (ver serverAdminAlerts.js).
+    if (esFallaDePublicacion(finalError)) {
+      await alertarAdmin({
+        firma: `publicar:${finalError.code || "sin-codigo"}`,
+        titulo: "Alguien no pudo publicar un reporte",
+        detalle: `La base rechazó un reporte nuevo (código ${finalError.code || "desconocido"}): ${String(finalError.message || "").slice(0, 200)}`,
+      });
+    }
     // Mensaje genérico: el texto de Postgres (nombres de tablas, columnas y
     // restricciones) queda solo en el log del servidor.
     return Response.json({ error: "No se pudo publicar el reporte. Revisá los datos y probá de nuevo." }, { status: 400 });

@@ -15,6 +15,7 @@ import { novedadesDue, NOVEDADES_KEY_PREFIX } from "../lib/emailAvisos";
 import { findDuplicates, duplicateMessage } from "../lib/duplicates";
 import { REPORT_DRAFT_KEY, serializeReportDraft, parseReportDraft } from "../lib/reportDraft";
 import { track } from "../lib/analytics";
+import { reloadOnceForStaleDeploy, isStaleListingError } from "../lib/staleDeploy";
 import { isTooDark, isBlurry, photoAnalysis } from "../lib/photoQuality";
 import { importPost } from "../lib/postImportClient";
 import {
@@ -861,6 +862,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   // `reports`/`loadingReports` (que sí necesitan servir a todo el mundo).
   // "metricas" | "denuncias" | "reportes"
   const [adminSection, setAdminSection] = useState("impacto");
+  const [alertaPrueba, setAlertaPrueba] = useState(null); // null | "enviando" | mensaje
   const [adminMetrics, setAdminMetrics] = useState(null);
   const [adminFlags, setAdminFlags] = useState([]);
   const [adminAllReports, setAdminAllReports] = useState([]);
@@ -1706,6 +1708,9 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
       await loadLeaderboard();
     } catch (e) {
       logError("No se pudieron cargar los reportes", e);
+      // Página abierta desde antes de un deploy que pide columnas que ya no
+      // están habilitadas: recargar trae la versión nueva (una sola vez).
+      if (reloadOnceForStaleDeploy(e, { match: isStaleListingError })) return;
       pushToast("error", "No pudimos conectar con la base de datos. Revisá tu configuración de Supabase.");
       setLoadError(true);
     } finally {
@@ -5252,6 +5257,43 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                     <p className="felpus-mono text-xl font-bold" style={{ color: C.text }}>{value ?? "–"}</p>
                   </div>
                 ))}
+
+                {/* Alertas al admin (serverAdminAlerts.js): probar que el email y el
+                    push lleguen. */}
+                <div className="col-span-2 rounded-xl p-3 border space-y-2" style={{ borderColor: C.border, background: C.surface }}>
+                  <p className="text-[13px] font-bold" style={{ color: C.text }}>Alertas de la plataforma</p>
+                  <p className="text-[12px] leading-snug" style={{ color: C.muted }}>
+                    Te avisamos por email y por notificación (en los dispositivos donde activaste notificaciones con esta cuenta)
+                    si el listado no carga, si alguien no puede publicar o si varias personas tienen el mismo error.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={alertaPrueba === "enviando"}
+                    onClick={async () => {
+                      setAlertaPrueba("enviando");
+                      try {
+                        const res = await authedFetch("/api/admin/alerta-prueba", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+                        const data = await res.json().catch(() => ({}));
+                        setAlertaPrueba(
+                          data.enviada
+                            ? `Enviada por ${data.canales.join(" y ")}.`
+                            : data.motivo === "silencio"
+                              ? "Ya mandaste una hace menos de 30 minutos."
+                              : "No salió: revisá RESEND_API_KEY y las claves VAPID en Vercel."
+                        );
+                      } catch {
+                        setAlertaPrueba("No se pudo mandar. Probá de nuevo.");
+                      }
+                    }}
+                    className="min-h-[44px] px-3 rounded-lg border text-[13px] font-bold disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                    style={{ borderColor: C.border, color: C.text }}
+                  >
+                    {alertaPrueba === "enviando" ? "Enviando…" : "Mandarme una alerta de prueba"}
+                  </button>
+                  {alertaPrueba && alertaPrueba !== "enviando" && (
+                    <p className="text-[12px]" style={{ color: C.text }} role="status">{alertaPrueba}</p>
+                  )}
+                </div>
 
                 {/* Desgloses (especie/tamaño/sexo/edad/ubicación/raza) —
                     calculados en el cliente sobre adminAllReports, ver
