@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
+import { alertarAdmin, esRuido, evaluarError, PICO_VENTANA_MIN } from "../../../lib/serverAdminAlerts";
 
 // Corre en el servidor — nunca en el navegador, así que la service role key
 // nunca queda expuesta al público.
@@ -84,6 +85,15 @@ export async function POST(request) {
       .lt("created_at", new Date(Date.now() - RETENTION_DAYS * 24 * 3600 * 1000).toISOString());
 
     await supabase.from("error_logs").insert(row);
+
+    // ¿Amerita avisarle al admin? Crítico o pico de un mismo error en
+    // varios navegadores (criterio y calibración en serverAdminAlerts.js).
+    if (!esRuido(row.message)) {
+      const desde = new Date(Date.now() - PICO_VENTANA_MIN * 60 * 1000).toISOString();
+      const { data: recientes } = await supabase.from("error_logs").select("message,user_agent").gte("created_at", desde).limit(500);
+      const alerta = evaluarError(row, recientes || [row]);
+      if (alerta) await alertarAdmin(alerta);
+    }
   } catch (e) {
     // Best-effort a propósito — ver la nota de arriba sobre no usar
     // logError() acá. console.error sigue siendo válido (no es logError).

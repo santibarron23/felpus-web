@@ -31,17 +31,30 @@ export function isChunkLoadError(error) {
   return CHUNK_ERROR_PATTERNS.some((re) => re.test(message));
 }
 
+// Mismo caso, otra cara (2026-10-29, caso real en error_logs): una página
+// abierta desde antes de un deploy pide columnas que una migración posterior
+// dejó de habilitar (lat/lng tras 20261029_01) y Supabase rechaza el listado
+// entero con 42501. La versión nueva ya pide las columnas correctas, así que
+// recargar lo arregla.
+export function isStaleListingError(error) {
+  if (!error) return false;
+  const text = `${error.code || ""} ${error.message || ""}`;
+  return /42501|permission denied for table reports/i.test(text);
+}
+
 // Devuelve true si disparó la recarga (el llamador puede dejar de hacer
-// otras cosas). `storage`/`reload`/`now` inyectables solo para tests.
+// otras cosas). `match` elige qué errores cuentan (chunks por defecto);
+// `storage`/`reload`/`now` inyectables solo para tests.
 export function reloadOnceForStaleDeploy(
   error,
   {
+    match = isChunkLoadError,
     storage = typeof window !== "undefined" ? window.sessionStorage : null,
     reload = () => window.location.reload(),
     now = Date.now(),
   } = {}
 ) {
-  if (!isChunkLoadError(error)) return false;
+  if (!match(error)) return false;
   try {
     if (!storage) return false;
     const last = Number(storage.getItem(RELOAD_FLAG_KEY) || 0);

@@ -1,5 +1,6 @@
 import { REPORT_LIST_ALL_COLUMNS, missingCoordAprox, withLegacyCoords } from "../../../lib/reportColumns";
 import { runPrivacyProbes } from "../../../lib/privacyProbes";
+import { alertarAdmin } from "../../../lib/serverAdminAlerts";
 
 // Chequeo de salud (lo llama .github/workflows/salud.yml cada 30 minutos):
 // hace EXACTAMENTE la consulta del listado público con la clave anónima, el
@@ -13,7 +14,31 @@ import { runPrivacyProbes } from "../../../lib/privacyProbes";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Cada falla le avisa además al admin por email y push (serverAdminAlerts.js),
+// una vez cada 30 minutos por tipo: así se entera aunque no mire GitHub.
+const ALERTA = {
+  listado: "El listado de reportes no carga",
+  vacio: "El listado de reportes volvió vacío",
+  filtracion: "Datos privados legibles con la clave pública",
+  permisos: "Permisos de la base desactualizados",
+  conexion: "Sin conexión con Supabase",
+};
+
 export async function GET() {
+  const res = await chequear();
+  if (res.status === 503) {
+    const body = await res.clone().json().catch(() => ({}));
+    const tipo = body.tipo || "conexion";
+    await alertarAdmin({
+      firma: `salud:${tipo}`,
+      titulo: `felpus.com: ${ALERTA[tipo] || "falla el chequeo de salud"}`,
+      detalle: `El chequeo de /api/health falló: ${JSON.stringify({ ...body, tipo: undefined }).slice(0, 400)}`,
+    });
+  }
+  return res;
+}
+
+async function chequear() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anon) return Response.json({ ok: false, error: "Supabase no configurado." }, { status: 503 });
@@ -34,19 +59,19 @@ export async function GET() {
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       return Response.json(
-        { ok: false, status: res.status, code: body?.code || null, error: body?.message || "Supabase rechazó el listado." },
+        { ok: false, tipo: "listado", status: res.status, code: body?.code || null, error: body?.message || "Supabase rechazó el listado." },
         { status: 503 }
       );
     }
     const total = Number(res.headers.get("content-range")?.split("/")[1]);
     if (!Number.isFinite(total) || total === 0) {
-      return Response.json({ ok: false, error: "El listado volvió vacío." }, { status: 503 });
+      return Response.json({ ok: false, tipo: "vacio", error: "El listado volvió vacío." }, { status: 503 });
     }
     // Las coordenadas exactas solo se exigen privadas una vez corrida la
     // migración (antes, el sitio todavía las necesita).
     const leaks = await runPrivacyProbes(url, anon, fetch, { coordsAprox });
     if (leaks.length) {
-      return Response.json({ ok: false, error: "Datos privados legibles con la clave pública.", leaks }, { status: 503 });
+      return Response.json({ ok: false, tipo: "filtracion", error: "Datos privados legibles con la clave pública.", leaks }, { status: 503 });
     }
     // Permisos que la app necesita (o que no deberían estar), según la base
     // misma: felpus_permisos_faltantes() (migración 20261028_02). Se agregó
@@ -61,11 +86,11 @@ export async function GET() {
     if (perm.ok) {
       const faltan = await perm.json().catch(() => []);
       if (Array.isArray(faltan) && faltan.length) {
-        return Response.json({ ok: false, error: "Permisos de la base desactualizados.", permisos: faltan }, { status: 503 });
+        return Response.json({ ok: false, tipo: "permisos", error: "Permisos de la base desactualizados.", permisos: faltan }, { status: 503 });
       }
     }
     return Response.json({ ok: true, reports: total });
   } catch (e) {
-    return Response.json({ ok: false, error: e?.message || "Sin conexión con Supabase." }, { status: 503 });
+    return Response.json({ ok: false, tipo: "conexion", error: e?.message || "Sin conexión con Supabase." }, { status: 503 });
   }
 }

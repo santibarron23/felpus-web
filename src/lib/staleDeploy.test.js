@@ -64,3 +64,21 @@ describe("reloadOnceForStaleDeploy", () => {
     expect(reload).not.toHaveBeenCalled();
   });
 });
+
+describe("isStaleListingError (página vieja tras una migración)", () => {
+  it("reconoce el 42501 del listado", async () => {
+    const { isStaleListingError, reloadOnceForStaleDeploy } = await import("./staleDeploy");
+    expect(isStaleListingError({ code: "42501", message: "permission denied for table reports" })).toBe(true);
+    expect(isStaleListingError({ message: "TypeError: Failed to fetch" })).toBe(false);
+    expect(isStaleListingError(null)).toBe(false);
+    const store = new Map();
+    const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+    let recargas = 0;
+    const err = { code: "42501", message: "permission denied for table reports" };
+    const opts = { match: isStaleListingError, storage, reload: () => recargas++, now: 1_000_000 };
+    expect(reloadOnceForStaleDeploy(err, opts)).toBe(true);
+    // Si después de recargar sigue fallando (no era una versión vieja), no recarga en bucle.
+    expect(reloadOnceForStaleDeploy(err, { ...opts, now: 1_010_000 })).toBe(false);
+    expect(recargas).toBe(1);
+  });
+});

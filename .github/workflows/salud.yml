@@ -1,14 +1,16 @@
 name: Salud de felpus.com
 
-# Cada 30 minutos pide https://felpus.com/api/health, que hace la misma
+# Cada 10 minutos pide https://felpus.com/api/health, que hace la misma
 # consulta del listado público que un visitante. Si falla (por ejemplo una
 # columna nueva sin permiso de lectura, como el 2026-10-20, que dejó el sitio
 # en 0 mascotas), este workflow queda en rojo y GitHub te manda un email.
+# Además /api/health le avisa al admin por email y push (serverAdminAlerts.js).
+# GitHub puede demorar unos minutos el horario programado.
 # También corre unos minutos después de cada merge a main, para detectarlo
 # apenas termina el deploy de Vercel. Gratis (GitHub Actions), sin secretos.
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "*/10 * * * *"
   push:
     branches: [main]
   workflow_dispatch:
