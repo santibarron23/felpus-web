@@ -1,12 +1,17 @@
 "use client";
 
-// Edición de una publicación por el administrador: datos y orden de las
-// fotos (la primera es la que se ve en tarjetas, mapa y al compartir).
-// Guarda vía /api/admin/report, que vuelve a verificar que sea el admin.
+// Edición de una publicación: datos y orden de las fotos (la primera es la
+// que se ve en tarjetas, mapa y al compartir).
+//  - Admin: guarda vía /api/admin/report, que vuelve a verificar que sea el
+//    admin.
+//  - Dueño (owner, 2026-10-29): vía /api/reports/edit, con su sesión o el
+//    token del dispositivo con el que publicó (pushToken). Sin el campo
+//    Tipo: perdida/encontrada no se cambia (ver buildOwnerPatch).
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { ArrowLeft, ArrowRight, Loader2, Star, X } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
+import { useFocusTrap } from "./useFocusTrap";
 import { authedFetch } from "../../lib/push";
 import { COLOR_OPTIONS, EDAD_OPTIONS, PESO_OPTIONS, SEXO_OPTIONS, TAMANO_OPTIONS, fechaLabel } from "../../lib/matching";
 
@@ -29,26 +34,22 @@ function initialFields(r) {
   };
 }
 
-export default function AdminEditReport({ report, onClose, onSaved }) {
+export default function AdminEditReport({ report, onClose, onSaved, owner = false, pushToken = null }) {
   const C = useTheme();
   const [fields, setFields] = useState(() => initialFields(report));
   const [fotos, setFotos] = useState(() => (report.fotos || []).map((f) => f.url).filter(Boolean));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const firstRef = useRef(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  const formRef = useRef(null);
+  // Tab no se escapa del diálogo y Escape lo cierra (antes solo Escape).
+  useFocusTrap(true, formRef, onClose);
 
   useEffect(() => {
     firstRef.current?.focus();
-    const onKey = (e) => {
-      if (e.key === "Escape") onCloseRef.current();
-    };
-    window.addEventListener("keydown", onKey);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
-      window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
     };
   }, []);
@@ -75,12 +76,14 @@ export default function AdminEditReport({ report, onClose, onSaved }) {
     try {
       const original = (report.fotos || []).map((f) => f.url).filter(Boolean);
       const orderChanged = fotos.some((u, i) => u !== original[i]);
-      const res = await authedFetch("/api/admin/report", {
+      const { tipo, ...sinTipo } = fields;
+      const res = await authedFetch(owner ? "/api/reports/edit" : "/api/admin/report", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           reportId: report.id,
-          fields: { ...fields, color_otro: fields.color === "Otro color" ? fields.color_otro : "" },
+          ...(owner && pushToken ? { pushToken } : {}),
+          fields: { ...(owner ? sinTipo : { ...sinTipo, tipo }), color_otro: fields.color === "Otro color" ? fields.color_otro : "" },
           ...(orderChanged ? { fotoOrder: fotos } : {}),
         }),
       });
@@ -110,6 +113,7 @@ export default function AdminEditReport({ report, onClose, onSaved }) {
   return (
     <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center sm:p-4" style={{ background: "rgba(0,0,0,0.45)" }}>
       <form
+        ref={formRef}
         onSubmit={save}
         role="dialog"
         aria-modal="true"
@@ -119,7 +123,7 @@ export default function AdminEditReport({ report, onClose, onSaved }) {
       >
         <header className="flex items-center gap-2 px-4 py-3 border-b shrink-0" style={{ borderColor: C.border, background: C.surface }}>
           <h2 id="admin-edit-title" className="flex-1 font-bold text-base">
-            Editar publicación
+            {owner ? "Editar mi aviso" : "Editar publicación"}
           </h2>
           <button
             ref={firstRef}
@@ -133,6 +137,12 @@ export default function AdminEditReport({ report, onClose, onSaved }) {
         </header>
 
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          {owner && (
+            <p className="text-[13px] leading-snug" style={{ color: C.muted }}>
+              Corregí lo que haga falta y tocá &ldquo;Guardar cambios&rdquo;. El contacto y si está perdida o encontrada no se
+              cambian desde acá.
+            </p>
+          )}
           {fotos.length > 0 && (
             <section aria-labelledby="ae-fotos">
               <h3 id="ae-fotos" className={label}>
@@ -190,11 +200,13 @@ export default function AdminEditReport({ report, onClose, onSaved }) {
           )}
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="ae-tipo" className={label}>Tipo</label>
-              {select("tipo", ["perdida", "encontrada"], { perdida: "Perdida", encontrada: "Encontrada" })}
-            </div>
-            <div>
+            {!owner && (
+              <div>
+                <label htmlFor="ae-tipo" className={label}>Tipo</label>
+                {select("tipo", ["perdida", "encontrada"], { perdida: "Perdida", encontrada: "Encontrada" })}
+              </div>
+            )}
+            <div className={owner ? "col-span-2" : ""}>
               <label htmlFor="ae-especie" className={label}>Especie</label>
               {select("especie", ["perro", "gato", "otro"], { perro: "Perro", gato: "Gato", otro: "Otro" })}
             </div>
@@ -202,7 +214,18 @@ export default function AdminEditReport({ report, onClose, onSaved }) {
 
           <div>
             <label htmlFor="ae-nombre" className={label}>Nombre</label>
-            <input id="ae-nombre" value={fields.nombre} onChange={set("nombre")} maxLength={60} className={input} style={inputStyle} />
+            <input
+              id="ae-nombre"
+              value={fields.nombre}
+              onChange={set("nombre")}
+              maxLength={60}
+              aria-describedby="ae-nombre-ayuda"
+              className={input}
+              style={inputStyle}
+            />
+            <p id="ae-nombre-ayuda" className="text-[12px] mt-1" style={{ color: C.muted }}>
+              Es el título del aviso. Si no sabés cómo se llama, dejalo vacío: el título se arma solo (ej.: &ldquo;Perra blanca&rdquo;).
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

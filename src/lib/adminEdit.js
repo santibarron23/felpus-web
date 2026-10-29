@@ -21,7 +21,7 @@ const CHOICES = {
 // Solo pasan los campos conocidos y con valores válidos; cualquier otro
 // (user_id, resuelto, contacto, push_token...) se ignora. Devuelve
 // { patch } o { error }.
-export function buildAdminPatch(input) {
+export function buildAdminPatch(input, { allowTipo = true } = {}) {
   const patch = {};
   if (!input || typeof input !== "object") return { error: "Datos inválidos." };
   for (const [key, max] of Object.entries(TEXT_LIMITS)) {
@@ -34,6 +34,7 @@ export function buildAdminPatch(input) {
   }
   for (const [key, options] of Object.entries(CHOICES)) {
     if (input[key] === undefined) continue;
+    if (key === "tipo" && !allowTipo) return { error: "No se puede cambiar si es perdida o encontrada." };
     if (!options.includes(input[key])) return { error: `Valor inválido para ${key}.` };
     patch[key] = input[key] === "" ? null : input[key];
   }
@@ -69,4 +70,11 @@ export function reorderPhotos(row, order) {
     patch.embedding = embeddings[0];
   }
   return { patch };
+}
+
+// Edición por quien publicó (2026-10-29): los mismos campos que el admin,
+// menos el tipo (pasar una "perdida" a "encontrada" cambia con quién se
+// compara y las alertas que ya salieron; para eso, un aviso nuevo).
+export function buildOwnerPatch(input) {
+  return buildAdminPatch(input, { allowTipo: false });
 }

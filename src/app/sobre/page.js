@@ -7,8 +7,11 @@ import { SITE_URL } from "../../lib/site";
 // de Inicio, junto a Privacidad y Términos.
 //
 // Solo afirmaciones verificables: sin avales, menciones en medios ni
-// estadísticas que no se puedan comprobar. Los reencuentros se muestran con
-// los datos reales de la app (Inicio y Explorar), no con números fijos acá.
+// estadísticas que no se puedan comprobar. La declaración de interés de la
+// Cámara de Diputados de Salta la confirmó el responsable del proyecto
+// (2026-10-29); si se consigue el número de resolución o un link oficial,
+// conviene sumarlo acá. Los reencuentros se muestran con los datos reales
+// de la app (Inicio y Explorar), no con números fijos acá.
 
 const TITLE = "Sobre Felpus";
 const DESCRIPTION =
@@ -91,6 +94,9 @@ export default function SobrePage() {
         <p>
           Felpus es un proyecto independiente creado en Salta, Argentina. Lo hace crecer la comunidad que publica,
           comparte avisos y confirma reencuentros.
+        </p>
+        <p>
+          Felpus fue declarado de interés por la Cámara de Diputados de la Provincia de Salta.
         </p>
       </LegalSection>
 

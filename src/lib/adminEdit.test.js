@@ -51,3 +51,12 @@ describe("reorderPhotos", () => {
     expect(reorderPhotos({ foto_url: "a", foto_urls: null }, ["a"]).patch).toEqual({});
   });
 });
+
+describe("buildOwnerPatch", () => {
+  it("mismos campos que el admin, menos el tipo", async () => {
+    const { buildOwnerPatch } = await import("./adminEdit");
+    expect(buildOwnerPatch({ nombre: "Luna", zona: "Centro" }).patch).toEqual({ nombre: "Luna", zona: "Centro" });
+    expect(buildOwnerPatch({ tipo: "encontrada" }).error).toBeTruthy();
+    expect(buildOwnerPatch({ contacto_email: "x@y.z", nombre: "A" }).patch).toEqual({ nombre: "A" });
+  });
+});

@@ -20,6 +20,7 @@ import { useFocusTrap } from "./useFocusTrap";
 import { logError } from "../../lib/log";
 import { buildShareMessage, whatsappUrl } from "../../lib/shareCard";
 import { track } from "../../lib/analytics";
+import { WHATSAPP_GREEN, WHATSAPP_INK } from "../../lib/theme";
 
 // Botón → canal para analytics (ver lib/analytics.js).
 const SHARE_CANAL = { wa: "whatsapp", fb: "facebook", ig: "instagram", copy: "copiar", more: "nativo", x: "nativo" };
@@ -137,7 +138,8 @@ export default function ShareSheet({ report, onClose }) {
       key: "wa",
       label: "WhatsApp",
       icon: MessageCircle,
-      bg: "#25D366",
+      bg: WHATSAPP_GREEN,
+      fg: WHATSAPP_INK,
       onClick: () => open(whatsappUrl(`${message}\n${shareUrl}`)),
     },
     {
@@ -224,7 +226,7 @@ export default function ShareSheet({ report, onClose }) {
                 disabled={a.disabled}
                 className="w-full flex flex-col items-center gap-1.5 py-1 rounded-xl disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
               >
-                <span className="w-14 h-14 rounded-full flex items-center justify-center text-white" style={{ background: a.bg }}>
+                <span className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: a.bg, color: a.fg || "#fff" }}>
                   <a.icon className={`w-6 h-6 ${a.spin ? "animate-spin" : ""}`} aria-hidden="true" />
                 </span>
                 <span className="text-[12px] font-semibold leading-tight text-center" style={{ color: C.text }}>

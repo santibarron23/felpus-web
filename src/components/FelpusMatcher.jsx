@@ -10,6 +10,7 @@ import SightingSheet from "./felpus/SightingSheet";
 import { buildSightingDraft, PUNTOS_AVISTAMIENTO, pasaFiltroTipo, isSighting } from "../lib/sighting";
 import { buildShareMessage, whatsappUrl } from "../lib/shareCard";
 import { SITE_URL } from "../lib/site";
+import { WHATSAPP_GREEN, WHATSAPP_INK } from "../lib/theme";
 import { novedadesDue, NOVEDADES_KEY_PREFIX } from "../lib/emailAvisos";
 import { findDuplicates, duplicateMessage } from "../lib/duplicates";
 import { REPORT_DRAFT_KEY, serializeReportDraft, parseReportDraft } from "../lib/reportDraft";
@@ -869,6 +870,8 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   const [adminBusyId, setAdminBusyId] = useState(null);
   // Publicación que el admin está editando (datos y orden de fotos).
   const [adminEditing, setAdminEditing] = useState(null);
+  // Aviso propio que se está editando (AdminEditReport en modo dueño).
+  const [ownerEditing, setOwnerEditing] = useState(null);
   const [adminDeleteConfirmId, setAdminDeleteConfirmId] = useState(null);
   const [usersReportLoading, setUsersReportLoading] = useState(false);
 
@@ -3086,7 +3089,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                   >
                     <Heart className="w-5 h-5" aria-hidden="true" />
                     Perdí a mi mascota
-                    <span className="text-[11px] font-medium opacity-90">Quiero encontrarla</span>
+                    <span className="text-[12px] font-medium">Quiero encontrarla</span>
                   </button>
                   <button
                     onClick={() => {
@@ -3102,7 +3105,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                   >
                     <MapPin className="w-5 h-5" aria-hidden="true" />
                     Encontré una mascota
-                    <span className="text-[11px] font-medium opacity-90">La tengo conmigo</span>
+                    <span className="text-[12px] font-medium">La tengo conmigo</span>
                   </button>
                 </div>
                 {/* Avistamiento (sighting.js): quien solo VIO una mascota en la
@@ -3196,19 +3199,20 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                     playTap();
                     s.onClick();
                   }}
-                  // El número cuenta hacia arriba con una animación (AnimatedNumber);
-                  // sin aria-label estático, un lector de pantalla podía anunciar
-                  // cada valor intermedio de la cuenta en vez de solo el final.
-                  aria-label={`${s.value} — ${s.aria || s.label}`}
+                  // El número cuenta hacia arriba con una animación (AnimatedNumber):
+                  // el visible queda oculto para el lector de pantalla y se lee el
+                  // valor final (sr-only). Antes era un aria-label que no
+                  // contenía el texto visible (WCAG 2.5.3, control por voz).
                   className="felpus-card-hover bg-white dark:bg-[var(--felpus-dark-card)] rounded-xl border shadow-sm p-3 text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
                   style={{ borderColor: C.border }}
                 >
-                  <p className="felpus-mono text-xl font-bold" style={{ color: s.color }} aria-hidden="true">
+                  <span className="block felpus-mono text-xl font-bold" style={{ color: s.color }} aria-hidden="true">
                     <AnimatedNumber value={s.value} />
-                  </p>
-                  <p className="text-[11px] font-semibold leading-tight mt-0.5" style={{ color: C.muted }} aria-hidden="true">
+                  </span>
+                  <span className="sr-only">{s.value} </span>
+                  <span className="block text-[12px] font-semibold leading-tight mt-0.5" style={{ color: C.muted }}>
                     {s.label}
-                  </p>
+                  </span>
                 </button>
               ))}
             </div>
@@ -4421,14 +4425,13 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                   <ReportCard report={matchResult.source} onOpenDetail={openReportDetail} />
                   <div className="grid gap-2 mt-3">
                     <a
-                      href={whatsappUrl(`${buildShareMessage(matchResult.source)}
-${SITE_URL}/r/${matchResult.source.id}`)}
+                      href={whatsappUrl(`${buildShareMessage(matchResult.source)}\n${SITE_URL}/r/${matchResult.source.id}`)}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => track("reporte_compartido", { canal: "whatsapp", desde: "confirmacion", tipo: matchResult.source.tipo })}
-                      className="min-h-[48px] rounded-xl flex items-center justify-center gap-2 text-sm font-bold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--felpus-focus)]"
-                      // Verde oficial de WhatsApp, igual que en la ficha (ver PureViews).
-                      style={{ background: "#25D366" }}
+                      className="min-h-[48px] rounded-xl flex items-center justify-center gap-2 text-sm font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--felpus-focus)]"
+                      // Verde oficial de WhatsApp con su texto oscuro, igual que en la ficha (ver PureViews).
+                      style={{ background: WHATSAPP_GREEN, color: WHATSAPP_INK }}
                     >
                       <MessageCircle className="w-5 h-5" aria-hidden="true" /> Compartir por WhatsApp
                     </a>
@@ -5629,6 +5632,16 @@ ${SITE_URL}/r/${matchResult.source.id}`)}
                         {!r.resuelto && (
                           <button
                             type="button"
+                            onClick={() => setOwnerEditing(r)}
+                            className="w-full min-h-[44px] flex items-center gap-1.5 px-3 py-2.5 border-t text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                            style={{ borderColor: C.border, color: C.text }}
+                          >
+                            <Pencil className="w-3.5 h-3.5" aria-hidden="true" /> Editar mi aviso
+                          </button>
+                        )}
+                        {!r.resuelto && (
+                          <button
+                            type="button"
                             onClick={() => toggleCardMatches(r)}
                             className="w-full flex items-center justify-between px-3 py-2.5 border-t text-xs font-semibold"
                             style={matchToggleStyle(r)}
@@ -6172,6 +6185,21 @@ ${SITE_URL}/r/${matchResult.source.id}`)}
         />
       )}
 
+      {ownerEditing && (
+        <AdminEditReport
+          owner
+          report={ownerEditing}
+          pushToken={reportToken(ownerEditing.id)}
+          onClose={() => setOwnerEditing(null)}
+          onSaved={() => {
+            setOwnerEditing(null);
+            setDetailReport(null);
+            pushToast("success", "Listo, tu aviso quedó actualizado.");
+            loadAll();
+          }}
+        />
+      )}
+
       {alertOptIn && (
         <AlertOptInModal
           tipo={alertOptIn.tipo}
@@ -6245,6 +6273,11 @@ ${SITE_URL}/r/${matchResult.source.id}`)}
         saved={!!detailReport && savedReportIds.has(detailReport.id)}
         onToggleSaved={handleToggleSaved}
         onAskAssistant={() => setChatOpenToken((t) => t + 1)}
+        onEdit={
+          detailReport && ((user && detailReport.userId === user.id) || reportToken(detailReport.id))
+            ? (r) => setOwnerEditing(r)
+            : undefined
+        }
       />
 
       <footer className="max-w-2xl mx-auto px-4 pb-28 pt-2 space-y-1.5">
