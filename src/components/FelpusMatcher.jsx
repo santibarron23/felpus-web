@@ -156,6 +156,8 @@ import {
 } from "../lib/push";
 import AlertOptInModal from "./felpus/AlertOptInModal";
 import OnboardingTutorial, { markWelcomeSeen, welcomeSeen } from "./felpus/OnboardingTutorial";
+import ImpactPanel from "./felpus/ImpactPanel";
+import { computeImpactMetrics } from "../lib/impactMetrics";
 import { logError } from "../lib/log";
 import { useTheme, useThemeToggle } from "./felpus/ThemeProvider";
 import MapPicker from "./MapPicker";
@@ -858,7 +860,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   // propósito: solo lo toca una persona, así que no vale la pena acoplarlo a
   // `reports`/`loadingReports` (que sí necesitan servir a todo el mundo).
   // "metricas" | "denuncias" | "reportes"
-  const [adminSection, setAdminSection] = useState("metricas");
+  const [adminSection, setAdminSection] = useState("impacto");
   const [adminMetrics, setAdminMetrics] = useState(null);
   const [adminFlags, setAdminFlags] = useState([]);
   const [adminAllReports, setAdminAllReports] = useState([]);
@@ -996,6 +998,12 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   // (ver loadAdminData): no hace falta ningún viaje de red extra ni
   // función SQL nueva (ver computeAdminBreakdowns en matching.js).
   const adminBreakdowns = useMemo(() => computeAdminBreakdowns(adminAllReports), [adminAllReports]);
+  // Impacto (ImpactPanel): compara todos los avisos activos entre sí, así
+  // que se calcula solo con esa pestaña abierta.
+  const adminImpact = useMemo(
+    () => (adminSection === "impacto" && adminAllReports.length ? computeImpactMetrics(adminAllReports) : null),
+    [adminSection, adminAllReports]
+  );
 
   const adminSearchNormalized = normalizeText(adminSearch.trim());
   const tieneFotoDudosa = (r) => !r.detalles?.sin_foto && (r.fotos || []).some((f) => f.dudosa);
@@ -5170,8 +5178,9 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
               </button>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex gap-2 overflow-x-auto -mx-1 px-1">
               {[
+                { id: "impacto", label: "Impacto" },
                 { id: "metricas", label: "Métricas" },
                 { id: "denuncias", label: `Denuncias${adminFlags.length ? ` (${adminFlags.length})` : ""}` },
                 { id: "reportes", label: "Reportes" },
@@ -5181,7 +5190,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                   key={s.id}
                   type="button"
                   onClick={() => setAdminSection(s.id)}
-                  className="flex-1 text-xs font-bold py-2 rounded-lg border"
+                  className="flex-1 shrink-0 whitespace-nowrap px-2.5 text-xs font-bold py-2 rounded-lg border"
                   style={
                     adminSection === s.id
                       ? { background: C.ink, color: C.cream, borderColor: C.ink }
@@ -5221,6 +5230,8 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                 }}
               />
             )}
+
+            {!adminLoading && !adminError && adminSection === "impacto" && <ImpactPanel metrics={adminImpact} />}
 
             {!adminLoading && !adminError && adminSection === "metricas" && (
               <div className="grid grid-cols-2 gap-2">
