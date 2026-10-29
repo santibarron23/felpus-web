@@ -19,6 +19,10 @@ import { useTheme } from "./ThemeProvider";
 import { useFocusTrap } from "./useFocusTrap";
 import { logError } from "../../lib/log";
 import { buildShareMessage, whatsappUrl } from "../../lib/shareCard";
+import { track } from "../../lib/analytics";
+
+// Botón → canal para analytics (ver lib/analytics.js).
+const SHARE_CANAL = { wa: "whatsapp", fb: "facebook", ig: "instagram", copy: "copiar", more: "nativo", x: "nativo" };
 
 function canShareFiles() {
   try {
@@ -213,7 +217,10 @@ export default function ShareSheet({ report, onClose }) {
             <li key={a.key}>
               <button
                 type="button"
-                onClick={a.onClick}
+                onClick={() => {
+                  track("reporte_compartido", { canal: SHARE_CANAL[a.key], tipo: report.tipo });
+                  a.onClick();
+                }}
                 disabled={a.disabled}
                 className="w-full flex flex-col items-center gap-1.5 py-1 rounded-xl disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
               >

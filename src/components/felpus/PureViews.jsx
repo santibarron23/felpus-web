@@ -38,7 +38,9 @@ import {
   Flag,
   Bookmark,
   Eye,
+  ShieldCheck,
 } from "lucide-react";
+import { track } from "../../lib/analytics";
 import { scoreLabel, isRecent, formatFechaAR, reportPhotoAlt, COLOR_OPTIONS, REPORT_FLAG_REASONS, fechaLabel, getRazaOptions, RAZA_ESPECIALES } from "../../lib/matching";
 import { SITE_URL } from "../../lib/site";
 import { logError } from "../../lib/log";
@@ -499,6 +501,7 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
                   {report.contactoWhatsapp && (
                     <a
                       href={whatsappUrl(contactMessage(report), report.contactoWhatsapp)}
+                      onClick={() => track("contacto_iniciado", { canal: "whatsapp", tipo: report.tipo })}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold text-white"
@@ -514,6 +517,7 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
                   {report.contactoEmail && (
                     <a
                       href={`mailto:${report.contactoEmail}?subject=${encodeURIComponent("Sobre tu mascota en Felpus")}&body=${encodeURIComponent(contactMessage(report))}`}
+                      onClick={() => track("contacto_iniciado", { canal: "email", tipo: report.tipo })}
                       className="flex-1 flex items-center justify-center gap-1.5 border rounded-xl py-2.5 text-sm font-bold"
                       style={{ borderColor: C.border, color: C.text }}
                     >
@@ -522,6 +526,19 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
                   )}
                 </div>
               )}
+              {/* Consejos de seguridad (2026-10-29): discretos, cerrados por
+                  defecto. Las estafas típicas con mascotas perdidas piden
+                  plata "para el traslado" o un rescate. */}
+              <details className="rounded-xl text-[13px]" style={{ color: C.text }}>
+                <summary className="cursor-pointer select-none min-h-[44px] flex items-center gap-1.5 font-semibold rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50" style={{ color: C.muted }}>
+                  <ShieldCheck className="w-4 h-4 shrink-0" aria-hidden="true" /> Consejos para contactar de forma segura
+                </summary>
+                <ul className="list-disc pl-5 pb-1 space-y-1 leading-snug">
+                  <li>Pedí que te cuenten una seña de la mascota que no esté en la foto.</li>
+                  <li>No mandes plata por adelantado, aunque te la pidan para el traslado o como recompensa.</li>
+                  <li>Para encontrarte, elegí un lugar público y de día, y si podés andá acompañado.</li>
+                </ul>
+              </details>
             </div>
           )}
           <div className="flex gap-2 pt-2">

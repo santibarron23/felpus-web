@@ -11,6 +11,8 @@ async function fetchActiveReportIds() {
   try {
     const params = new URLSearchParams({
       resuelto: "eq.false",
+      // Ocultas por denuncias o por el admin: su página ya responde noindex.
+      oculto: "not.is.true",
       select: "id,creado_en",
       order: "creado_en.desc",
       limit: "5000",
@@ -42,6 +44,12 @@ export default async function sitemap() {
       changeFrequency: "daily",
       priority: 0.9,
     })),
+    {
+      url: `${SITE_URL}/sobre`,
+      lastModified: new Date("2026-10-29"),
+      changeFrequency: "monthly",
+      priority: 0.5,
+    },
     {
       url: `${SITE_URL}/privacidad`,
       lastModified: new Date("2026-08-06"),
