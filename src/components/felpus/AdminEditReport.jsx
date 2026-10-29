@@ -7,13 +7,27 @@
 //  - Dueño (owner, 2026-10-29): vía /api/reports/edit, con su sesión o el
 //    token del dispositivo con el que publicó (pushToken). Sin el campo
 //    Tipo: perdida/encontrada no se cambia (ver buildOwnerPatch).
+//  - Fotos: el dueño las reordena; el admin además las recorta o las saca
+//    (2026-10-29). Una recortada se sube al bucket recién al guardar, con su
+//    histograma y embedding nuevos; la vieja la borra la ruta.
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { ArrowLeft, ArrowRight, Loader2, Star, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Crop, Loader2, Star, Trash2, X } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
 import { useFocusTrap } from "./useFocusTrap";
 import { authedFetch } from "../../lib/push";
-import { COLOR_OPTIONS, EDAD_OPTIONS, PESO_OPTIONS, SEXO_OPTIONS, TAMANO_OPTIONS, fechaLabel } from "../../lib/matching";
+import { uploadPhoto } from "../../lib/store";
+import PhotoCropper from "./PhotoCropper";
+import {
+  COLOR_OPTIONS,
+  EDAD_OPTIONS,
+  PESO_OPTIONS,
+  SEXO_OPTIONS,
+  TAMANO_OPTIONS,
+  fechaLabel,
+  computeHistogram,
+  getImageEmbedding,
+} from "../../lib/matching";
 
 function initialFields(r) {
   return {
@@ -37,13 +51,18 @@ function initialFields(r) {
 export default function AdminEditReport({ report, onClose, onSaved, owner = false, pushToken = null }) {
   const C = useTheme();
   const [fields, setFields] = useState(() => initialFields(report));
-  const [fotos, setFotos] = useState(() => (report.fotos || []).map((f) => f.url).filter(Boolean));
+  // { id, url } de las fotos publicadas; { id, nueva: { dataUrl, hist,
+  // embedding } } de las recortadas que todavía no se subieron.
+  const [fotos, setFotos] = useState(() => (report.fotos || []).filter((f) => f.url).map((f) => ({ id: f.url, url: f.url })));
+  const [recortando, setRecortando] = useState(null); // índice de la foto en el recortador
+  const [procesando, setProcesando] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const firstRef = useRef(null);
   const formRef = useRef(null);
   // Tab no se escapa del diálogo y Escape lo cierra (antes solo Escape).
-  useFocusTrap(true, formRef, onClose);
+  // En pausa mientras está abierto el recortador, que tiene el suyo.
+  useFocusTrap(recortando == null, formRef, onClose);
 
   useEffect(() => {
     firstRef.current?.focus();
@@ -64,6 +83,22 @@ export default function AdminEditReport({ report, onClose, onSaved, owner = fals
       return next;
     });
   const makeMain = (i) => setFotos((list) => [list[i], ...list.filter((_, k) => k !== i)]);
+  const quitar = (i) => setFotos((list) => (list.length > 1 ? list.filter((_, k) => k !== i) : list));
+
+  async function recorteListo(dataUrl) {
+    const i = recortando;
+    setRecortando(null);
+    setProcesando(true);
+    try {
+      const hist = await computeHistogram(dataUrl);
+      const embedding = await getImageEmbedding(dataUrl);
+      setFotos((list) => list.map((f, k) => (k === i ? { id: `nueva-${Date.now()}`, nueva: { dataUrl, hist, embedding } } : f)));
+    } catch {
+      setError("No se pudo procesar el recorte. Probá de nuevo.");
+    } finally {
+      setProcesando(false);
+    }
+  }
 
   async function save(e) {
     e.preventDefault();
@@ -75,7 +110,18 @@ export default function AdminEditReport({ report, onClose, onSaved, owner = fals
     setSaving(true);
     try {
       const original = (report.fotos || []).map((f) => f.url).filter(Boolean);
-      const orderChanged = fotos.some((u, i) => u !== original[i]);
+      const fotosCambiaron = fotos.length !== original.length || fotos.some((f, i) => f.url !== original[i]);
+      // Admin: las recortadas se suben recién ahora y va la lista completa.
+      let fotosBody = {};
+      if (fotosCambiaron && owner) fotosBody = { fotoOrder: fotos.map((f) => f.url) };
+      if (fotosCambiaron && !owner) {
+        const lista = [];
+        for (const f of fotos) {
+          if (!f.nueva) lista.push({ url: f.url });
+          else lista.push({ url: await uploadPhoto(f.nueva.dataUrl, `${report.id}-r`), hist: f.nueva.hist, embedding: f.nueva.embedding });
+        }
+        fotosBody = { fotos: lista };
+      }
       const { tipo, ...sinTipo } = fields;
       const res = await authedFetch(owner ? "/api/reports/edit" : "/api/admin/report", {
         method: "PATCH",
@@ -84,7 +130,7 @@ export default function AdminEditReport({ report, onClose, onSaved, owner = fals
           reportId: report.id,
           ...(owner && pushToken ? { pushToken } : {}),
           fields: { ...(owner ? sinTipo : { ...sinTipo, tipo }), color_otro: fields.color === "Otro color" ? fields.color_otro : "" },
-          ...(orderChanged ? { fotoOrder: fotos } : {}),
+          ...fotosBody,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -149,10 +195,20 @@ export default function AdminEditReport({ report, onClose, onSaved, owner = fals
                 Fotos {fotos.length > 1 ? "— la primera es la principal" : ""}
               </h3>
               <ol className="grid grid-cols-3 gap-2">
-                {fotos.map((url, i) => (
-                  <li key={url} className="rounded-xl border overflow-hidden" style={{ borderColor: i === 0 ? C.red : C.border, background: C.surface }}>
+                {fotos.map((foto, i) => (
+                  <li key={foto.id} className="rounded-xl border overflow-hidden" style={{ borderColor: i === 0 ? C.red : C.border, background: C.surface }}>
                     <div className="relative aspect-square">
-                      <Image src={url} alt={`Foto ${i + 1}`} fill sizes="128px" className="object-cover" />
+                      {foto.nueva ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- recorte local (data URL), todavía sin subir
+                        <img src={foto.nueva.dataUrl} alt={`Foto ${i + 1} (recortada)`} className="absolute inset-0 w-full h-full object-cover" />
+                      ) : (
+                        <Image src={foto.url} alt={`Foto ${i + 1}`} fill sizes="128px" className="object-cover" />
+                      )}
+                      {foto.nueva && (
+                        <span className="absolute bottom-1 left-1 text-[11px] font-bold text-white rounded-full px-2 py-0.5 bg-black/70">
+                          Recortada
+                        </span>
+                      )}
                       {i === 0 && (
                         <span className="absolute top-1 left-1 text-[11px] font-bold text-white rounded-full px-2 py-0.5" style={{ background: C.redSolid }}>
                           Principal
@@ -193,9 +249,41 @@ export default function AdminEditReport({ report, onClose, onSaved, owner = fals
                         </button>
                       </div>
                     )}
+                    {/* Solo el admin recorta o saca fotos (la publicación
+                        siempre queda con al menos una). */}
+                    {!owner && (
+                      <div className="flex items-center justify-between border-t" style={{ borderColor: C.border }}>
+                        <button
+                          type="button"
+                          onClick={() => setRecortando(i)}
+                          disabled={procesando}
+                          aria-label={`Recortar la foto ${i + 1}`}
+                          title="Recortar"
+                          className="flex-1 h-10 flex items-center justify-center disabled:opacity-40"
+                        >
+                          <Crop className="w-4 h-4" aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => quitar(i)}
+                          disabled={fotos.length < 2}
+                          aria-label={`Quitar la foto ${i + 1}`}
+                          title={fotos.length < 2 ? "La publicación tiene que tener al menos una foto" : "Quitar"}
+                          className="flex-1 h-10 flex items-center justify-center disabled:opacity-30"
+                          style={{ color: C.red }}
+                        >
+                          <Trash2 className="w-4 h-4" aria-hidden="true" />
+                        </button>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ol>
+              {!owner && (
+                <p className="text-[12px] mt-1.5" style={{ color: C.muted }}>
+                  {procesando ? "Procesando el recorte…" : "Las fotos quitadas o reemplazadas se borran al guardar."}
+                </p>
+              )}
             </section>
           )}
 
@@ -301,7 +389,7 @@ export default function AdminEditReport({ report, onClose, onSaved, owner = fals
             </button>
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || procesando}
               className="flex-1 rounded-xl py-3 text-sm font-bold text-white disabled:opacity-60 inline-flex items-center justify-center gap-2"
               style={{ background: C.redSolid }}
             >
@@ -310,6 +398,13 @@ export default function AdminEditReport({ report, onClose, onSaved, owner = fals
           </div>
         </footer>
       </form>
+      {recortando != null && fotos[recortando] && (
+        <PhotoCropper
+          src={fotos[recortando].nueva?.dataUrl || fotos[recortando].url}
+          onCancel={() => setRecortando(null)}
+          onDone={recorteListo}
+        />
+      )}
     </div>
   );
 }
