@@ -205,9 +205,12 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
       >
         <Bell className="w-3.5 h-3.5" aria-hidden="true" style={{ color: C.red }} /> Vigilar esta zona
       </Link>
+      {/* En pantalla completa, más arriba (2026-10-29, a pedido): pegada al
+          borde quedaba contra la barra de Safari y costaba verla. Alineada
+          con el botón "Ir a mi ubicación". */}
       <div
-        className="absolute bottom-2 left-2 flex items-center gap-3 rounded-full px-3 py-1.5 text-xs font-bold shadow-md border"
-        style={{ background: C.surface, borderColor: C.border, color: C.text }}
+        className="absolute left-2 flex items-center gap-3 rounded-full px-3 py-1.5 text-xs font-bold shadow-md border"
+        style={{ background: C.surface, borderColor: C.border, color: C.text, bottom: fullscreen ? 28 : 8 }}
         aria-hidden="true"
       >
         <span className="inline-flex items-center gap-1.5">
@@ -286,7 +289,7 @@ export default function ReportsMap({ reports, onSelectReport, center }) {
                 disabled={geoState === "locating"}
                 aria-label="Ir a mi ubicación"
                 className="absolute right-3 w-12 h-12 rounded-full shadow-lg flex items-center justify-center disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
-                style={{ background: C.surface, color: C.text, bottom: 12 }}
+                style={{ background: C.surface, color: C.text, bottom: 20 }}
               >
                 {geoState === "locating" ? <Loader2 className="w-5 h-5 animate-spin" /> : <LocateFixed className="w-5 h-5" />}
               </button>
