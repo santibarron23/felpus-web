@@ -136,6 +136,23 @@ function baseRow(overrides = {}) {
 // avisar antes de que llegue a producción.
 // -----------------------------------------------------------------------
 describe("fetchReports", () => {
+  // Coordenadas (migración 20261029_01): el listado público nunca pide
+  // lat/lng exactos si existen las aproximadas.
+  it("pide lat_aprox/lng_aprox (no lat/lng) y las usa como coordenadas del reporte", async () => {
+    const builder = makeBuilder({
+      data: [baseRow({ lat: undefined, lng: undefined, lat_aprox: -34.5, lng_aprox: -58.404 })],
+      error: null,
+    });
+    supabaseMock.from.mockReturnValueOnce(builder);
+    const result = await fetchReports();
+    const cols = builder.select.mock.calls[0][0].split(",");
+    expect(cols).toContain("lat_aprox");
+    expect(cols).toContain("lng_aprox");
+    expect(cols).not.toContain("lat");
+    expect(cols).not.toContain("lng");
+    expect(result[0]).toMatchObject({ lat: -34.5, lng: -58.404, coordAprox: true });
+  });
+
   it("con las dos columnas opcionales disponibles, pide todo en un solo intento", async () => {
     supabaseMock.from.mockReturnValueOnce(makeBuilder({ data: [baseRow()], error: null }));
     const result = await fetchReports();
@@ -192,6 +209,27 @@ describe("fetchReports", () => {
     expect(supabaseMock.from).toHaveBeenCalledTimes(2);
     expect(result).toHaveLength(1);
     expect(result[0].inactivo).toBe(false);
+  });
+
+  // Último del bloque a propósito: después de esto el módulo queda pidiendo
+  // lat/lng por el resto de la sesión (igual que en el navegador).
+  it("sin la migración de coordenadas, reintenta una vez con lat/lng y no vuelve a probar", async () => {
+    const sinAprox = makeBuilder({ data: null, error: missingColumnError("lat_aprox") });
+    const legacy = makeBuilder({ data: [baseRow()], error: null });
+    supabaseMock.from.mockReturnValueOnce(sinAprox).mockReturnValueOnce(legacy);
+    const result = await fetchReports();
+    expect(supabaseMock.from).toHaveBeenCalledTimes(2);
+    const cols = legacy.select.mock.calls[0][0].split(",");
+    expect(cols).toContain("lat");
+    expect(cols).not.toContain("lat_aprox");
+    expect(result[0]).toMatchObject({ lat: -34.5, lng: -58.4, coordAprox: false });
+
+    supabaseMock.from.mockClear();
+    const otra = makeBuilder({ data: [baseRow()], error: null });
+    supabaseMock.from.mockReturnValueOnce(otra);
+    await fetchReports();
+    expect(supabaseMock.from).toHaveBeenCalledTimes(1);
+    expect(otra.select.mock.calls[0][0].split(",")).toContain("lat");
   });
 
   it("un error que NO es de columna faltante se propaga de inmediato, sin reintentar", async () => {

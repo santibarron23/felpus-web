@@ -17,7 +17,7 @@
 // frena en el CI antes de mergear.
 export const REPORT_LIST_BASE_FIELDS = [
   "id", "tipo", "especie", "nombre", "color", "color_otro", "tamano", "sexo", "edad", "peso",
-  "zona", "lat", "lng", "fecha", "descripcion", "foto_url", "hist", "embedding", "foto_urls",
+  "zona", "lat_aprox", "lng_aprox", "fecha", "descripcion", "foto_url", "hist", "embedding", "foto_urls",
   "hists", "embeddings", "nickname", "resuelto", "resuelto_por", "resuelto_por_user_id",
   "resuelto_en", "creado_en", "user_id",
 ];
@@ -37,3 +37,26 @@ export const REPORT_LIST_ALL_COLUMNS = [...REPORT_LIST_BASE_FIELDS, ...REPORT_LI
 // aparecen enseguida) y después, en segundo plano, solo id + vectores (ver
 // fetchReports({ light }) y fetchReportVectors en store.js).
 export const REPORT_VECTOR_FIELDS = ["hist", "embedding", "hists", "embeddings"];
+
+// Coordenadas (2026-10-29): el listado público pide lat_aprox/lng_aprox
+// (calculadas por la base sobre una grilla de ~450 m, migración
+// 20261029_01) y NO lat/lng exactos, que dejan de ser legibles con la clave
+// pública: el punto que marca quien publica puede ser su casa, y el
+// corrimiento que se hacía solo en pantalla (approxLocation.js) se podía
+// deshacer porque el código es público.
+// Mientras la migración no se haya corrido, lat_aprox no existe: el
+// listado reintenta con las exactas, igual que antes (ver
+// missingCoordAprox y fetchReports en store.js, y /api/health).
+export const REPORT_COORD_APROX = ["lat_aprox", "lng_aprox"];
+export const REPORT_COORD_LEGACY = ["lat", "lng"];
+
+export function missingCoordAprox(error) {
+  if (!error) return false;
+  const text = `${error.message || ""} ${error.code || ""} ${error.details || ""} ${error.hint || ""}`;
+  return /\b(lat|lng)_aprox\b/i.test(text) && (text.includes("42703") || /does not exist/i.test(text));
+}
+
+// Mismas columnas con lat/lng exactos en lugar de los aproximados.
+export function withLegacyCoords(columns) {
+  return columns.map((c) => (c === "lat_aprox" ? "lat" : c === "lng_aprox" ? "lng" : c));
+}

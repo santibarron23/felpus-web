@@ -57,7 +57,9 @@ Abrí felpus.com y fijate que el contador de mascotas no esté en 0, o abrí
 La clave `anon` de Supabase es **pública por diseño** (va en el JS del
 sitio, cualquiera la ve). Por eso la seguridad depende de qué deja leer.
 Nunca legibles con ella: contacto de reportes, `contributors.whatsapp`,
-tokens de push y el listado del bucket de fotos.
+tokens de push, el listado del bucket de fotos y, desde `20261029_01`, las
+coordenadas exactas de los reportes (`lat`/`lng`, `location`): el listado
+público usa `lat_aprox`/`lng_aprox`.
 
 - `contributors` tiene el SELECT **por columna**, sin `whatsapp`
   (migración `20261023_01`). En el código, usá `CONTRIBUTOR_PUBLIC_COLUMNS`

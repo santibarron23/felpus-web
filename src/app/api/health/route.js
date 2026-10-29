@@ -1,4 +1,4 @@
-import { REPORT_LIST_ALL_COLUMNS } from "../../../lib/reportColumns";
+import { REPORT_LIST_ALL_COLUMNS, missingCoordAprox, withLegacyCoords } from "../../../lib/reportColumns";
 import { runPrivacyProbes } from "../../../lib/privacyProbes";
 
 // Chequeo de salud (lo llama .github/workflows/salud.yml cada 30 minutos):
@@ -18,10 +18,19 @@ export async function GET() {
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anon) return Response.json({ ok: false, error: "Supabase no configurado." }, { status: 503 });
   try {
-    const res = await fetch(`${url}/rest/v1/reports?select=${REPORT_LIST_ALL_COLUMNS.join(",")}&limit=1`, {
-      headers: { apikey: anon, Authorization: `Bearer ${anon}`, Prefer: "count=exact", Range: "0-0" },
-      cache: "no-store",
-    });
+    const listado = (cols) =>
+      fetch(`${url}/rest/v1/reports?select=${cols.join(",")}&limit=1`, {
+        headers: { apikey: anon, Authorization: `Bearer ${anon}`, Prefer: "count=exact", Range: "0-0" },
+        cache: "no-store",
+      });
+    // Igual que fetchReports: sin la migración 20261029_01 todavía no existe
+    // lat_aprox y el sitio usa lat/lng (ver reportColumns.js).
+    let res = await listado(REPORT_LIST_ALL_COLUMNS);
+    let coordsAprox = true;
+    if (!res.ok && missingCoordAprox(await res.clone().json().catch(() => null))) {
+      coordsAprox = false;
+      res = await listado(withLegacyCoords(REPORT_LIST_ALL_COLUMNS));
+    }
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       return Response.json(
@@ -33,7 +42,9 @@ export async function GET() {
     if (!Number.isFinite(total) || total === 0) {
       return Response.json({ ok: false, error: "El listado volvió vacío." }, { status: 503 });
     }
-    const leaks = await runPrivacyProbes(url, anon);
+    // Las coordenadas exactas solo se exigen privadas una vez corrida la
+    // migración (antes, el sitio todavía las necesita).
+    const leaks = await runPrivacyProbes(url, anon, fetch, { coordsAprox });
     if (leaks.length) {
       return Response.json({ ok: false, error: "Datos privados legibles con la clave pública.", leaks }, { status: 503 });
     }

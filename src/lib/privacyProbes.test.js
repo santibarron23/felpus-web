@@ -24,6 +24,17 @@ describe("runPrivacyProbes", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(PRIVACY_PROBES.length);
   });
 
+  it("las coordenadas exactas se prueban solo si ya existe lat_aprox", async () => {
+    const fetchImpl = vi.fn(async (url) => {
+      const leaked = url.includes("reports?select=lat&");
+      return { status: leaked ? 200 : 401, json: async () => (leaked ? [{ lat: -24.78 }] : { message: "denied" }) };
+    });
+    expect(await runPrivacyProbes("https://x.supabase.co", "anon", fetchImpl)).toEqual(["reports.lat"]);
+    fetchImpl.mockClear();
+    expect(await runPrivacyProbes("https://x.supabase.co", "anon", fetchImpl, { coordsAprox: false })).toEqual([]);
+    expect(fetchImpl).toHaveBeenCalledTimes(PRIVACY_PROBES.length - 1);
+  });
+
   it("un error de red no cuenta como filtración", async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error("offline");

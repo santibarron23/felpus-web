@@ -9,6 +9,9 @@ export const PRIVACY_PROBES = [
   { name: "reports.contacto_email", method: "GET", path: "/rest/v1/reports?select=contacto_email&limit=1" },
   { name: "reports.push_subscription", method: "GET", path: "/rest/v1/reports?select=push_subscription&limit=1" },
   { name: "contributors.whatsapp", method: "GET", path: "/rest/v1/contributors?select=whatsapp&limit=1" },
+  // Punto exacto que marcó quien publicó (puede ser su casa). Solo desde la
+  // migración 20261029_01: antes el listado público todavía lo usa.
+  { name: "reports.lat", method: "GET", path: "/rest/v1/reports?select=lat&lat=not.is.null&limit=1", coordsAprox: true },
   {
     name: "storage: listar felpus-photos",
     method: "POST",
@@ -24,9 +27,10 @@ export function probeLeaked(status, body) {
   return Array.isArray(body) ? body.length > 0 : body != null;
 }
 
-export async function runPrivacyProbes(url, anonKey, fetchImpl = fetch) {
+export async function runPrivacyProbes(url, anonKey, fetchImpl = fetch, { coordsAprox = true } = {}) {
   const leaks = [];
   for (const probe of PRIVACY_PROBES) {
+    if (probe.coordsAprox && !coordsAprox) continue;
     try {
       const res = await fetchImpl(`${url}${probe.path}`, {
         method: probe.method,

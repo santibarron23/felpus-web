@@ -138,7 +138,14 @@ comprobados interceptando `gtag`. **No se publicó ningún reporte real**
 (`.env.local` apunta a producción): la confirmación se probó cargando un
 reporte existente en memoria.
 
-## Decisión pendiente: coordenadas exactas
+## Coordenadas exactas — en la rama `coordenadas-aproximadas`
+
+Implementado como se propone abajo (migración `20261029_01`, código
+compatible antes y después de correrla, prueba en la réplica local con
+control negativo, y `/api/health` vigilando `lat` una vez migrado). Falta:
+mergear, esperar el despliegue y **recién ahí** correr la migración.
+
+## Propuesta original: coordenadas exactas
 
 Propuesta: columnas `lat_aprox`/`lng_aprox` en `reports` (redondeadas a una
 grilla de ~500 m, calculadas por la base), dar acceso público solo a esas y
