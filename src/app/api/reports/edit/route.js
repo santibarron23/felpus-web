@@ -2,6 +2,7 @@ import { logError } from "../../../../lib/log";
 import { isJsonRequest } from "../../../../lib/httpGuards";
 import { getAuthUserId, supabaseServerEnv } from "../../../../lib/serverAuth";
 import { buildOwnerPatch, reorderPhotos } from "../../../../lib/adminEdit";
+import { respuestaValida } from "../../../../lib/consejos";
 
 // Quien publicó corrige su aviso (2026-10-29): nombre, datos, zona, fecha,
 // descripción y orden de las fotos — los mismos campos que el admin
@@ -10,6 +11,8 @@ import { buildOwnerPatch, reorderPhotos } from "../../../../lib/adminEdit";
 // criterio que /api/reports/renew). La autoría se comprueba en la base, en
 // el mismo PATCH (filtro por user_id o push_token): nunca se confía en lo
 // que diga el cliente. El contacto, el dueño y el reencuentro quedan fuera.
+// También guarda la respuesta a la pregunta opcional de los consejos
+// (consejo: { clave, valor }, ver consejos.js), sumándola a `detalles`.
 export const runtime = "nodejs";
 
 const ID_RE = /^[A-Za-z0-9-]{1,64}$/;
@@ -45,19 +48,29 @@ export async function PATCH(request) {
 
   const fields = buildOwnerPatch(body.fields || {});
   if (fields.error) return Response.json({ error: fields.error }, { status: 400 });
+  const consejo = body.consejo;
+  if (consejo !== undefined && !respuestaValida(consejo?.clave, consejo?.valor)) {
+    return Response.json({ error: "Respuesta inválida." }, { status: 400 });
+  }
 
   const headers = { apikey: env.serviceKey, Authorization: `Bearer ${env.serviceKey}`, "Content-Type": "application/json" };
   const base = `${env.supabaseUrl}/rest/v1/reports?id=eq.${encodeURIComponent(reportId)}&${filter}`;
   const noEsTuyo = () => Response.json({ error: "Solo quien publicó el aviso puede editarlo." }, { status: 403 });
   try {
     let photos = { patch: {} };
-    if (body.fotoOrder !== undefined) {
+    if (body.fotoOrder !== undefined || consejo !== undefined) {
       const res = await fetch(`${base}&select=${PHOTO_COLUMNS}`, { headers });
       if (!res.ok) throw new Error(`Supabase ${res.status}`);
       const [row] = await res.json();
       if (!row) return noEsTuyo();
-      photos = reorderPhotos(row, body.fotoOrder);
-      if (photos.error) return Response.json({ error: photos.error }, { status: 400 });
+      if (body.fotoOrder !== undefined) {
+        photos = reorderPhotos(row, body.fotoOrder);
+        if (photos.error) return Response.json({ error: photos.error }, { status: 400 });
+      }
+      if (consejo !== undefined) {
+        const detalles = photos.patch.detalles !== undefined ? photos.patch.detalles : row.detalles;
+        photos.patch.detalles = { ...(detalles || {}), [consejo.clave]: consejo.valor };
+      }
     }
     const patch = { ...fields.patch, ...photos.patch };
     if (Object.keys(patch).length === 0) return Response.json({ ok: true, changed: 0 });
