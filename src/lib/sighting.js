@@ -11,10 +11,20 @@
 //  - sin_foto: true → no había foto; la imagen guardada es una genérica, que
 //    va en fotos_dudosas para no usarse al comparar fotos.
 //  - avistamiento_de: id del reporte de perdida desde el que se tocó "La vi".
+//  - direccion: hacia dónde iba (DIRECCIONES), opcional (2026-10-30).
+//  - comentario: texto libre ≤ COMENTARIO_MAX, opcional y público (2026-10-30).
 // El contacto es opcional (ver validateReportContact).
 import { composeDescripcionBase } from "./matching";
 
-export const PUNTOS_AVISTAMIENTO = 10; // award_points acepta ("reporte", 10)
+export const PUNTOS_AVISTAMIENTO = 10;
+export const COMENTARIO_MAX = 300;
+export const DIRECCIONES = [
+  { id: "norte", label: "Norte" },
+  { id: "sur", label: "Sur" },
+  { id: "este", label: "Este" },
+  { id: "oeste", label: "Oeste" },
+  { id: "no_se", label: "No sé" },
+]; // award_points acepta ("reporte", 10)
 const ID_RE = /^[A-Za-z0-9-]{1,64}$/;
 const TZ = "America/Argentina/Salta";
 
@@ -133,6 +143,8 @@ export function buildSightingDraft(input, now = Date.now()) {
       hora: horaLocal(vistaEn),
       ...(sinFoto ? { sin_foto: true } : {}),
       ...(vistaDe ? { avistamiento_de: vistaDe } : {}),
+      ...(DIRECCIONES.some((d) => d.id === i.direccion) && i.direccion !== "no_se" ? { direccion: i.direccion } : {}),
+      ...((i.comentario || "").trim() ? { comentario: i.comentario.trim().slice(0, COMENTARIO_MAX) } : {}),
       ...(dudosas.length ? { fotos_dudosas: dudosas } : {}),
     },
     contactoWhatsapp: i.contactoWhatsapp || "",
@@ -153,4 +165,43 @@ export function sightingMissing({ lat, lng, zona, especie, vistaEn }) {
   if (especie !== "perro" && especie !== "gato") faltan.push("perro o gato");
   if (vistaEn === null) faltan.push("cuándo la viste");
   return faltan;
+}
+
+// Servidor (create-report): direccion, comentario y avistamiento_de solo en
+// un avistamiento, con valores válidos. Devuelve { detalles } o { error }.
+export function validarDatosAvistamiento(row) {
+  const d = row?.detalles;
+  if (!d) return { detalles: d ?? null };
+  const tiene = ["direccion", "comentario", "avistamiento_de"].filter((k) => d[k] !== undefined);
+  if (!tiene.length) return { detalles: d };
+  if (row.tipo !== "encontrada" || d.avistamiento !== true) return { error: "Datos de avistamiento inválidos." };
+  if (d.direccion !== undefined && !DIRECCIONES.some((x) => x.id === d.direccion && x.id !== "no_se")) return { error: "Dirección inválida." };
+  if (d.avistamiento_de !== undefined && (typeof d.avistamiento_de !== "string" || !ID_RE.test(d.avistamiento_de))) return { error: "Datos de avistamiento inválidos." };
+  if (d.comentario === undefined) return { detalles: d };
+  if (typeof d.comentario !== "string") return { error: "Comentario inválido." };
+  const comentario = d.comentario.trim();
+  if (comentario.length > COMENTARIO_MAX) return { error: `El comentario puede tener hasta ${COMENTARIO_MAX} caracteres.` };
+  const { comentario: _c, ...resto } = d;
+  return { detalles: comentario ? { ...resto, comentario } : resto };
+}
+
+export function direccionLabel(id) {
+  return DIRECCIONES.find((d) => d.id === id && d.id !== "no_se")?.label || "";
+}
+
+// Historial de una perdida: avistamientos vinculados (avistamiento_de), sin
+// los ocultos ni los que el dueño marcó "No es mi mascota", del más nuevo al
+// más viejo (por cuándo la vieron; si no, por cuándo se publicó).
+export const DESCARTADOS_MAX = 50;
+function vistoMs(r) {
+  const hora = /^\d{2}:\d{2}$/.test(r.detalles?.hora || "") ? r.detalles.hora : "00:00";
+  const ms = r.fecha ? new Date(`${r.fecha}T${hora}:00-03:00`).getTime() : NaN;
+  return Number.isFinite(ms) ? ms : r.creadoEn || 0;
+}
+export function avistamientosDe(perdida, reports) {
+  if (!perdida?.id) return [];
+  const descartados = new Set(Array.isArray(perdida.detalles?.avistamientos_descartados) ? perdida.detalles.avistamientos_descartados : []);
+  return (reports || [])
+    .filter((r) => isSighting(r) && r.detalles?.avistamiento_de === perdida.id && !r.oculto && !descartados.has(r.id))
+    .sort((a, b) => vistoMs(b) - vistoMs(a));
 }

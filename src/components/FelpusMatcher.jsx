@@ -7,7 +7,7 @@ import SocialLinks from "./felpus/SocialLinks";
 import FelpusAssistant from "./felpus/FelpusAssistant";
 import ImportPostCard from "./felpus/ImportPostCard";
 import SightingSheet from "./felpus/SightingSheet";
-import { buildSightingDraft, PUNTOS_AVISTAMIENTO, pasaFiltroTipo, isSighting } from "../lib/sighting";
+import { buildSightingDraft, PUNTOS_AVISTAMIENTO, pasaFiltroTipo, isSighting, avistamientosDe } from "../lib/sighting";
 import { buildShareMessage, whatsappUrl } from "../lib/shareCard";
 import { SITE_URL } from "../lib/site";
 import { WHATSAPP_GREEN, WHATSAPP_INK } from "../lib/theme";
@@ -185,6 +185,7 @@ import Combobox from "./felpus/Combobox";
 import PhoneInput from "./felpus/PhoneInput";
 import ConsejosPanel from "./felpus/ConsejosPanel";
 import CoincidenciaAyuda from "./felpus/CoincidenciaAyuda";
+import AvistamientosHistorial from "./felpus/AvistamientosHistorial";
 import ResguardoPregunta from "./felpus/ResguardoPregunta";
 import { detallesResguardo } from "../lib/resguardo";
 import { tituloConsejos } from "../lib/consejos";
@@ -663,6 +664,8 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   // Reporte cuyo reencuentro se acaba de confirmar en esta sesión: muestra
   // "¡Qué alegría que volvió a casa!" + consejos (ConsejosPanel celebrar).
   const [recienReencontrado, setRecienReencontrado] = useState(null);
+  // Reporte de Mi Felpus con el historial de avistamientos abierto.
+  const [avistamientosAbiertos, setAvistamientosAbiertos] = useState(null);
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState("");
@@ -1222,6 +1225,37 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
       logError("No se pudo enviar la denuncia", e);
       throw e;
     }
+  }
+
+  // Historial de avistamientos (AvistamientosHistorial, sighting.js).
+  // "No es mi mascota": lo saca del historial de esa perdida, guardado en sus
+  // detalles vía /api/reports/edit (sesión o token del dispositivo).
+  async function handleDescartarAvistamiento(perdida, avistamiento) {
+    const pushToken = reportToken(perdida.id);
+    const res = await authedFetch("/api/reports/edit", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reportId: perdida.id, ...(pushToken ? { pushToken } : {}), descartarAvistamiento: avistamiento.id }),
+    });
+    if (!res.ok) {
+      pushToast("error", "No pudimos sacarlo de la lista. Probá de nuevo.");
+      throw new Error(`No se pudo descartar el avistamiento (${res.status})`);
+    }
+    const marcar = (r) => {
+      if (r.id !== perdida.id) return r;
+      const previos = Array.isArray(r.detalles?.avistamientos_descartados) ? r.detalles.avistamientos_descartados : [];
+      return { ...r, detalles: { ...(r.detalles || {}), avistamientos_descartados: [...previos, avistamiento.id] } };
+    };
+    setReports((prev) => prev.map(marcar));
+    setDetailReport((prev) => (prev ? marcar(prev) : prev));
+    track("avistamiento_descartado");
+  }
+
+  function handleDenunciarAvistamiento(avistamiento) {
+    return handleFlagReport(avistamiento, "info_incorrecta").catch((e) => {
+      pushToast("error", "No pudimos enviar la denuncia. Probá de nuevo.");
+      throw e;
+    });
   }
 
   // Coincidencias nuevas desde la última visita: para cada reporte propio
@@ -5897,6 +5931,33 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                             ))}
                           </div>
                         )}
+                        {r.tipo === "perdida" && avistamientosDe(r, reports).length > 0 && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setAvistamientosAbiertos((prev) => (prev === r.id ? null : r.id))}
+                              aria-expanded={avistamientosAbiertos === r.id}
+                              className="w-full min-h-[44px] flex items-center justify-between px-3 py-2.5 border-t text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                              style={{ borderColor: C.border, color: C.text }}
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <Eye className="w-3.5 h-3.5" style={{ color: C.sightingSolid }} aria-hidden="true" />
+                                Avistamientos ({avistamientosDe(r, reports).length})
+                              </span>
+                              <ChevronRight className={`w-3.5 h-3.5 transition-transform ${avistamientosAbiertos === r.id ? "rotate-90" : ""}`} aria-hidden="true" />
+                            </button>
+                            {avistamientosAbiertos === r.id && (
+                              <div className="px-3 pb-3">
+                                <AvistamientosHistorial
+                                  avistamientos={avistamientosDe(r, reports)}
+                                  onOpen={openReportDetail}
+                                  onDescartar={(a) => handleDescartarAvistamiento(r, a)}
+                                  onDenunciar={handleDenunciarAvistamiento}
+                                />
+                              </div>
+                            )}
+                          </>
+                        )}
                         <button
                           type="button"
                           onClick={() => setConsejosAbiertos((prev) => (prev === r.id ? null : r.id))}
@@ -6458,6 +6519,11 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
         resolving={!!detailReport && resolvingId === detailReport.id}
         isOwner={!!detailReport && detailReport.userId === user?.id}
         celebrarReencuentro={!!detailReport && recienReencontrado === detailReport.id}
+        avistamientos={detailReport?.tipo === "perdida" ? avistamientosDe(detailReport, reports) : []}
+        esDuenio={!!detailReport && ((user && detailReport.userId === user.id) || !!reportToken(detailReport.id))}
+        onOpenAvistamiento={openReportDetail}
+        onDescartarAvistamiento={(a) => handleDescartarAvistamiento(detailReport, a)}
+        onDenunciarAvistamiento={handleDenunciarAvistamiento}
         onConfirm={() =>
           markResolvedAndReward({
             repObjs: [detailReport],

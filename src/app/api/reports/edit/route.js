@@ -3,6 +3,7 @@ import { isJsonRequest } from "../../../../lib/httpGuards";
 import { getAuthUserId, supabaseServerEnv } from "../../../../lib/serverAuth";
 import { buildOwnerPatch, reorderPhotos } from "../../../../lib/adminEdit";
 import { respuestaValida } from "../../../../lib/consejos";
+import { DESCARTADOS_MAX } from "../../../../lib/sighting";
 
 // Quien publicó corrige su aviso (2026-10-29): nombre, datos, zona, fecha,
 // descripción y orden de las fotos — los mismos campos que el admin
@@ -12,7 +13,9 @@ import { respuestaValida } from "../../../../lib/consejos";
 // el mismo PATCH (filtro por user_id o push_token): nunca se confía en lo
 // que diga el cliente. El contacto, el dueño y el reencuentro quedan fuera.
 // También guarda la respuesta a la pregunta opcional de los consejos
-// (consejo: { clave, valor }, ver consejos.js), sumándola a `detalles`.
+// (consejo: { clave, valor }, ver consejos.js), sumándola a `detalles`, y
+// "No es mi mascota" sobre un avistamiento vinculado (descartarAvistamiento:
+// id, ver avistamientosDe en sighting.js).
 export const runtime = "nodejs";
 
 const ID_RE = /^[A-Za-z0-9-]{1,64}$/;
@@ -48,6 +51,10 @@ export async function PATCH(request) {
 
   const fields = buildOwnerPatch(body.fields || {});
   if (fields.error) return Response.json({ error: fields.error }, { status: 400 });
+  const descartar = body.descartarAvistamiento;
+  if (descartar !== undefined && (typeof descartar !== "string" || !ID_RE.test(descartar))) {
+    return Response.json({ error: "Avistamiento inválido." }, { status: 400 });
+  }
   const consejo = body.consejo;
   if (consejo !== undefined && !respuestaValida(consejo?.clave, consejo?.valor)) {
     return Response.json({ error: "Respuesta inválida." }, { status: 400 });
@@ -58,7 +65,7 @@ export async function PATCH(request) {
   const noEsTuyo = () => Response.json({ error: "Solo quien publicó el aviso puede editarlo." }, { status: 403 });
   try {
     let photos = { patch: {} };
-    if (body.fotoOrder !== undefined || consejo !== undefined) {
+    if (body.fotoOrder !== undefined || consejo !== undefined || descartar !== undefined) {
       const res = await fetch(`${base}&select=${PHOTO_COLUMNS}`, { headers });
       if (!res.ok) throw new Error(`Supabase ${res.status}`);
       const [row] = await res.json();
@@ -70,6 +77,12 @@ export async function PATCH(request) {
       if (consejo !== undefined) {
         const detalles = photos.patch.detalles !== undefined ? photos.patch.detalles : row.detalles;
         photos.patch.detalles = { ...(detalles || {}), [consejo.clave]: consejo.valor };
+      }
+      if (descartar !== undefined) {
+        const detalles = photos.patch.detalles !== undefined ? photos.patch.detalles : row.detalles;
+        const previos = Array.isArray(detalles?.avistamientos_descartados) ? detalles.avistamientos_descartados : [];
+        const lista = [...previos.filter((id) => id !== descartar), descartar].slice(-DESCARTADOS_MAX);
+        photos.patch.detalles = { ...(detalles || {}), avistamientos_descartados: lista };
       }
     }
     const patch = { ...fields.patch, ...photos.patch };

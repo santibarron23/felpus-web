@@ -9,6 +9,9 @@ export const ALERTS_TZ = "America/Argentina/Salta";
 export const MATCH_MAX_KM = 15;
 export const MATCH_MAX_DAYS = 45;
 export const ZONE_DAILY_CAP = 5;
+// Avistamientos vinculados (2026-10-30): como mucho un aviso al dueño de la
+// perdida cada tantos minutos, aunque lleguen varios seguidos.
+export const AVISTAMIENTO_COOLDOWN_MIN = 30;
 export const INACTIVE_AFTER_DAYS = 60;
 export const INACTIVE_WARNING_DAYS = 7;
 const DAY_MS = 24 * 3600 * 1000;
@@ -86,6 +89,20 @@ export function matchNotification({ recipientReport, otherReport, siteUrl = "" }
     body: `Reportaron un ${especieWord(otherReport.especie)} parecido a ${nombre}${dist}. Tocá para verlo.`,
     url: `${siteUrl}/r/${encodeURIComponent(otherReport.id)}`,
     tag: `felpus-match-${recipientReport.id}-${otherReport.id}`,
+  };
+}
+
+// Alguien tocó "La vi" en la ficha de una perdida (sighting.js). Lleva a la
+// ficha de la perdida, donde el dueño ve el historial de avistamientos.
+export function sightingNotification({ lostReport, sighting, siteUrl = "" }) {
+  const nombre = nombreReal(lostReport) || `tu ${especieWord(lostReport.especie)}`;
+  const zona = typeof sighting.zona === "string" && sighting.zona.trim() ? ` en ${sighting.zona.trim()}` : "";
+  const hora = /^\d{2}:\d{2}$/.test(sighting.detalles?.hora || "") ? ` a las ${sighting.detalles.hora}` : "";
+  return {
+    title: "👀 ¡Alguien podría haber visto a tu mascota!",
+    body: `Avisaron que vieron a ${nombre}${zona}${hora}. Confirmá hora y lugar antes de ir.`,
+    url: `${siteUrl}/r/${encodeURIComponent(lostReport.id)}`,
+    tag: `felpus-avistamiento-${lostReport.id}`,
   };
 }
 
