@@ -4,6 +4,7 @@ import { alertarAdmin, esFallaDePublicacion } from "../../../lib/serverAdminAler
 import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
 import { validateReportContact, validarResguardo } from "../../../lib/reportValidation";
 import { sanitizeReportRow } from "../../../lib/reportRow";
+import { validarDatosAvistamiento } from "../../../lib/sighting";
 
 // Corre en el servidor — nunca en el navegador, así que la service role key
 // nunca queda expuesta al público.
@@ -87,6 +88,11 @@ export async function POST(request) {
     return Response.json({ error: resguardo.error }, { status: 400 });
   }
   if (row.detalles != null) row = { ...row, detalles: resguardo.detalles };
+  const avistamiento = validarDatosAvistamiento(row);
+  if (avistamiento.error) {
+    return Response.json({ error: avistamiento.error }, { status: 400 });
+  }
+  if (row.detalles != null) row = { ...row, detalles: avistamiento.detalles };
 
   let realUserId = null;
   const authHeader = request.headers.get("authorization");

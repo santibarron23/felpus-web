@@ -8,6 +8,7 @@ import {
   isQuietHours,
   argentinaDayStartIso,
   matchNotification,
+  sightingNotification,
   zoneNotification,
   inactivityNotification,
   isMatchCandidate,
@@ -18,6 +19,7 @@ import {
   userRecipient,
   reportRecipient,
   ZONE_DAILY_CAP,
+  AVISTAMIENTO_COOLDOWN_MIN,
 } from "./alerts";
 
 // Fila de `reports` → formato de scoreMatch. Antes vivía (casi igual) adentro
@@ -107,6 +109,10 @@ export function makeDb({ supabaseUrl, serviceKey, fetchImpl = fetch }) {
       (await rest("rpc/alert_zone_recipients", { method: "POST", body: JSON.stringify({ p_report_id: reportId }) })) || [],
     async countZoneSince(userId, sinceIso) {
       const p = new URLSearchParams({ user_id: `eq.${userId}`, kind: "eq.zona", status: "eq.enviada", created_at: `gte.${sinceIso}`, select: "id" });
+      return ((await rest(`notifications_log?${p}`)) || []).length;
+    },
+    async countKindSince(recipient, kind, sinceIso) {
+      const p = new URLSearchParams({ recipient: `eq.${recipient}`, kind: `eq.${kind}`, created_at: `gte.${sinceIso}`, select: "id" });
       return ((await rest(`notifications_log?${p}`)) || []).length;
     },
     pendingZone: async () =>
@@ -199,11 +205,39 @@ async function notifyReportOwner(deps, ownerReport, aboutReportId, kind, payload
   return recipients;
 }
 
+// Devuelve el id de la perdida vinculada si corresponde avisar por ella (se
+// haya mandado o no por el enfriamiento), o null.
+async function notifySightingOwner(row, deps, now, summary) {
+  const lostId = row.tipo === "encontrada" && row.detalles?.avistamiento === true ? row.detalles.avistamiento_de : null;
+  if (typeof lostId !== "string" || !lostId) return null;
+  const lost = await deps.db.getReport(lostId);
+  if (!lost || lost.tipo !== "perdida" || !reportCanAlert(lost)) return null;
+  // Quien avisó es el dueño (con su cuenta): no tiene sentido avisarle.
+  if (lost.user_id && lost.user_id === row.user_id) return null;
+  const since = new Date(now.getTime() - AVISTAMIENTO_COOLDOWN_MIN * 60 * 1000).toISOString();
+  const recipients = [lost.user_id && userRecipient(lost.user_id), lost.push_subscription && reportRecipient(lost.id)].filter(Boolean);
+  for (const r of recipients) {
+    if ((await deps.db.countKindSince(r, "avistamiento", since)) > 0) return lost.id;
+  }
+  const payload = sightingNotification({ lostReport: lost, sighting: row, siteUrl: deps.siteUrl });
+  summary.sightingAlerts += (await notifyReportOwner(deps, lost, row.id, "avistamiento", payload)).length;
+  return lost.id;
+}
+
 export async function dispatchNewReport(row, deps) {
   const now = deps.now || new Date();
   const thresholds = deps.thresholds || matchThresholds();
-  const summary = { matches: 0, matchAlerts: 0, zoneSent: 0, zonePending: 0 };
+  const summary = { matches: 0, matchAlerts: 0, sightingAlerts: 0, zoneSent: 0, zonePending: 0 };
   if (!reportCanAlert(row)) return summary;
+
+  // 0) Avistamiento vinculado ("La vi" desde una perdida): aviso directo al
+  // dueño de esa perdida, sin depender del puntaje. Aislado: si falla (por
+  // ejemplo, sin la migración que habilita el tipo "avistamiento"), el
+  // resto de las alertas sigue igual.
+  const avisada = await notifySightingOwner(row, deps, now, summary).catch((e) => {
+    deps.log("avistamiento_error", { message: String(e?.message || e).slice(0, 200) });
+    return null;
+  });
 
   // A) Coincidencias (primero).
   const alertedUsers = new Set();
@@ -221,6 +255,9 @@ export async function dispatchNewReport(row, deps) {
     summary.matches++;
     if (level !== "alta") continue;
     for (const [mine, theirs] of [[row, other], [other, row]]) {
+      // Al dueño de esa perdida ya le llegó (o le está por llegar) el aviso
+      // de avistamiento por este mismo reporte: no se repite como coincidencia.
+      if (avisada && mine.id === avisada) continue;
       const payload = matchNotification({ recipientReport: mine, otherReport: theirs, siteUrl: deps.siteUrl });
       const sent = await notifyReportOwner(deps, mine, theirs.id, "match", payload);
       if (mine.user_id && sent.length) alertedUsers.add(mine.user_id);

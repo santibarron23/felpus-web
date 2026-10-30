@@ -110,4 +110,18 @@ describe("PATCH /api/reports/edit", () => {
     expect(res.status).toBe(403);
     expect(patchCall()).toBeUndefined();
   });
+
+  it("'No es mi mascota': suma el avistamiento a los descartados, sin repetir", async () => {
+    stubFetch({ userId: "u1", row: { ...ROW, detalles: { avistamientos_descartados: ["s1"] } } });
+    const res = await PATCH(request({ reportId: "r1", descartarAvistamiento: "s2" }, "sesion"));
+    expect(res.status).toBe(200);
+    expect(patchCall().body).toEqual({ detalles: { avistamientos_descartados: ["s1", "s2"] } });
+  });
+
+  it("rechaza un id de avistamiento inválido", async () => {
+    stubFetch({ userId: "u1" });
+    const res = await PATCH(request({ reportId: "r1", descartarAvistamiento: "x),(" }, "sesion"));
+    expect(res.status).toBe(400);
+    expect(patchCall()).toBeUndefined();
+  });
 });
