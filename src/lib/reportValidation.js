@@ -11,6 +11,8 @@
 // esa validación — el objetivo es frenar reportes sin contacto, no
 // rechazar números reales por un detalle de formato.
 
+import { LUGAR_MAX } from "./resguardo";
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Devuelve { ok, whatsapp, email, error } — whatsapp/email ya
@@ -39,4 +41,21 @@ export function validateReportContact(row) {
     return { ok: false, error: "Dejá un WhatsApp o un email de contacto — así pueden avisarte si la reconocen." };
   }
   return { ok: true, whatsapp: whatsapp || null, email: email || null };
+}
+
+// "¿Dónde está ahora?" (resguardo.js): valida y normaliza
+// detalles.resguardo/lugar antes de insertar.
+// Devuelve { detalles } o { error }.
+export function validarResguardo(row) {
+  const d = row?.detalles;
+  if (!d || (d.resguardo === undefined && d.lugar === undefined)) return { detalles: d ?? null };
+  if (row.tipo !== "encontrada" || d.avistamiento === true) return { error: "Datos de resguardo inválidos." };
+  if (d.resguardo !== "conmigo" && d.resguardo !== "terceros") return { error: "Datos de resguardo inválidos." };
+  if (d.lugar !== undefined) {
+    if (d.resguardo !== "terceros" || typeof d.lugar !== "string") return { error: "Datos de resguardo inválidos." };
+    if (d.lugar.trim().length > LUGAR_MAX) return { error: `El nombre del lugar puede tener hasta ${LUGAR_MAX} caracteres.` };
+  }
+  const { lugar, ...resto } = d;
+  const limpio = lugar === undefined ? "" : lugar.trim();
+  return { detalles: limpio ? { ...resto, lugar: limpio } : resto };
 }

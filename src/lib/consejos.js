@@ -6,7 +6,8 @@
 // cercano, frases cortas, nada de promesas ni datos que no podamos respaldar.
 //
 // Contextos (contextoDe): buscando (perdida), resguardo (encontrada: la tiene
-// quien publicó), avistamiento (la vio en la calle, ver sighting.js) y
+// quien publicó), terceros (encontrada que está en una veterinaria o refugio,
+// ver resguardo.js), avistamiento (la vio en la calle, ver sighting.js) y
 // reencuentro (resuelto).
 //
 // La respuesta a la pregunta opcional se guarda en `detalles` (ver
@@ -15,6 +16,7 @@
 // (detalles.comportamientos, ver REACCION_OPTIONS en matching.js), así no se
 // pregunta dos veces lo mismo.
 import { isSighting } from "./sighting";
+import { esTerceros } from "./resguardo";
 
 export const PREGUNTAS = {
   gato: {
@@ -132,6 +134,19 @@ const TEXTOS = {
     titulo: "Verificá a quien la reclame",
     texto: "Pedí fotos anteriores o algún detalle que no esté en el aviso antes de entregarla.",
   },
+  // Terceros (la dejó en una veterinaria o refugio)
+  avisar_al_lugar: {
+    titulo: "Avisale al lugar que publicaste el aviso",
+    texto: "Así, si alguien llama preguntando por ella, saben que está en Felpus y cómo ubicarte.",
+  },
+  datos_del_lugar: {
+    titulo: "Guardá el contacto del lugar",
+    texto: "Nombre, dirección y horario: si aparece su familia, vas a poder decirles dónde buscarla.",
+  },
+  seguimiento: {
+    titulo: "Preguntá cada tanto cómo sigue",
+    texto: "Si la entregan o la trasladan, actualizá o cerrá el aviso para que nadie vaya en vano.",
+  },
   // Avistamiento (quien la vio)
   no_perseguir: {
     titulo: "No la persigas",
@@ -180,6 +195,7 @@ const ORDEN = {
   perro_miedoso: ["no_perseguir_perro", "anotar_avistamientos", "compartir", "vecinos", "carteles", "veterinarias", "notificaciones", "dinero"],
   perro: ["compartir", "veterinarias", "no_perseguir_perro", "plazas", "vecinos", "carteles", "notificaciones", "dinero"],
   otro: ["compartir", "vecinos", "refugios_cercanos", "veterinarias", "carteles", "notificaciones", "dinero"],
+  terceros: ["avisar_al_lugar", "datos_del_lugar", "compartir", "verificar_reclamo", "seguimiento", "dinero"],
   resguardo: ["identificacion", "microchip", "segura", "separada", "verificar_reclamo", "compartir", "dinero"],
   avistamiento: ["no_perseguir", "si_la_volves_a_ver", "compartir_avistamiento"],
   reencuentro_perdida: ["veterinario", "chapita", "chip_prevencion", "por_donde_salio"],
@@ -189,7 +205,8 @@ const ORDEN = {
 export function contextoDe(report) {
   if (report?.resuelto) return "reencuentro";
   if (report?.tipo === "perdida") return "buscando";
-  return isSighting(report) ? "avistamiento" : "resguardo";
+  if (isSighting(report)) return "avistamiento";
+  return esTerceros(report) ? "terceros" : "resguardo";
 }
 
 // Comportamientos del formulario que ya responden la pregunta del perro.
@@ -209,7 +226,7 @@ export function perfilPerro(report) {
 
 function claveOrden(report, contexto) {
   if (contexto === "reencuentro") return report?.tipo === "perdida" ? "reencuentro_perdida" : "reencuentro_encontrada";
-  if (contexto === "resguardo" || contexto === "avistamiento") return contexto;
+  if (contexto === "resguardo" || contexto === "terceros" || contexto === "avistamiento") return contexto;
   const especie = report?.especie;
   if (especie === "gato") {
     const s = report?.detalles?.sale_de_casa;

@@ -183,6 +183,8 @@ import { PAIS_DEFAULT, PAISES, PROVINCIAS_AR, UBICACION_MAX, cleanUbicacion, cro
 import Combobox from "./felpus/Combobox";
 import PhoneInput from "./felpus/PhoneInput";
 import ConsejosPanel from "./felpus/ConsejosPanel";
+import ResguardoPregunta from "./felpus/ResguardoPregunta";
+import { detallesResguardo } from "../lib/resguardo";
 import { tituloConsejos } from "../lib/consejos";
 import { splitStoredWhatsapp, getDefaultCountry, formatE164ForDisplay } from "../lib/phone";
 import {
@@ -368,6 +370,9 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   const [showWelcome, setShowWelcome] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const [reportKind, setReportKind] = useState("perdida");
+  // "¿Dónde está ahora?" de una encontrada (ResguardoPregunta, resguardo.js).
+  const [resguardo, setResguardo] = useState(null);
+  const [resguardoLugar, setResguardoLugar] = useState("");
   const [form, setForm] = useState(emptyForm());
   const [reports, setReports] = useState([]);
   // Carga en dos pasos (2026-10-28): primero el listado liviano, sin
@@ -2401,6 +2406,9 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
         userId: user?.id || null,
       });
       await publishAndMatch(draft, { puntos: PUNTOS_AVISTAMIENTO, navigateFirst: false });
+      // Vino del formulario de encontrada ("solo la vi"): ya se publicó como
+      // avistamiento, así que el formulario queda en blanco.
+      if (sighting?.inicial) resetReportForm();
       setSighting(null);
       try {
         window.gtag?.("event", "avistamiento_publicado", { sin_foto: !!input.sinFoto, desde_ficha: !!input.vistaDe });
@@ -2439,6 +2447,8 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   // También borra el borrador guardado en el dispositivo.
   function resetReportForm() {
     setForm(emptyForm());
+    setResguardo(null);
+    setResguardoLugar("");
     setFromCapture(false);
     setAccesorioChips([]);
     setReaccionChips([]);
@@ -2593,6 +2603,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
           // persona igual dejó: quedan para revisar en el panel de admin y
           // no se usan al comparar fotos (ver marcarDudosas en matching.js).
           ...(fotosDudosas.length ? { fotos_dudosas: fotosDudosas } : {}),
+          ...(reportKind === "encontrada" ? detallesResguardo(resguardo, resguardoLugar) : {}),
         },
         contactoWhatsapp: whatsappResult.isValid ? whatsappResult.digits : "",
         contactoEmail: form.contactoEmail.trim(),
@@ -3481,15 +3492,28 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
             <ImportPostCard onImport={handleImportPost} />
 
             {reportKind === "encontrada" && (
-              <button
-                type="button"
-                onClick={() => setSighting({ vistaDe: null })}
-                className="w-full min-h-[44px] rounded-xl px-3 text-[13px] font-semibold flex items-center justify-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
-                style={{ background: C.surfaceMuted, color: C.text }}
-              >
-                <Eye className="w-4 h-4" style={{ color: C.orangeInk }} aria-hidden="true" />
-                ¿Solo la viste suelta? Avisá en 3 toques
-              </button>
+              <ResguardoPregunta
+                value={resguardo}
+                lugar={resguardoLugar}
+                onChange={setResguardo}
+                onLugarChange={setResguardoLugar}
+                // Pasa a "Lo vi suelto" con lo ya cargado; el formulario
+                // queda como estaba por si vuelve.
+                onSoloLaVi={() =>
+                  setSighting({
+                    vistaDe: null,
+                    inicial: {
+                      foto: form.fotos[0] || null,
+                      loc: form.lat != null && form.lng != null ? { lat: form.lat, lng: form.lng } : null,
+                      lugar: { zona: form.zona, ciudad: form.ciudad, provincia: form.provincia },
+                      especie: form.especie,
+                      color: form.color,
+                      tamano: form.tamano,
+                      raza: form.raza,
+                    },
+                  })
+                }
+              />
             )}
 
             {borradorRecuperado && (
@@ -6392,6 +6416,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
       {sighting && (
         <SightingSheet
           vistaDe={sighting.vistaDe}
+          inicial={sighting.inicial}
           savedWhatsapp={savedWhatsapp || ""}
           defaultCountry={form.contactoWhatsappCountry || "AR"}
           onPublish={handlePublishSighting}

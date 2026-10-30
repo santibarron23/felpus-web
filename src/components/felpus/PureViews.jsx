@@ -14,6 +14,7 @@ import { petTitle, petDescriptor, nombreReal } from "../../lib/petTitle";
 import { zonaConCiudad } from "../../lib/zona";
 import { whatsappUrl } from "../../lib/shareCard";
 import { isSighting, estadoReporte, ESTADO_LABEL, avistamientoCuando } from "../../lib/sighting";
+import { esTerceros, lugarResguardo } from "../../lib/resguardo";
 import ReportLocationMap from "../ReportLocationMap";
 import {
   Cat,
@@ -210,6 +211,12 @@ export function ReportCard({ report, onOpenDetail, saved, onToggleSaved, childre
               <EspecieIcon especie={report.especie} className="w-3.5 h-3.5" />
               {report.especie}
             </span>
+            {/* Encontrada que está en una veterinaria o refugio (resguardo.js). */}
+            {!resuelto && esTerceros(report) && (
+              <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: C.surfaceMuted, color: C.text }}>
+                En veterinaria o refugio
+              </span>
+            )}
           </div>
           {/* Título: el nombre real o, sin nombre, una descripción ("Perra
               blanca, tamaño chico") — nunca el color solo, que se leía como
@@ -399,6 +406,9 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
             <p className="text-sm" style={{ color: C.muted }}>
               {displayColor(report)} · {report.tamano} · {report.especie}
             </p>
+            {!report.resuelto && lugarResguardo(report) && (
+              <p className="text-sm font-semibold mt-1" style={{ color: C.text }}>{lugarResguardo(report)}</p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-2 text-sm">
             <button

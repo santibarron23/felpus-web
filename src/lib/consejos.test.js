@@ -99,6 +99,21 @@ describe("getConsejos — otras situaciones", () => {
     expect(l).toContain("verificar_reclamo");
   });
 
+  it("en una veterinaria o refugio: avisar al lugar, sin consejos de tenerla en casa", () => {
+    const r = { tipo: "encontrada", especie: "gato", detalles: { resguardo: "terceros", lugar: "Vete San Roque" } };
+    expect(contextoDe(r)).toBe("terceros");
+    const l = ids(r);
+    expect(l[0]).toBe("avisar_al_lugar");
+    expect(l).toContain("verificar_reclamo");
+    expect(l).not.toContain("separada");
+    expect(l).not.toContain("segura");
+  });
+
+  it("'conmigo' o sin respuesta: resguardo de siempre", () => {
+    expect(contextoDe({ tipo: "encontrada", especie: "perro", detalles: { resguardo: "conmigo" } })).toBe("resguardo");
+    expect(contextoDe({ tipo: "encontrada", especie: "perro", detalles: {} })).toBe("resguardo");
+  });
+
   it("avistamiento: no perseguir y anotar, nunca como si la tuviera", () => {
     const l = ids({ tipo: "encontrada", especie: "gato", detalles: { avistamiento: true } });
     expect(l[0]).toBe("no_perseguir");

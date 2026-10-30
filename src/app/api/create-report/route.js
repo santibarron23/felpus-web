@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { logError } from "../../../lib/log";
 import { alertarAdmin, esFallaDePublicacion } from "../../../lib/serverAdminAlerts";
 import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
-import { validateReportContact } from "../../../lib/reportValidation";
+import { validateReportContact, validarResguardo } from "../../../lib/reportValidation";
 import { sanitizeReportRow } from "../../../lib/reportRow";
 
 // Corre en el servidor — nunca en el navegador, así que la service role key
@@ -82,6 +82,11 @@ export async function POST(request) {
     return Response.json({ error: contact.error }, { status: 400 });
   }
   row = { ...row, contacto_whatsapp: contact.whatsapp, contacto_email: contact.email };
+  const resguardo = validarResguardo(row);
+  if (resguardo.error) {
+    return Response.json({ error: resguardo.error }, { status: 400 });
+  }
+  if (row.detalles != null) row = { ...row, detalles: resguardo.detalles };
 
   let realUserId = null;
   const authHeader = request.headers.get("authorization");
