@@ -71,6 +71,7 @@ import {
   addWatermark,
   getImageEmbedding,
   findMatches,
+  candidatosParaComparar,
   scoreLabel,
   matchBreakdown,
   getTier,
@@ -183,6 +184,7 @@ import { PAIS_DEFAULT, PAISES, PROVINCIAS_AR, UBICACION_MAX, cleanUbicacion, cro
 import Combobox from "./felpus/Combobox";
 import PhoneInput from "./felpus/PhoneInput";
 import ConsejosPanel from "./felpus/ConsejosPanel";
+import CoincidenciaAyuda from "./felpus/CoincidenciaAyuda";
 import ResguardoPregunta from "./felpus/ResguardoPregunta";
 import { detallesResguardo } from "../lib/resguardo";
 import { tituloConsejos } from "../lib/consejos";
@@ -658,6 +660,9 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   const [myReportsDeleteConfirmId, setMyReportsDeleteConfirmId] = useState(null);
   // Reporte de Mi Felpus con los consejos abiertos (ConsejosPanel).
   const [consejosAbiertos, setConsejosAbiertos] = useState(null);
+  // Reporte cuyo reencuentro se acaba de confirmar en esta sesión: muestra
+  // "¡Qué alegría que volvió a casa!" + consejos (ConsejosPanel celebrar).
+  const [recienReencontrado, setRecienReencontrado] = useState(null);
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState("");
@@ -1231,8 +1236,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     if (myActive.length === 0) return [];
     const items = [];
     for (const mine of myActive) {
-      const opposite = mine.tipo === "perdida" ? "encontrada" : "perdida";
-      const candidates = reports.filter((r) => r.tipo === opposite && !r.resuelto && r.creadoEn > matchesSeenAt);
+      const candidates = candidatosParaComparar(mine, reports).filter((r) => r.creadoEn > matchesSeenAt);
       const scored = findMatches(mine, candidates);
       if (scored.length > 0) {
         items.push({ mine, best: scored[0].report, score: scored[0].score, extraCount: scored.length - 1 });
@@ -2011,6 +2015,8 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
       }
       await loadLeaderboard();
       setConfirmingId(null);
+      setRecienReencontrado(ids[0]);
+      setConsejosAbiertos(ids[0]);
       playSuccess();
       pushToast("success", `🎉 ¡Gracias ${resolverDisplayName}! +${PUNTOS_REENCUENTRO} huellitas por confirmar el reencuentro.`);
     } catch (e) {
@@ -2355,8 +2361,6 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   // no, recién después (la hoja muestra su propio "publicando" y, si falla,
   // queda abierta con los datos). Si createReport falla, tira el error.
   async function publishAndMatch(draft, { puntos, navigateFirst = true }) {
-    const opposite = draft.tipo === "perdida" ? "encontrada" : "perdida";
-
     if (navigateFirst) {
       goToTab("resultado");
       setScanning(true);
@@ -2372,7 +2376,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
       goToTab("resultado");
     }
     // Con los vectores de las fotos ya cargados (ver vectoresListos).
-    const candidates = (await reportesParaComparar()).filter((r) => r.tipo === opposite && !r.resuelto);
+    const candidates = candidatosParaComparar(savedReport, await reportesParaComparar());
 
     const scored = findMatches(savedReport, candidates, { limit: 6 });
 
@@ -2676,8 +2680,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     }
     setExpandedCard(report.id);
     if (cardMatches[report.id]) return;
-    const opposite = report.tipo === "perdida" ? "encontrada" : "perdida";
-    const candidates = (await reportesParaComparar()).filter((r) => r.id !== report.id && r.tipo === opposite && !r.resuelto);
+    const candidates = candidatosParaComparar(report, await reportesParaComparar());
     const scored = findMatches(report, candidates, { limit: 6 });
     let descartados = new Set();
     try {
@@ -4612,10 +4615,19 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                   )}
                 </div>
 
+                {recienReencontrado === matchResult.source.id && matchResult.source.resuelto && (
+                  <ConsejosPanel key={matchResult.source.id} report={matchResult.source} celebrar />
+                )}
+
                 <div>
                   <h3 className="felpus-display text-lg mb-2" style={{ color: C.text }}>
-                    {matchResult.results.length > 0 ? "Posibles coincidencias" : "Todavía no hay coincidencias"}
+                    {matchResult.results.length === 0
+                      ? "Todavía no hay coincidencias"
+                      : matchResult.results.length === 1
+                        ? "Encontramos una posible coincidencia"
+                        : `Encontramos ${matchResult.results.length} posibles coincidencias`}
                   </h3>
+                  {matchResult.results.length > 0 && <CoincidenciaAyuda report={matchResult.source} className="mb-3" />}
                   {matchResult.results.length === 0 && (
                     <div className="text-sm bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl p-5 text-center border" style={{ color: C.muted, borderColor: C.border }}>
                       <Mascot mood="searching" size={80} className="mx-auto mb-2" />
@@ -4726,12 +4738,15 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                 </div>
 
                 {/* Consejos (2026-10-30): después de las coincidencias, que
-                    son lo más urgente de ver. Ver consejos.js. */}
-                <ConsejosPanel
-                  key={matchResult.source.id}
-                  report={matchResult.source}
-                  onAnswer={(clave, valor) => handleConsejoAnswer(matchResult.source, clave, valor)}
-                />
+                    son lo más urgente de ver. Ver consejos.js. Recién
+                    confirmado el reencuentro, van arriba (ver más arriba). */}
+                {recienReencontrado !== matchResult.source.id && (
+                  <ConsejosPanel
+                    key={matchResult.source.id}
+                    report={matchResult.source}
+                    onAnswer={(clave, valor) => handleConsejoAnswer(matchResult.source, clave, valor)}
+                  />
+                )}
               </>
             )}
           </div>
@@ -5822,6 +5837,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" /> calculando...
                               </p>
                             )}
+                            {cardMatches[r.id]?.length > 0 && <CoincidenciaAyuda report={r} />}
                             {cardMatches[r.id]?.length === 0 && (
                               <p className="text-xs py-2" style={{ color: C.muted }}>
                                 Sin coincidencias de al menos {Math.round(SCORE_MINIMO * 100)}% por ahora.
@@ -5896,7 +5912,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                         </button>
                         {consejosAbiertos === r.id && (
                           <div className="px-3 pb-3">
-                            <ConsejosPanel bare report={r} onAnswer={(clave, valor) => handleConsejoAnswer(r, clave, valor)} />
+                            <ConsejosPanel bare report={r} celebrar={recienReencontrado === r.id} onAnswer={(clave, valor) => handleConsejoAnswer(r, clave, valor)} />
                           </div>
                         )}
                         <div className="px-3 pb-3 pt-1 border-t flex items-center justify-between gap-2 flex-wrap" style={{ borderColor: C.border }}>
@@ -6441,6 +6457,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
         confirming={confirmingId === detailReport?.id}
         resolving={!!detailReport && resolvingId === detailReport.id}
         isOwner={!!detailReport && detailReport.userId === user?.id}
+        celebrarReencuentro={!!detailReport && recienReencontrado === detailReport.id}
         onConfirm={() =>
           markResolvedAndReward({
             repObjs: [detailReport],

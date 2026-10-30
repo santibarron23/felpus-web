@@ -8,7 +8,8 @@
 // Contextos (contextoDe): buscando (perdida), resguardo (encontrada: la tiene
 // quien publicó), terceros (encontrada que está en una veterinaria o refugio,
 // ver resguardo.js), avistamiento (la vio en la calle, ver sighting.js) y
-// reencuentro (resuelto).
+// reencuentro (resuelto). Además, "coincidencia" (getConsejos(report,
+// "coincidencia")) para la lista de posibles coincidencias.
 //
 // La respuesta a la pregunta opcional se guarda en `detalles` (ver
 // /api/reports/edit): sale_de_casa (gatos) y ante_desconocidos (perros).
@@ -160,6 +161,27 @@ const TEXTOS = {
     titulo: "Compartí el aviso en el barrio",
     texto: "Así su familia tiene más chances de enterarse de que la vieron.",
   },
+  // Coincidencia (sugerencia de Felpus, nunca una identificación segura)
+  comparar_fotos: {
+    titulo: "Mirá las fotos con calma",
+    texto: "Manchas, orejas, cola, collar: los detalles chicos son los que más diferencian.",
+  },
+  comparar_rasgos: {
+    titulo: "Compará lo que no se ve en la foto",
+    texto: "Tamaño, sexo, edad y cualquier seña particular que figure en los dos avisos.",
+  },
+  comparar_zona: {
+    titulo: "Fijate si la zona y la fecha cierran",
+    texto: "Si se perdió lejos o después de cuando la encontraron, puede no ser.",
+  },
+  pedir_detalle: {
+    titulo: "Pedí un dato que solo conozca su familia",
+    texto: "Una foto anterior o una seña que no esté en el aviso ayuda a confirmar.",
+  },
+  lugar_publico: {
+    titulo: "Encuéntrense en un lugar público",
+    texto: "De día y, si podés, acompañado/a. Una veterinaria es un buen punto de encuentro.",
+  },
   // Reencuentro
   veterinario: {
     titulo: "Llevala a una revisión",
@@ -198,6 +220,7 @@ const ORDEN = {
   terceros: ["avisar_al_lugar", "datos_del_lugar", "compartir", "verificar_reclamo", "seguimiento", "dinero"],
   resguardo: ["identificacion", "microchip", "segura", "separada", "verificar_reclamo", "compartir", "dinero"],
   avistamiento: ["no_perseguir", "si_la_volves_a_ver", "compartir_avistamiento"],
+  coincidencia: ["comparar_fotos", "comparar_rasgos", "comparar_zona", "pedir_detalle", "lugar_publico"],
   reencuentro_perdida: ["veterinario", "chapita", "chip_prevencion", "por_donde_salio"],
   reencuentro_encontrada: ["gracias"],
 };
@@ -226,7 +249,7 @@ export function perfilPerro(report) {
 
 function claveOrden(report, contexto) {
   if (contexto === "reencuentro") return report?.tipo === "perdida" ? "reencuentro_perdida" : "reencuentro_encontrada";
-  if (contexto === "resguardo" || contexto === "terceros" || contexto === "avistamiento") return contexto;
+  if (contexto === "resguardo" || contexto === "terceros" || contexto === "avistamiento" || contexto === "coincidencia") return contexto;
   const especie = report?.especie;
   if (especie === "gato") {
     const s = report?.detalles?.sale_de_casa;
@@ -260,4 +283,13 @@ export function tituloConsejos(report) {
   if (ctx === "buscando") return "Consejos para tu búsqueda";
   if (ctx === "reencuentro") return report?.tipo === "perdida" ? "Consejos para después del reencuentro" : "Consejos";
   return "Consejos para el reencuentro";
+}
+
+// Advertencia fija junto a las coincidencias.
+export const AVISO_SEGURIDAD =
+  "Antes de organizar un encuentro, verificá la información y no envíes dinero ni códigos de verificación a desconocidos.";
+
+// Título al confirmar un reencuentro (ConsejosPanel con `celebrar`).
+export function tituloReencuentro(report) {
+  return report?.tipo === "perdida" ? "¡Qué alegría que volvió a casa!" : "¡Gracias! Volvió con su familia.";
 }

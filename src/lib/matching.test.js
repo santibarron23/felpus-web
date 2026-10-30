@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  candidatosParaComparar,
   normalizeText,
   normalizeNickname,
   tokenize,
@@ -1185,5 +1186,23 @@ describe("matchBreakdown: valor compartido (para la tarjeta de comparación)", (
     expect(items.find((i) => i.key === "tamano")).toMatchObject({ coincide: true, value: "mediano", detail: null });
     expect(items.find((i) => i.key === "sexo")).toMatchObject({ coincide: false, detail: "Hembra / Macho" });
     expect(items.find((i) => i.key === "zona")).toMatchObject({ coincide: true, value: "Tres Cerritos" });
+  });
+});
+
+describe("candidatosParaComparar", () => {
+  const lista = [
+    { id: "p1", tipo: "perdida", resuelto: false },
+    { id: "p2", tipo: "perdida", resuelto: true },
+    { id: "e1", tipo: "encontrada", resuelto: false },
+    { id: "e2", tipo: "encontrada", resuelto: true },
+  ];
+
+  it("solo el tipo opuesto y nunca los ya reencontrados", () => {
+    expect(candidatosParaComparar({ id: "x", tipo: "perdida" }, lista).map((r) => r.id)).toEqual(["e1"]);
+    expect(candidatosParaComparar({ id: "x", tipo: "encontrada" }, lista).map((r) => r.id)).toEqual(["p1"]);
+  });
+
+  it("no se compara consigo mismo", () => {
+    expect(candidatosParaComparar({ id: "e1", tipo: "perdida" }, lista)).toEqual([]);
   });
 });

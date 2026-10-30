@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { CONSEJOS, PREGUNTAS, contextoDe, getConsejos, perfilPerro, preguntaPara, respuestaValida, tituloConsejos } from "./consejos";
+import { AVISO_SEGURIDAD, CONSEJOS, PREGUNTAS, contextoDe, getConsejos, perfilPerro, preguntaPara, respuestaValida, tituloConsejos, tituloReencuentro } from "./consejos";
 
 const ids = (report, ctx) => getConsejos(report, ctx).map((c) => c.id);
 const perdida = (especie, detalles = {}) => ({ tipo: "perdida", especie, detalles });
@@ -165,5 +165,26 @@ describe("tituloConsejos", () => {
   it("búsqueda o reencuentro según el tipo", () => {
     expect(tituloConsejos(perdida("gato"))).toBe("Consejos para tu búsqueda");
     expect(tituloConsejos({ tipo: "encontrada", especie: "gato" })).toBe("Consejos para el reencuentro");
+  });
+});
+
+describe("coincidencias", () => {
+  it("mismos consejos para cualquier especie: comparar antes de confiar", () => {
+    for (const r of [perdida("gato"), perdida("perro"), { tipo: "encontrada", especie: "otro" }]) {
+      expect(ids(r, "coincidencia")).toEqual(["comparar_fotos", "comparar_rasgos", "comparar_zona", "pedir_detalle", "lugar_publico"]);
+    }
+  });
+
+  it("ningún texto la presenta como identificación segura", () => {
+    const textos = getConsejos(perdida("perro"), "coincidencia").map((c) => `${c.titulo} ${c.texto}`).join(" ");
+    expect(textos).not.toMatch(/es tu mascota|seguro que|confirmad/i);
+    expect(AVISO_SEGURIDAD).toMatch(/no envíes dinero ni códigos/);
+  });
+});
+
+describe("tituloReencuentro", () => {
+  it("según quién confirma", () => {
+    expect(tituloReencuentro(perdida("gato"))).toBe("¡Qué alegría que volvió a casa!");
+    expect(tituloReencuentro({ tipo: "encontrada" })).toMatch(/Volvió con su familia/);
   });
 });

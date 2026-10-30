@@ -1138,6 +1138,14 @@ export function matchBreakdown(a, b) {
   return items;
 }
 
+// Candidatos contra los que comparar un reporte: los del tipo opuesto, que
+// no estén resueltos y que no sean el mismo reporte. Un reencuentro ya
+// confirmado nunca vuelve a aparecer como búsqueda activa.
+export function candidatosParaComparar(report, reports) {
+  const opuesto = report?.tipo === "perdida" ? "encontrada" : "perdida";
+  return (reports || []).filter((r) => r.id !== report?.id && r.tipo === opuesto && !r.resuelto);
+}
+
 // Patrón repetido en 4 lugares distintos de la app (campanita de
 // notificaciones, submit del formulario, "ver coincidencias" de una tarjeta,
 // y el webhook de notify-match): puntuar candidatos contra un reporte,
