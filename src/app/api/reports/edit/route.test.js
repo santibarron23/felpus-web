@@ -31,13 +31,13 @@ describe("PATCH /api/reports/edit", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   // ownsRow: si la base encuentra la fila con el filtro de dueño.
-  function stubFetch({ userId = null, ownsRow = true } = {}) {
+  function stubFetch({ userId = null, ownsRow = true, row = ROW } = {}) {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url, init = {}) => {
         calls.push({ url: decodeURIComponent(String(url)), method: init.method || "GET", body: init.body ? JSON.parse(init.body) : null });
         if (String(url).endsWith("/auth/v1/user")) return userId ? Response.json({ id: userId, email: "a@b.c" }) : new Response("", { status: 401 });
-        if ((init.method || "GET") === "GET") return Response.json(ownsRow ? [ROW] : []);
+        if ((init.method || "GET") === "GET") return Response.json(ownsRow ? [row] : []);
         return Response.json(ownsRow ? [{ id: "r1" }] : []);
       })
     );
@@ -84,6 +84,30 @@ describe("PATCH /api/reports/edit", () => {
     stubFetch();
     const res = await PATCH(request({ reportId: "r1", pushToken: "x),user_id.not.is.null,(", fields: { nombre: "X" } }));
     expect(res.status).toBe(401);
+    expect(patchCall()).toBeUndefined();
+  });
+
+  it("guarda la respuesta de los consejos sumándola a detalles", async () => {
+    stubFetch({ row: { ...ROW, detalles: { comportamientos: ["se_acerca"] } } });
+    const res = await PATCH(request({ reportId: "r1", pushToken: TOKEN, consejo: { clave: "ante_desconocidos", valor: "miedoso" } }));
+    expect(res.status).toBe(200);
+    expect(patchCall().url).toContain(`or=(push_token.eq.${TOKEN})`);
+    expect(patchCall().body).toEqual({ detalles: { comportamientos: ["se_acerca"], ante_desconocidos: "miedoso" } });
+  });
+
+  it("rechaza una respuesta de consejos que no está en la lista", async () => {
+    stubFetch({ userId: "u1" });
+    for (const consejo of [{ clave: "avistamiento", valor: true }, { clave: "sale_de_casa", valor: "x" }, null]) {
+      const res = await PATCH(request({ reportId: "r1", consejo }, "sesion"));
+      expect(res.status).toBe(400);
+    }
+    expect(patchCall()).toBeUndefined();
+  });
+
+  it("respuesta de consejos en un aviso ajeno: 403", async () => {
+    stubFetch({ userId: "otra", ownsRow: false });
+    const res = await PATCH(request({ reportId: "r1", consejo: { clave: "sale_de_casa", valor: "interior" } }, "sesion"));
+    expect(res.status).toBe(403);
     expect(patchCall()).toBeUndefined();
   });
 });

@@ -28,6 +28,7 @@ import {
   LayoutGrid,
   Loader2,
   Sparkles,
+  Lightbulb,
   ChevronRight,
   ChevronDown,
   Check,
@@ -181,6 +182,8 @@ import { Avatar, RankingList, RankingMeCard, RankingStatTiles } from "./felpus/R
 import { PAIS_DEFAULT, PAISES, PROVINCIAS_AR, UBICACION_MAX, cleanUbicacion, cropAvatarDataUrl, formatUbicacion } from "../lib/profile";
 import Combobox from "./felpus/Combobox";
 import PhoneInput from "./felpus/PhoneInput";
+import ConsejosPanel from "./felpus/ConsejosPanel";
+import { tituloConsejos } from "../lib/consejos";
 import { splitStoredWhatsapp, getDefaultCountry, formatE164ForDisplay } from "../lib/phone";
 import {
   Badge,
@@ -648,6 +651,8 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   const [mifelpusSection, setMifelpusSection] = useState("reportes"); // "reportes" | "guardadas" | "perfil"
   const [mifelpusFilter, setMifelpusFilter] = useState("todas"); // "todas" | "perdida" | "encontrada" | "resuelto"
   const [myReportsDeleteConfirmId, setMyReportsDeleteConfirmId] = useState(null);
+  // Reporte de Mi Felpus con los consejos abiertos (ConsejosPanel).
+  const [consejosAbiertos, setConsejosAbiertos] = useState(null);
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState("");
@@ -2407,6 +2412,26 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
       throw new Error(describeSubmitError(err));
     } finally {
       submittingRef.current = false;
+    }
+  }
+
+  // Respuesta a la pregunta opcional de los consejos (ConsejosPanel): se
+  // guarda en detalles vía /api/reports/edit, con la sesión o el token del
+  // dispositivo. Si falla no se avisa: los consejos ya se acomodaron en
+  // pantalla, y la pregunta vuelve a aparecer la próxima vez.
+  async function handleConsejoAnswer(report, clave, valor) {
+    track("consejo_respondido", { clave, valor });
+    try {
+      const pushToken = reportToken(report.id);
+      const res = await authedFetch("/api/reports/edit", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reportId: report.id, ...(pushToken ? { pushToken } : {}), consejo: { clave, valor } }),
+      });
+      if (!res.ok) throw new Error(`No se pudo guardar la respuesta de consejos (${res.status})`);
+      setReports((prev) => prev.map((r) => (r.id === report.id ? { ...r, detalles: { ...(r.detalles || {}), [clave]: valor } } : r)));
+    } catch (err) {
+      logError(err);
     }
   }
 
@@ -4536,7 +4561,6 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                       {matchResult.source.contactoEmail && matchResult.source.avisosEmail !== false && (
                         <li>Te escribimos por email solo si aparece una coincidencia muy probable.</li>
                       )}
-                      <li>Compartilo en grupos del barrio y de mascotas: es lo que más ayuda.</li>
                     </ul>
                     {user && (
                       <p className="text-[12px] mt-2" style={{ color: C.muted }}>
@@ -4676,6 +4700,14 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                     ))}
                   </div>
                 </div>
+
+                {/* Consejos (2026-10-30): después de las coincidencias, que
+                    son lo más urgente de ver. Ver consejos.js. */}
+                <ConsejosPanel
+                  key={matchResult.source.id}
+                  report={matchResult.source}
+                  onAnswer={(clave, valor) => handleConsejoAnswer(matchResult.source, clave, valor)}
+                />
               </>
             )}
           </div>
@@ -5823,6 +5855,24 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                               </div>
                               </div>
                             ))}
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setConsejosAbiertos((prev) => (prev === r.id ? null : r.id))}
+                          aria-expanded={consejosAbiertos === r.id}
+                          className="w-full min-h-[44px] flex items-center justify-between px-3 py-2.5 border-t text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                          style={{ borderColor: C.border, color: C.text }}
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <Lightbulb className="w-3.5 h-3.5" aria-hidden="true" />
+                            {tituloConsejos(r)}
+                          </span>
+                          <ChevronRight className={`w-3.5 h-3.5 transition-transform ${consejosAbiertos === r.id ? "rotate-90" : ""}`} aria-hidden="true" />
+                        </button>
+                        {consejosAbiertos === r.id && (
+                          <div className="px-3 pb-3">
+                            <ConsejosPanel bare report={r} onAnswer={(clave, valor) => handleConsejoAnswer(r, clave, valor)} />
                           </div>
                         )}
                         <div className="px-3 pb-3 pt-1 border-t flex items-center justify-between gap-2 flex-wrap" style={{ borderColor: C.border }}>
