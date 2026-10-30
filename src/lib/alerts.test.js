@@ -162,7 +162,7 @@ describe("validación de entradas", () => {
 // ---------------------------------------------------------------------------
 // Despacho completo con una base y un web-push falsos.
 // ---------------------------------------------------------------------------
-function fakeDeps({ candidates = [], zones = [], subs = {}, zoneCount = 0, existingMatches = [], pending = [], reports = {}, lifecycle = [] } = {}) {
+function fakeDeps({ candidates = [], zones = [], subs = {}, zoneCount = 0, existingMatches = [], pending = [], reports = {}, lifecycle = [], recentSightings = 0 } = {}) {
   const log = [];
   const matches = new Set(existingMatches);
   const sent = [];
@@ -186,6 +186,7 @@ function fakeDeps({ candidates = [], zones = [], subs = {}, zoneCount = 0, exist
     markSent: vi.fn(async () => {}),
     zoneRecipients: vi.fn(async () => zones),
     countZoneSince: vi.fn(async () => zoneCount),
+    countKindSince: vi.fn(async (recipient, kind) => recentSightings + log.filter((l) => l.recipient === recipient && l.kind === kind).length),
     pendingZone: vi.fn(async () => pending),
     getReport: vi.fn(async (id) => reports[id] || null),
     lifecycleCandidates: vi.fn(async () => lifecycle),
@@ -313,5 +314,74 @@ describe("flushPending (tarea de las 8:00)", () => {
     expect(r.warned).toBe(1);
     expect(f.db.setInactivo).toHaveBeenCalledWith("viejo");
     expect(f.sent[0].payload.title).toBe("¿Seguís buscando?");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Avistamiento vinculado ("La vi" desde una perdida, 2026-10-30).
+// ---------------------------------------------------------------------------
+describe("dispatchNewReport — avistamiento vinculado", () => {
+  const perdida = report({ id: "r-perdida", user_id: "u-duenio" });
+  const visto = (over = {}) =>
+    report({ id: "s-1", tipo: "encontrada", user_id: "u-vecina", nombre: "", zona: "Centro", lat: -30, lng: -60, detalles: { avistamiento: true, avistamiento_de: "r-perdida", hora: "18:30" }, ...over });
+
+  it("avisa al dueño de esa perdida, aunque el puntaje no alcance", async () => {
+    const f = fakeDeps({ reports: { "r-perdida": perdida }, subs: { "u-duenio": [sub("duenio")] } });
+    const r = await dispatchNewReport(visto(), f.deps);
+    expect(r.sightingAlerts).toBe(1);
+    const p = f.sent.find((s) => s.endpoint.endsWith("duenio")).payload;
+    expect(p.title).toBe("👀 ¡Alguien podría haber visto a tu mascota!");
+    expect(p.body).toBe("Avisaron que vieron a Luna en Centro a las 18:30. Confirmá hora y lugar antes de ir.");
+    expect(p.url).toBe("https://felpus.com/r/r-perdida");
+    expect(f.log.find((l) => l.kind === "avistamiento")).toMatchObject({ recipient: "user:u-duenio", report_id: "s-1" });
+  });
+
+  it("dueño invitado: por la suscripción del reporte", async () => {
+    const invitada = { ...perdida, user_id: null, push_subscription: { endpoint: "https://fcm.googleapis.com/fcm/send/inv", keys: { p256dh: "k", auth: "a" } } };
+    const f = fakeDeps({ reports: { "r-perdida": invitada } });
+    await dispatchNewReport(visto(), f.deps);
+    expect(f.sent.map((s) => s.endpoint)).toEqual(["https://fcm.googleapis.com/fcm/send/inv"]);
+  });
+
+  it("como mucho uno cada 30 minutos por perdida", async () => {
+    const f = fakeDeps({ reports: { "r-perdida": perdida }, subs: { "u-duenio": [sub("duenio")] }, recentSightings: 1 });
+    expect((await dispatchNewReport(visto(), f.deps)).sightingAlerts).toBe(0);
+    expect(f.sent).toHaveLength(0);
+  });
+
+  it("no avisa si la perdida ya se resolvió, está oculta o no es una perdida", async () => {
+    for (const lost of [{ ...perdida, resuelto: true }, { ...perdida, oculto: true }, { ...perdida, tipo: "encontrada" }]) {
+      const f = fakeDeps({ reports: { "r-perdida": lost }, subs: { "u-duenio": [sub("duenio")] } });
+      await dispatchNewReport(visto(), f.deps);
+      expect(f.sent).toHaveLength(0);
+    }
+  });
+
+  it("no le avisa al dueño si el avistamiento lo cargó él mismo", async () => {
+    const f = fakeDeps({ reports: { "r-perdida": perdida }, subs: { "u-duenio": [sub("duenio")] } });
+    await dispatchNewReport(visto({ user_id: "u-duenio" }), f.deps);
+    expect(f.sent).toHaveLength(0);
+  });
+
+  it("si además es coincidencia alta, el dueño recibe un solo aviso (el de avistamiento)", async () => {
+    const parecido = visto({ lat: -24.771, lng: -65.401, zona: "Tres Cerritos", color: "Marrón", tamano: "chico", sexo: "Hembra" });
+    const f = fakeDeps({ reports: { "r-perdida": perdida }, candidates: [perdida], subs: { "u-duenio": [sub("duenio")] } });
+    await dispatchNewReport(parecido, f.deps);
+    const alDuenio = f.sent.filter((s) => s.endpoint.endsWith("duenio"));
+    expect(alDuenio).toHaveLength(1);
+    expect(alDuenio[0].payload.title).toBe("👀 ¡Alguien podría haber visto a tu mascota!");
+  });
+
+  it("si falla (por ejemplo, sin la migración), el resto de las alertas sigue", async () => {
+    const f = fakeDeps({ zones: [{ user_id: "u-vecino", distance_m: 500 }], subs: { "u-vecino": [sub("vecino")] } });
+    f.db.getReport.mockRejectedValueOnce(new Error("Supabase 400"));
+    const r = await dispatchNewReport(visto(), f.deps);
+    expect(r.zoneSent).toBe(1);
+  });
+
+  it("un reporte sin avistamiento_de no consulta nada de esto", async () => {
+    const f = fakeDeps();
+    await dispatchNewReport(report(), f.deps);
+    expect(f.db.getReport).not.toHaveBeenCalled();
   });
 });

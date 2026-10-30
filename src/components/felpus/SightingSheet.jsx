@@ -32,7 +32,7 @@ import { reverseGeocode } from "../../lib/osmMap";
 import { requestLocation, geolocationErrorMessage } from "../../lib/geolocation";
 import { CITIES } from "../../lib/cities";
 import { petTitle } from "../../lib/petTitle";
-import { sightingMissing, vistaEnDesdeInput, vistaEnParaInput } from "../../lib/sighting";
+import { COMENTARIO_MAX, DIRECCIONES, sightingMissing, vistaEnDesdeInput, vistaEnParaInput } from "../../lib/sighting";
 import { logError } from "../../lib/log";
 
 // Imagen genérica para un avistamiento sin foto (JPEG, como cualquier foto).
@@ -80,6 +80,8 @@ export default function SightingSheet({ vistaDe = null, inicial = null, savedWha
   const [color, setColor] = useState(vistaDe?.color || ini.color || "");
   const [tamano, setTamano] = useState(vistaDe?.tamano || ini.tamano || "");
   const [raza, setRaza] = useState(ini.raza || "");
+  const [direccion, setDireccion] = useState("");
+  const [comentario, setComentario] = useState("");
   const [sugerido, setSugerido] = useState(false);
   const [usarGuardado, setUsarGuardado] = useState(!!savedWhatsapp);
   const [phone, setPhone] = useState("");
@@ -184,6 +186,8 @@ export default function SightingSheet({ vistaDe = null, inicial = null, savedWha
         fotosDudosas: foto?.check?.dudosa ? [0] : [],
         contactoWhatsapp: whatsappDigits,
         vistaDe: vistaDe?.id || null,
+        direccion,
+        comentario,
       });
     } catch (err) {
       setError(err?.message || "No pudimos publicar. Probá de nuevo.");
@@ -356,6 +360,41 @@ export default function SightingSheet({ vistaDe = null, inicial = null, savedWha
               )}
             </button>
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFoto} aria-label="Foto de la mascota" />
+          </div>
+
+          {/* Hacia dónde iba y comentario (opcionales, 2026-10-30) */}
+          <div>
+            <p className={paso} style={{ color: C.text }}>
+              ¿Hacia dónde iba? <span className="font-normal" style={{ color: C.muted }}>(opcional)</span>
+            </p>
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+              {DIRECCIONES.map((d) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  aria-pressed={direccion === d.id}
+                  onClick={() => setDireccion((prev) => (prev === d.id ? "" : d.id))}
+                  className="min-h-[44px] rounded-xl border text-sm font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                  style={chip(direccion === d.id)}
+                >
+                  {d.label}
+                </button>
+              ))}
+            </div>
+            <label htmlFor="sighting-comentario" className={`${paso} mt-3`} style={{ color: C.text }}>
+              Comentario <span className="font-normal" style={{ color: C.muted }}>(opcional)</span>
+            </label>
+            <textarea
+              id="sighting-comentario"
+              value={comentario}
+              maxLength={COMENTARIO_MAX}
+              rows={2}
+              onChange={(e) => setComentario(e.target.value)}
+              placeholder="Ej: tenía collar rojo, cruzó hacia la plaza"
+              className="felpus-input w-full border rounded-lg px-3 py-2.5 text-sm"
+              style={{ borderColor: C.border, color: C.text, background: C.surfaceSubtle }}
+            />
+            <p className="text-[12px] mt-1" style={{ color: C.muted }}>Se ve en el aviso. No pongas direcciones ni datos personales.</p>
           </div>
 
           {/* Contacto (opcional) */}

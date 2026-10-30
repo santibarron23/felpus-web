@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   buildSightingDraft,
+  validarDatosAvistamiento,
+  avistamientosDe,
+  direccionLabel,
+  COMENTARIO_MAX,
   sightingMissing,
   isSighting,
   sightingWhen,
@@ -119,5 +123,74 @@ describe("sightingMissing", () => {
     expect(sightingMissing({ lat: 1, lng: 2, especie: "gato" })).toEqual([]);
     expect(sightingMissing({ zona: "Centro", especie: "perro" })).toEqual([]);
     expect(sightingMissing({ zona: "Centro", especie: "perro", vistaEn: null })).toEqual(["cuándo la viste"]);
+  });
+});
+
+describe("dirección y comentario (2026-10-30)", () => {
+  const base = { especie: "perro", zona: "Centro", vistaEn: Date.UTC(2026, 9, 27, 21, 30), id: "s1" };
+
+  it("se guardan solo si vienen con valores válidos", () => {
+    expect(buildSightingDraft({ ...base, direccion: "norte", comentario: "  iba con collar rojo " }).detalles).toMatchObject({ direccion: "norte", comentario: "iba con collar rojo" });
+    const d = buildSightingDraft({ ...base, direccion: "no_se", comentario: "   " }).detalles;
+    expect(d.direccion).toBeUndefined();
+    expect(d.comentario).toBeUndefined();
+    expect(buildSightingDraft({ ...base, direccion: "arriba" }).detalles.direccion).toBeUndefined();
+  });
+
+  it("direccionLabel", () => {
+    expect(direccionLabel("oeste")).toBe("Oeste");
+    expect(direccionLabel("no_se")).toBe("");
+    expect(direccionLabel(undefined)).toBe("");
+  });
+});
+
+describe("validarDatosAvistamiento (servidor)", () => {
+  const av = (detalles) => ({ tipo: "encontrada", detalles: { avistamiento: true, ...detalles } });
+
+  it("deja pasar reportes sin estos datos", () => {
+    expect(validarDatosAvistamiento({ tipo: "perdida", detalles: { comportamientos: ["miedoso"] } })).toEqual({ detalles: { comportamientos: ["miedoso"] } });
+    expect(validarDatosAvistamiento({ tipo: "perdida", detalles: null })).toEqual({ detalles: null });
+  });
+
+  it("acepta y normaliza un avistamiento válido", () => {
+    expect(validarDatosAvistamiento(av({ direccion: "sur", comentario: " cojeaba ", avistamiento_de: "123-abc" }))).toEqual({
+      detalles: { avistamiento: true, direccion: "sur", comentario: "cojeaba", avistamiento_de: "123-abc" },
+    });
+    expect(validarDatosAvistamiento(av({ comentario: "  " })).detalles.comentario).toBeUndefined();
+  });
+
+  it("rechaza lo que no corresponde", () => {
+    for (const row of [
+      { tipo: "perdida", detalles: { direccion: "sur" } },
+      { tipo: "encontrada", detalles: { comentario: "hola" } },
+      av({ direccion: "no_se" }),
+      av({ direccion: "arriba" }),
+      av({ comentario: 5 }),
+      av({ comentario: "a".repeat(COMENTARIO_MAX + 1) }),
+      av({ avistamiento_de: "x),user_id.not.is.null,(" }),
+    ]) {
+      expect(validarDatosAvistamiento(row).error, JSON.stringify(row)).toBeTruthy();
+    }
+  });
+});
+
+describe("avistamientosDe", () => {
+  const perdida = { id: "p1", tipo: "perdida", detalles: { avistamientos_descartados: ["s3"] } };
+  const av = (id, fecha, hora, extra = {}) => ({ id, tipo: "encontrada", fecha, detalles: { avistamiento: true, avistamiento_de: "p1", hora }, ...extra });
+  const lista = [
+    av("s1", "2026-10-27", "09:00"),
+    av("s2", "2026-10-28", "08:00"),
+    av("s3", "2026-10-29", "08:00"),
+    av("s4", "2026-10-29", "10:00", { oculto: true }),
+    { id: "s5", tipo: "encontrada", fecha: "2026-10-29", detalles: { avistamiento: true, avistamiento_de: "otra" } },
+    { id: "e1", tipo: "encontrada", fecha: "2026-10-29", detalles: { avistamiento_de: "p1" } },
+  ];
+
+  it("solo los vinculados, sin ocultos ni descartados, del más nuevo al más viejo", () => {
+    expect(avistamientosDe(perdida, lista).map((r) => r.id)).toEqual(["s2", "s1"]);
+  });
+
+  it("sin perdida, nada", () => {
+    expect(avistamientosDe(null, lista)).toEqual([]);
   });
 });

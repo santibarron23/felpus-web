@@ -15,6 +15,8 @@ import { zonaConCiudad } from "../../lib/zona";
 import { whatsappUrl } from "../../lib/shareCard";
 import { isSighting, estadoReporte, ESTADO_LABEL, avistamientoCuando } from "../../lib/sighting";
 import { esTerceros, lugarResguardo } from "../../lib/resguardo";
+import ConsejosPanel from "./ConsejosPanel";
+import AvistamientosHistorial from "./AvistamientosHistorial";
 import ReportLocationMap from "../ReportLocationMap";
 import {
   Cat,
@@ -258,7 +260,7 @@ function contactMessage(report) {
   return `Hola! Vi en Felpus tu publicación de ${nombre} en ${zonaConCiudad(report)}. Creo que puedo ayudar.\n${SITE_URL}/r/${report.id}`;
 }
 
-export function DetailModal({ report, contactStatus, onRetryContact, onClose, onResolve, confirming, resolving, onConfirm, onCancelConfirm, isLoggedIn, isOwner, onDelete, onFlagReport, saved, onToggleSaved, onAskAssistant, onSawIt, onEdit }) {
+export function DetailModal({ report, contactStatus, onRetryContact, onClose, onResolve, confirming, resolving, onConfirm, onCancelConfirm, isLoggedIn, isOwner, onDelete, onFlagReport, saved, onToggleSaved, onAskAssistant, onSawIt, onEdit, celebrarReencuentro = false, avistamientos = [], esDuenio = false, onOpenAvistamiento, onDescartarAvistamiento, onDenunciarAvistamiento }) {
   const C = useTheme();
   const [activeIndex, setActiveIndex] = useState(0);
   const [generatingFlyer, setGeneratingFlyer] = useState(false);
@@ -452,6 +454,27 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
             <p className="text-sm" style={{ color: C.text }}>{report.descripcion}</p>
           </div>
           {report.nickname && <p className="text-xs" style={{ color: C.muted }}>Reportado por {report.nickname}</p>}
+          {/* Recién confirmado el reencuentro desde esta ficha: festejo y
+              consejos de después (ConsejosPanel, consejos.js). */}
+          {celebrarReencuentro && report.resuelto && <ConsejosPanel report={report} celebrar />}
+          {/* Avistamientos vinculados ("La vi"): el detalle solo para el
+              dueño; el resto ve cuántos hubo. */}
+          {esDuenio ? (
+            <AvistamientosHistorial
+              avistamientos={avistamientos}
+              onOpen={onOpenAvistamiento}
+              onDescartar={onDescartarAvistamiento}
+              onDenunciar={onDenunciarAvistamiento}
+            />
+          ) : (
+            avistamientos.length > 0 &&
+            !report.resuelto && (
+              <p className="text-[13px] flex items-center gap-1.5" style={{ color: C.text }}>
+                <Eye className="w-4 h-4 shrink-0" style={{ color: C.sightingSolid }} aria-hidden="true" />
+                {avistamientos.length === 1 ? "1 persona avisó que la vio." : `${avistamientos.length} personas avisaron que la vieron.`}
+              </p>
+            )
+          )}
           {/* "La vi" (sighting.js): en una perdida activa, avisar que se la vio
               abre el reporte express ya vinculado a esta ficha. */}
           {onSawIt && report.tipo === "perdida" && !report.resuelto && !isOwner && (

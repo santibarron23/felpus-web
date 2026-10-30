@@ -7,7 +7,7 @@ import SocialLinks from "./felpus/SocialLinks";
 import FelpusAssistant from "./felpus/FelpusAssistant";
 import ImportPostCard from "./felpus/ImportPostCard";
 import SightingSheet from "./felpus/SightingSheet";
-import { buildSightingDraft, PUNTOS_AVISTAMIENTO, pasaFiltroTipo, isSighting } from "../lib/sighting";
+import { buildSightingDraft, PUNTOS_AVISTAMIENTO, pasaFiltroTipo, isSighting, avistamientosDe } from "../lib/sighting";
 import { buildShareMessage, whatsappUrl } from "../lib/shareCard";
 import { SITE_URL } from "../lib/site";
 import { WHATSAPP_GREEN, WHATSAPP_INK } from "../lib/theme";
@@ -71,6 +71,7 @@ import {
   addWatermark,
   getImageEmbedding,
   findMatches,
+  candidatosParaComparar,
   scoreLabel,
   matchBreakdown,
   getTier,
@@ -183,6 +184,8 @@ import { PAIS_DEFAULT, PAISES, PROVINCIAS_AR, UBICACION_MAX, cleanUbicacion, cro
 import Combobox from "./felpus/Combobox";
 import PhoneInput from "./felpus/PhoneInput";
 import ConsejosPanel from "./felpus/ConsejosPanel";
+import CoincidenciaAyuda from "./felpus/CoincidenciaAyuda";
+import AvistamientosHistorial from "./felpus/AvistamientosHistorial";
 import ResguardoPregunta from "./felpus/ResguardoPregunta";
 import { detallesResguardo } from "../lib/resguardo";
 import { tituloConsejos } from "../lib/consejos";
@@ -658,6 +661,11 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   const [myReportsDeleteConfirmId, setMyReportsDeleteConfirmId] = useState(null);
   // Reporte de Mi Felpus con los consejos abiertos (ConsejosPanel).
   const [consejosAbiertos, setConsejosAbiertos] = useState(null);
+  // Reporte cuyo reencuentro se acaba de confirmar en esta sesión: muestra
+  // "¡Qué alegría que volvió a casa!" + consejos (ConsejosPanel celebrar).
+  const [recienReencontrado, setRecienReencontrado] = useState(null);
+  // Reporte de Mi Felpus con el historial de avistamientos abierto.
+  const [avistamientosAbiertos, setAvistamientosAbiertos] = useState(null);
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState("");
@@ -1219,6 +1227,37 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     }
   }
 
+  // Historial de avistamientos (AvistamientosHistorial, sighting.js).
+  // "No es mi mascota": lo saca del historial de esa perdida, guardado en sus
+  // detalles vía /api/reports/edit (sesión o token del dispositivo).
+  async function handleDescartarAvistamiento(perdida, avistamiento) {
+    const pushToken = reportToken(perdida.id);
+    const res = await authedFetch("/api/reports/edit", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reportId: perdida.id, ...(pushToken ? { pushToken } : {}), descartarAvistamiento: avistamiento.id }),
+    });
+    if (!res.ok) {
+      pushToast("error", "No pudimos sacarlo de la lista. Probá de nuevo.");
+      throw new Error(`No se pudo descartar el avistamiento (${res.status})`);
+    }
+    const marcar = (r) => {
+      if (r.id !== perdida.id) return r;
+      const previos = Array.isArray(r.detalles?.avistamientos_descartados) ? r.detalles.avistamientos_descartados : [];
+      return { ...r, detalles: { ...(r.detalles || {}), avistamientos_descartados: [...previos, avistamiento.id] } };
+    };
+    setReports((prev) => prev.map(marcar));
+    setDetailReport((prev) => (prev ? marcar(prev) : prev));
+    track("avistamiento_descartado");
+  }
+
+  function handleDenunciarAvistamiento(avistamiento) {
+    return handleFlagReport(avistamiento, "info_incorrecta").catch((e) => {
+      pushToast("error", "No pudimos enviar la denuncia. Probá de nuevo.");
+      throw e;
+    });
+  }
+
   // Coincidencias nuevas desde la última visita: para cada reporte propio
   // activo, busca su mejor candidato nuevo (creado después del último
   // "visto") con score suficiente. Antes esto solo contaba un número y
@@ -1231,8 +1270,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     if (myActive.length === 0) return [];
     const items = [];
     for (const mine of myActive) {
-      const opposite = mine.tipo === "perdida" ? "encontrada" : "perdida";
-      const candidates = reports.filter((r) => r.tipo === opposite && !r.resuelto && r.creadoEn > matchesSeenAt);
+      const candidates = candidatosParaComparar(mine, reports).filter((r) => r.creadoEn > matchesSeenAt);
       const scored = findMatches(mine, candidates);
       if (scored.length > 0) {
         items.push({ mine, best: scored[0].report, score: scored[0].score, extraCount: scored.length - 1 });
@@ -2011,6 +2049,8 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
       }
       await loadLeaderboard();
       setConfirmingId(null);
+      setRecienReencontrado(ids[0]);
+      setConsejosAbiertos(ids[0]);
       playSuccess();
       pushToast("success", `🎉 ¡Gracias ${resolverDisplayName}! +${PUNTOS_REENCUENTRO} huellitas por confirmar el reencuentro.`);
     } catch (e) {
@@ -2355,8 +2395,6 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   // no, recién después (la hoja muestra su propio "publicando" y, si falla,
   // queda abierta con los datos). Si createReport falla, tira el error.
   async function publishAndMatch(draft, { puntos, navigateFirst = true }) {
-    const opposite = draft.tipo === "perdida" ? "encontrada" : "perdida";
-
     if (navigateFirst) {
       goToTab("resultado");
       setScanning(true);
@@ -2372,7 +2410,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
       goToTab("resultado");
     }
     // Con los vectores de las fotos ya cargados (ver vectoresListos).
-    const candidates = (await reportesParaComparar()).filter((r) => r.tipo === opposite && !r.resuelto);
+    const candidates = candidatosParaComparar(savedReport, await reportesParaComparar());
 
     const scored = findMatches(savedReport, candidates, { limit: 6 });
 
@@ -2676,8 +2714,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     }
     setExpandedCard(report.id);
     if (cardMatches[report.id]) return;
-    const opposite = report.tipo === "perdida" ? "encontrada" : "perdida";
-    const candidates = (await reportesParaComparar()).filter((r) => r.id !== report.id && r.tipo === opposite && !r.resuelto);
+    const candidates = candidatosParaComparar(report, await reportesParaComparar());
     const scored = findMatches(report, candidates, { limit: 6 });
     let descartados = new Set();
     try {
@@ -4612,10 +4649,19 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                   )}
                 </div>
 
+                {recienReencontrado === matchResult.source.id && matchResult.source.resuelto && (
+                  <ConsejosPanel key={matchResult.source.id} report={matchResult.source} celebrar />
+                )}
+
                 <div>
                   <h3 className="felpus-display text-lg mb-2" style={{ color: C.text }}>
-                    {matchResult.results.length > 0 ? "Posibles coincidencias" : "Todavía no hay coincidencias"}
+                    {matchResult.results.length === 0
+                      ? "Todavía no hay coincidencias"
+                      : matchResult.results.length === 1
+                        ? "Encontramos una posible coincidencia"
+                        : `Encontramos ${matchResult.results.length} posibles coincidencias`}
                   </h3>
+                  {matchResult.results.length > 0 && <CoincidenciaAyuda report={matchResult.source} className="mb-3" />}
                   {matchResult.results.length === 0 && (
                     <div className="text-sm bg-white dark:bg-[var(--felpus-dark-card)] rounded-2xl p-5 text-center border" style={{ color: C.muted, borderColor: C.border }}>
                       <Mascot mood="searching" size={80} className="mx-auto mb-2" />
@@ -4726,12 +4772,15 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                 </div>
 
                 {/* Consejos (2026-10-30): después de las coincidencias, que
-                    son lo más urgente de ver. Ver consejos.js. */}
-                <ConsejosPanel
-                  key={matchResult.source.id}
-                  report={matchResult.source}
-                  onAnswer={(clave, valor) => handleConsejoAnswer(matchResult.source, clave, valor)}
-                />
+                    son lo más urgente de ver. Ver consejos.js. Recién
+                    confirmado el reencuentro, van arriba (ver más arriba). */}
+                {recienReencontrado !== matchResult.source.id && (
+                  <ConsejosPanel
+                    key={matchResult.source.id}
+                    report={matchResult.source}
+                    onAnswer={(clave, valor) => handleConsejoAnswer(matchResult.source, clave, valor)}
+                  />
+                )}
               </>
             )}
           </div>
@@ -5822,6 +5871,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" /> calculando...
                               </p>
                             )}
+                            {cardMatches[r.id]?.length > 0 && <CoincidenciaAyuda report={r} />}
                             {cardMatches[r.id]?.length === 0 && (
                               <p className="text-xs py-2" style={{ color: C.muted }}>
                                 Sin coincidencias de al menos {Math.round(SCORE_MINIMO * 100)}% por ahora.
@@ -5881,6 +5931,33 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                             ))}
                           </div>
                         )}
+                        {r.tipo === "perdida" && avistamientosDe(r, reports).length > 0 && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setAvistamientosAbiertos((prev) => (prev === r.id ? null : r.id))}
+                              aria-expanded={avistamientosAbiertos === r.id}
+                              className="w-full min-h-[44px] flex items-center justify-between px-3 py-2.5 border-t text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                              style={{ borderColor: C.border, color: C.text }}
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <Eye className="w-3.5 h-3.5" style={{ color: C.sightingSolid }} aria-hidden="true" />
+                                Avistamientos ({avistamientosDe(r, reports).length})
+                              </span>
+                              <ChevronRight className={`w-3.5 h-3.5 transition-transform ${avistamientosAbiertos === r.id ? "rotate-90" : ""}`} aria-hidden="true" />
+                            </button>
+                            {avistamientosAbiertos === r.id && (
+                              <div className="px-3 pb-3">
+                                <AvistamientosHistorial
+                                  avistamientos={avistamientosDe(r, reports)}
+                                  onOpen={openReportDetail}
+                                  onDescartar={(a) => handleDescartarAvistamiento(r, a)}
+                                  onDenunciar={handleDenunciarAvistamiento}
+                                />
+                              </div>
+                            )}
+                          </>
+                        )}
                         <button
                           type="button"
                           onClick={() => setConsejosAbiertos((prev) => (prev === r.id ? null : r.id))}
@@ -5896,7 +5973,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                         </button>
                         {consejosAbiertos === r.id && (
                           <div className="px-3 pb-3">
-                            <ConsejosPanel bare report={r} onAnswer={(clave, valor) => handleConsejoAnswer(r, clave, valor)} />
+                            <ConsejosPanel bare report={r} celebrar={recienReencontrado === r.id} onAnswer={(clave, valor) => handleConsejoAnswer(r, clave, valor)} />
                           </div>
                         )}
                         <div className="px-3 pb-3 pt-1 border-t flex items-center justify-between gap-2 flex-wrap" style={{ borderColor: C.border }}>
@@ -6441,6 +6518,12 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
         confirming={confirmingId === detailReport?.id}
         resolving={!!detailReport && resolvingId === detailReport.id}
         isOwner={!!detailReport && detailReport.userId === user?.id}
+        celebrarReencuentro={!!detailReport && recienReencontrado === detailReport.id}
+        avistamientos={detailReport?.tipo === "perdida" ? avistamientosDe(detailReport, reports) : []}
+        esDuenio={!!detailReport && ((user && detailReport.userId === user.id) || !!reportToken(detailReport.id))}
+        onOpenAvistamiento={openReportDetail}
+        onDescartarAvistamiento={(a) => handleDescartarAvistamiento(detailReport, a)}
+        onDenunciarAvistamiento={handleDenunciarAvistamiento}
         onConfirm={() =>
           markResolvedAndReward({
             repObjs: [detailReport],

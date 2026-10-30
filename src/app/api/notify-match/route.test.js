@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { escapeHtml } from "./route";
 
 // Regresión del hallazgo de auditoría: nombre/color/zona son texto libre
@@ -28,5 +28,30 @@ describe("escapeHtml", () => {
   it("maneja null/undefined como string vacío, sin tirar", () => {
     expect(escapeHtml(null)).toBe("");
     expect(escapeHtml(undefined)).toBe("");
+  });
+});
+
+// Un reencuentro ya confirmado no dispara avisos de coincidencia.
+describe("POST /api/notify-match con un reporte resuelto", () => {
+  it("no notifica ni consulta la base", async () => {
+    const { POST } = await import("./route");
+    process.env.NOTIFY_WEBHOOK_SECRET = "s3cr3t";
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://x.supabase.co";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "service";
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    try {
+      const res = await POST(
+        new Request("http://localhost/api/notify-match", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-webhook-secret": "s3cr3t" },
+          body: JSON.stringify({ record: { id: "r1", tipo: "encontrada", especie: "perro", resuelto: true } }),
+        })
+      );
+      expect(await res.json()).toEqual({ notified: 0 });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

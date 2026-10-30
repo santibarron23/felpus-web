@@ -6,15 +6,16 @@
 // consejos en el momento; guardar (onAnswer) es cosa de quien lo usa y, si
 // falla, los consejos igual quedan personalizados en esta pantalla.
 // Se usa en la confirmación de publicación y en Mi Felpus (bare: sin la
-// tarjeta de afuera, va dentro de la del reporte).
+// tarjeta de afuera, va dentro de la del reporte). Con `celebrar` (recién se
+// confirmó el reencuentro) el título es "¡Qué alegría que volvió a casa!".
 import { useId, useState } from "react";
-import { ChevronDown, Lightbulb } from "lucide-react";
+import { ChevronDown, Lightbulb, PartyPopper } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
-import { getConsejos, preguntaPara, tituloConsejos } from "../../lib/consejos";
+import { getConsejos, preguntaPara, tituloConsejos, tituloReencuentro } from "../../lib/consejos";
 
 const VISIBLES = 3;
 
-export default function ConsejosPanel({ report, onAnswer, bare = false }) {
+export default function ConsejosPanel({ report, onAnswer, bare = false, celebrar = false }) {
   const C = useTheme();
   const listId = useId();
   const [verTodos, setVerTodos] = useState(false);
@@ -27,6 +28,8 @@ export default function ConsejosPanel({ report, onAnswer, bare = false }) {
   const visibles = verTodos ? consejos : consejos.slice(0, VISIBLES);
   const ocultos = consejos.length - VISIBLES;
 
+  const titulo = celebrar && report.resuelto ? tituloReencuentro(report) : tituloConsejos(report);
+
   function responder(clave, valor) {
     setRespuesta({ clave, valor });
     onAnswer?.(clave, valor);
@@ -34,15 +37,19 @@ export default function ConsejosPanel({ report, onAnswer, bare = false }) {
 
   return (
     <section
-      aria-label={tituloConsejos(report)}
+      aria-label={titulo}
       className={bare ? "" : "bg-white rounded-2xl border p-4"}
       style={bare ? undefined : { borderColor: C.border }}
     >
-      {/* bare: el título ya está en el botón que lo abre. */}
-      {!bare && (
+      {/* bare: el título ya está en el botón que lo abre (salvo al celebrar). */}
+      {(!bare || celebrar) && (
         <h3 className="text-[15px] font-bold flex items-center gap-1.5 mb-2" style={{ color: C.text }}>
-          <Lightbulb className="w-4 h-4 shrink-0" style={{ color: C.red }} aria-hidden="true" />
-          {tituloConsejos(report)}
+          {celebrar ? (
+            <PartyPopper className="w-4 h-4 shrink-0" style={{ color: C.greenSolid }} aria-hidden="true" />
+          ) : (
+            <Lightbulb className="w-4 h-4 shrink-0" style={{ color: C.red }} aria-hidden="true" />
+          )}
+          {titulo}
         </h3>
       )}
       <ol id={listId} className="space-y-2">
