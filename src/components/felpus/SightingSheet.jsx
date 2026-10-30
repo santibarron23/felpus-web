@@ -12,6 +12,9 @@
 // - El contacto es opcional.
 // - Desde la ficha de una perdida ("La vi"), llega con especie/color/tamaño
 //   de ese reporte y queda vinculada a él.
+// - Desde el formulario de encontrada ("No la tengo, solo la vi", ver
+//   ResguardoPregunta), llega con `inicial`: foto, ubicación, especie,
+//   color, tamaño y raza ya cargados.
 // Publicar va por el mismo camino que el formulario (onPublish).
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -58,23 +61,25 @@ function fotoGenerica(especie, C) {
   return canvas.toDataURL("image/jpeg", 0.85);
 }
 
-export default function SightingSheet({ vistaDe = null, savedWhatsapp = "", defaultCountry = "AR", onPublish, onTengo, onClose }) {
+export default function SightingSheet({ vistaDe = null, inicial = null, savedWhatsapp = "", defaultCountry = "AR", onPublish, onTengo, onClose }) {
   const C = useTheme();
   const panelRef = useRef(null);
   const fileRef = useRef(null);
   const [mapOpen, setMapOpen] = useState(false);
   useFocusTrap(!mapOpen, panelRef, onClose);
 
-  const [foto, setFoto] = useState(null); // { dataUrl, hist, embedding, check }
+  const ini = inicial || {};
+  const iniEspecie = vistaDe?.especie || ini.especie;
+  const [foto, setFoto] = useState(ini.foto?.dataUrl ? ini.foto : null); // { dataUrl, hist, embedding, check }
   const [fotoBusy, setFotoBusy] = useState(false);
-  const [loc, setLoc] = useState(null); // { lat, lng }
-  const [lugar, setLugar] = useState({ zona: "", ciudad: "", provincia: "" });
+  const [loc, setLoc] = useState(ini.loc || null); // { lat, lng }
+  const [lugar, setLugar] = useState({ zona: ini.lugar?.zona || "", ciudad: ini.lugar?.ciudad || "", provincia: ini.lugar?.provincia || "" });
   const [geo, setGeo] = useState({ status: "idle", error: "" });
   const [vistaInput, setVistaInput] = useState(() => vistaEnParaInput(Date.now()));
-  const [especie, setEspecie] = useState(vistaDe?.especie === "perro" || vistaDe?.especie === "gato" ? vistaDe.especie : "");
-  const [color, setColor] = useState(vistaDe?.color || "");
-  const [tamano, setTamano] = useState(vistaDe?.tamano || "");
-  const [raza, setRaza] = useState("");
+  const [especie, setEspecie] = useState(iniEspecie === "perro" || iniEspecie === "gato" ? iniEspecie : "");
+  const [color, setColor] = useState(vistaDe?.color || ini.color || "");
+  const [tamano, setTamano] = useState(vistaDe?.tamano || ini.tamano || "");
+  const [raza, setRaza] = useState(ini.raza || "");
   const [sugerido, setSugerido] = useState(false);
   const [usarGuardado, setUsarGuardado] = useState(!!savedWhatsapp);
   const [phone, setPhone] = useState("");
@@ -83,7 +88,7 @@ export default function SightingSheet({ vistaDe = null, savedWhatsapp = "", defa
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState("");
   // Lo que eligió la persona no lo pisa la sugerencia de la IA.
-  const tocados = useRef(new Set(vistaDe ? ["especie", "color", "tamano"] : []));
+  const tocados = useRef(new Set(vistaDe ? ["especie", "color", "tamano"] : ["especie", "color", "tamano", "raza"].filter((k) => ini[k])));
 
   const whatsappDigits = usarGuardado && savedWhatsapp ? savedWhatsapp.replace(/\D/g, "") : parsed.isValid ? parsed.digits : "";
   const phoneInvalido = !usarGuardado && phone.trim() && !parsed.isValid;
