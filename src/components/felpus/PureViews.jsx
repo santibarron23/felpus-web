@@ -462,6 +462,7 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
           {esDuenio ? (
             <AvistamientosHistorial
               avistamientos={avistamientos}
+              onVerMapa={() => setLocationOpen(true)}
               onOpen={onOpenAvistamiento}
               onDescartar={onDescartarAvistamiento}
               onDenunciar={onDenunciarAvistamiento}
@@ -792,7 +793,7 @@ export function DetailModal({ report, contactStatus, onRetryContact, onClose, on
     {locationOpen &&
       createPortal(
         <div ref={locationRef}>
-          <ReportLocationMap report={report} onClose={() => setLocationOpen(false)} />
+          <ReportLocationMap report={report} avistamientos={esDuenio ? avistamientos : []} onClose={() => setLocationOpen(false)} />
         </div>,
         document.body
       )}

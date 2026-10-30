@@ -6,14 +6,16 @@
 // - "No es mi mascota" lo saca de SU historial (onDescartar).
 // - "Denunciar" usa la denuncia de siempre (flag_report), motivo
 //   "Información incorrecta".
+// - "Ver en el mapa" (onVerMapa, solo en la ficha): ReportLocationMap con los
+//   avistamientos numerados.
 import { useState } from "react";
 import Image from "next/image";
-import { Eye, Flag, MapPin, Navigation, X } from "lucide-react";
+import { Eye, Flag, Map as MapIcon, MapPin, Navigation, X } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
 import { avistamientoCuando, direccionLabel } from "../../lib/sighting";
 import { zonaConCiudad } from "../../lib/zona";
 
-export default function AvistamientosHistorial({ avistamientos, onOpen, onDescartar, onDenunciar }) {
+export default function AvistamientosHistorial({ avistamientos, onOpen, onDescartar, onDenunciar, onVerMapa }) {
   const C = useTheme();
   // id → "descartando" | "denunciando" | "denunciado"
   const [estado, setEstado] = useState({});
@@ -39,6 +41,16 @@ export default function AvistamientosHistorial({ avistamientos, onOpen, onDescar
       <p className="text-[12px] mt-0.5" style={{ color: C.muted }}>
         Aportados por la comunidad, sin confirmar. Confirmá hora y lugar antes de ir.
       </p>
+      {onVerMapa && avistamientos.some((a) => a.lat != null && a.lng != null) && (
+        <button
+          type="button"
+          onClick={onVerMapa}
+          className="mt-2 min-h-[44px] w-full rounded-xl border flex items-center justify-center gap-1.5 text-sm font-semibold bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+          style={{ borderColor: C.border, color: C.text }}
+        >
+          <MapIcon className="w-4 h-4" aria-hidden="true" /> Ver en el mapa
+        </button>
+      )}
       <ol className="mt-2 space-y-2">
         {avistamientos.map((a) => {
           const dir = direccionLabel(a.detalles?.direccion);
