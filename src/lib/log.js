@@ -42,6 +42,28 @@ function isErrorLike(a) {
   return a instanceof Error || (a !== null && typeof a === "object" && typeof a.message === "string");
 }
 
+// Lo que llegó sin `message` (2026-11-02): en producción había 36 "Error sin
+// mensaje" y varios errores con solo el texto del llamador, sin forma de
+// saber qué falló. Ahora se describe qué era: un Event (de una imagen o un
+// lector de archivos), un objeto, un Error vacío, undefined...
+export function describirSinMensaje(a) {
+  if (a === undefined || a === null) return `valor vacío (${a})`;
+  if (typeof a !== "object" && typeof a !== "function") return `${typeof a}: ${String(a).slice(0, 200)}`;
+  const tipo = a?.constructor?.name || "Object";
+  if (typeof a.type === "string" && "target" in a) {
+    const target = a.target?.tagName || a.target?.constructor?.name || "";
+    return `${tipo} "${a.type}"${target ? ` en ${target}` : ""}`;
+  }
+  if (a instanceof Error) return `${a.name || tipo} sin mensaje`;
+  let json = "";
+  try {
+    json = JSON.stringify(a)?.slice(0, 200) || "";
+  } catch {
+    json = "";
+  }
+  return json && json !== "{}" ? `${tipo} ${json}` : `${tipo} sin datos`;
+}
+
 export function buildErrorPayload(args, { url = null, userAgent = null } = {}) {
   const errorArg = args.find(isErrorLike);
   const textParts = args.filter((a) => typeof a === "string");
@@ -49,8 +71,12 @@ export function buildErrorPayload(args, { url = null, userAgent = null } = {}) {
     errorArg && !(errorArg instanceof Error)
       ? [errorArg.code && `code ${errorArg.code}`, errorArg.details, errorArg.hint].filter(Boolean).join(" | ")
       : "";
+  // Lo que no es texto ni trae un message útil: se describe en vez de perderlo.
+  const sinMensaje = args
+    .filter((a) => typeof a !== "string" && !(isErrorLike(a) && a.message))
+    .map(describirSinMensaje);
   const message =
-    [...textParts, errorArg?.message, supabaseExtra].filter(Boolean).join(" — ") || "Error sin mensaje";
+    [...textParts, errorArg?.message, supabaseExtra, ...sinMensaje].filter(Boolean).join(" — ") || "Error sin mensaje";
 
   return {
     message: message.slice(0, 2000),
@@ -74,12 +100,33 @@ export function debeReportar(message, enviados = reportados, max = MAX_REPORTES_
   return true;
 }
 
+// Situaciones esperables que no son fallas de Felpus (2026-11-02, mirando
+// error_logs: eran ~60% de los registros). Siguen en la consola, pero no se
+// mandan: gastaban el cupo y tapaban los errores reales.
+const NO_REPORTAR = [
+  // Google bloqueado o lento (navegadores de Instagram/Facebook, bloqueadores).
+  /Google Identity Services/i,
+  // Decisión de la persona.
+  /No diste permiso para las notificaciones/i,
+  // Límites propios que ya le muestran su mensaje a la persona.
+  /Demasiadas consultas de contacto/i,
+  /Ya le mandaste un coraz[oó]n/i,
+  // Reloj del celular adelantado.
+  /JWT issued at future/i,
+  // La key de Maps rechazada solo en desarrollo.
+  /gm_authFailure\) en http:\/\/localhost/i,
+];
+
+export function esEsperable(message) {
+  return NO_REPORTAR.some((re) => re.test(String(message || "")));
+}
+
 function reportToSupabase(args) {
   const payload = buildErrorPayload(args, {
     url: window.location?.href,
     userAgent: navigator.userAgent,
   });
-  if (!debeReportar(payload.message)) return;
+  if (esEsperable(payload.message) || !debeReportar(payload.message)) return;
 
   // Fire-and-forget a propósito: nadie espera este resultado, y un .catch
   // vacío evita el "unhandled promise rejection" si la ruta no responde
