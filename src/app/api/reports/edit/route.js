@@ -4,6 +4,7 @@ import { getAuthUserId, supabaseServerEnv } from "../../../../lib/serverAuth";
 import { buildOwnerPatch, reorderPhotos } from "../../../../lib/adminEdit";
 import { respuestaValida } from "../../../../lib/consejos";
 import { DESCARTADOS_MAX } from "../../../../lib/sighting";
+import { validateReportContact } from "../../../../lib/reportValidation";
 
 // Quien publicó corrige su aviso (2026-10-29): nombre, datos, zona, fecha,
 // descripción y orden de las fotos — los mismos campos que el admin
@@ -16,6 +17,10 @@ import { DESCARTADOS_MAX } from "../../../../lib/sighting";
 // (consejo: { clave, valor }, ver consejos.js), sumándola a `detalles`, y
 // "No es mi mascota" sobre un avistamiento vinculado (descartarAvistamiento:
 // id, ver avistamientosDe en sighting.js).
+// Contacto (2026-11-02): contacto: { whatsapp, email }, con la misma
+// validación que al publicar (validateReportContact: al menos uno, salvo en
+// un avistamiento). No en un aviso resuelto: ahí el contacto ya se borró.
+// Para precargarlo, el dueño lo lee con /api/reports/contacto.
 export const runtime = "nodejs";
 
 const ID_RE = /^[A-Za-z0-9-]{1,64}$/;
@@ -59,14 +64,21 @@ export async function PATCH(request) {
   if (consejo !== undefined && !respuestaValida(consejo?.clave, consejo?.valor)) {
     return Response.json({ error: "Respuesta inválida." }, { status: 400 });
   }
+  const contacto = body.contacto;
+  if (
+    contacto !== undefined &&
+    (!contacto || typeof contacto !== "object" || typeof (contacto.whatsapp ?? "") !== "string" || typeof (contacto.email ?? "") !== "string")
+  ) {
+    return Response.json({ error: "Contacto inválido." }, { status: 400 });
+  }
 
   const headers = { apikey: env.serviceKey, Authorization: `Bearer ${env.serviceKey}`, "Content-Type": "application/json" };
   const base = `${env.supabaseUrl}/rest/v1/reports?id=eq.${encodeURIComponent(reportId)}&${filter}`;
   const noEsTuyo = () => Response.json({ error: "Solo quien publicó el aviso puede editarlo." }, { status: 403 });
   try {
     let photos = { patch: {} };
-    if (body.fotoOrder !== undefined || consejo !== undefined || descartar !== undefined) {
-      const res = await fetch(`${base}&select=${PHOTO_COLUMNS}`, { headers });
+    if (body.fotoOrder !== undefined || consejo !== undefined || descartar !== undefined || contacto !== undefined) {
+      const res = await fetch(`${base}&select=${PHOTO_COLUMNS},tipo,resuelto`, { headers });
       if (!res.ok) throw new Error(`Supabase ${res.status}`);
       const [row] = await res.json();
       if (!row) return noEsTuyo();
@@ -83,6 +95,18 @@ export async function PATCH(request) {
         const previos = Array.isArray(detalles?.avistamientos_descartados) ? detalles.avistamientos_descartados : [];
         const lista = [...previos.filter((id) => id !== descartar), descartar].slice(-DESCARTADOS_MAX);
         photos.patch.detalles = { ...(detalles || {}), avistamientos_descartados: lista };
+      }
+      if (contacto !== undefined) {
+        if (row.resuelto) return Response.json({ error: "El aviso ya está resuelto: no tiene contacto para editar." }, { status: 409 });
+        const valid = validateReportContact({
+          tipo: row.tipo,
+          detalles: photos.patch.detalles !== undefined ? photos.patch.detalles : row.detalles,
+          contacto_whatsapp: contacto.whatsapp ?? "",
+          contacto_email: contacto.email ?? "",
+        });
+        if (!valid.ok) return Response.json({ error: valid.error }, { status: 400 });
+        photos.patch.contacto_whatsapp = valid.whatsapp;
+        photos.patch.contacto_email = valid.email;
       }
     }
     const patch = { ...fields.patch, ...photos.patch };
