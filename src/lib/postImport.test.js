@@ -237,7 +237,7 @@ describe("extraerContacto (2026-11-02)", () => {
 
   it("vacío si no hay, si es muy corto/largo o trae otra cosa", () => {
     expect(extraerContacto(null)).toEqual({ telefono: "", email: "" });
-    for (const t of ["1234", "llamar al 3875885427 o al 1155", "1".repeat(16), "<b>3875885427</b>", 3875885427]) {
+    for (const t of ["1234", "sin teléfono", "1".repeat(16), 3875885427]) {
       expect(extraerContacto({ contacto_telefono: t }).telefono, String(t)).toBe("");
     }
     for (const m of ["no tiene", "a@b", "x".repeat(115) + "@b.com", "a b@c.com"]) {
@@ -289,5 +289,24 @@ describe("varias capturas y más datos (2026-11-02)", () => {
     expect(r.draft.marcas).not.toContain("mancha");
     expect(r.draft.manchaColor).toBe("");
     expect(r.boxImagen).toBe(0);
+  });
+});
+
+describe("primerTelefono: avisos con varios teléfonos (caso real 2026-11-02)", () => {
+  it("toma el primero", () => {
+    expect(extraerContacto({ contacto_telefono: "387 555 0101 o 387 555 0202" }).telefono).toBe("387 555 0101");
+    expect(extraerContacto({ contacto_telefono: "387 555 0101 / 387 555 0202" }).telefono).toBe("387 555 0101");
+    expect(extraerContacto({ contacto_telefono: "387 555 0101\n387 555 0202" }).telefono).toBe("387 555 0101");
+    expect(extraerContacto({ contacto_telefono: "3875550101, 3875550202" }).telefono).toBe("3875550101");
+    expect(extraerContacto({ contacto_telefono: "Llamar al 387 555 0101" }).telefono).toBe("387 555 0101");
+  });
+
+  it("dos números pegados solo con espacios", () => {
+    expect(extraerContacto({ contacto_telefono: "3875550101 3875550202" }).telefono).toBe("3875550101");
+    expect(extraerContacto({ contacto_telefono: "+54 9 387 555 0101 +54 9 387 555 0202" }).telefono).toBe("+54 9 387 555 0101");
+  });
+
+  it("el primer email si vienen varios", () => {
+    expect(extraerContacto({ contacto_email: "luna@gmail.com o flia@hotmail.com" }).email).toBe("luna@gmail.com");
   });
 });

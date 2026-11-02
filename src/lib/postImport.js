@@ -93,7 +93,9 @@ export const GEMINI_RESPONSE_SCHEMA = {
     },
     mancha_ubicacion: E(MANCHA_UBICACION_IDS, { description: "Si tiene una mancha particular: dónde. Solo si se ve o el aviso lo dice." }),
     mancha_color: E(MANCHA_COLOR_CHAT, { description: "Color de esa mancha, si se sabe." }),
-    contacto_telefono: S({ description: "Teléfono o WhatsApp de contacto que figura en el aviso, tal cual está escrito. Vacío si no hay." }),
+    contacto_telefono: S({
+      description: "Teléfono o WhatsApp de contacto que figura en el aviso, tal cual está escrito. Si hay varios, solo el primero. Vacío si no hay.",
+    }),
     contacto_email: S({ description: "Email de contacto que figura en el aviso. Vacío si no hay." }),
     detalle_libre: {
       type: "STRING",
@@ -222,12 +224,42 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // no parecen válidos. El teléfono va tal cual (lo interpreta el formulario
 // con libphonenumber, según el país elegido); acá solo se exige que tenga
 // entre 8 y 15 dígitos y nada raro.
+// Muchos avisos traen dos teléfonos ("387 555 0101 o 387 555 0202", uno por
+// línea, con "/" o ","), y aunque se le pida uno, Gemini a veces los devuelve
+// juntos. Antes eso se descartaba entero (más de 15 dígitos, o una "o" en el
+// medio) y el campo quedaba vacío (caso real del 2026-11-02). Ahora se toma el
+// primero que parezca un teléfono.
+const TRAMO_TELEFONO_RE = /\+?\(?\d[\d\s().-]{6,}\d/g;
+
+export function primerTelefono(texto) {
+  for (const tramo of String(texto || "").match(TRAMO_TELEFONO_RE) || []) {
+    const digitos = tramo.replace(/\D/g, "");
+    if (digitos.length >= 8 && digitos.length <= 15) return tramo.trim();
+    // Dos números pegados solo con espacios ("3875550101 3875550202"): se
+    // suman grupos hasta tener un número completo (10 dígitos en Argentina,
+    // más con código de país).
+    if (digitos.length > 15) {
+      let acumulado = "";
+      for (const grupo of tramo.trim().split(/\s+/)) {
+        acumulado = acumulado ? `${acumulado} ${grupo}` : grupo;
+        const n = acumulado.replace(/\D/g, "").length;
+        if (n >= 10 && n <= 15) return acumulado;
+        if (n > 15) break;
+      }
+    }
+  }
+  return "";
+}
+
+// Varios emails ("luna@gmail.com o flia@hotmail.com"): el primero. Se separa
+// solo por "o", coma, punto y coma, barra o salto de línea, y el pedazo tiene
+// que ser un email entero (con "a b@c.com" no se adivina).
+const SEPARADOR_MAILS_RE = /\s+o\s+|[,;/\n]+/i;
+
 export function extraerContacto(raw) {
   const r = raw && typeof raw === "object" ? raw : {};
-  const tel = typeof r.contacto_telefono === "string" ? r.contacto_telefono.trim() : "";
-  const digitos = tel.replace(/\D/g, "");
-  const telefono = /^[+\d\s().-]{8,30}$/.test(tel) && digitos.length >= 8 && digitos.length <= 15 ? tel : "";
-  const mail = typeof r.contacto_email === "string" ? r.contacto_email.trim() : "";
+  const telefono = typeof r.contacto_telefono === "string" ? primerTelefono(r.contacto_telefono) : "";
+  const mail = typeof r.contacto_email === "string" ? r.contacto_email.split(SEPARADOR_MAILS_RE)[0].trim() : "";
   const email = mail.length <= 120 && EMAIL_RE.test(mail) ? mail : "";
   return { telefono, email };
 }
