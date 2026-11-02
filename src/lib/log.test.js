@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildErrorPayload, debeReportar } from "./log";
+import { buildErrorPayload, debeReportar, describirSinMensaje, esEsperable } from "./log";
 
 // buildErrorPayload (revisión 2026-10-11): caso real de producción — un
 // error de Supabase (objeto plano, no instanceof Error) llegaba a
@@ -32,7 +32,8 @@ describe("buildErrorPayload", () => {
 
   it("sin nada útil: nunca deja el mensaje vacío", () => {
     expect(buildErrorPayload([]).message).toBe("Error sin mensaje");
-    expect(buildErrorPayload([null, undefined, 42]).message).toBe("Error sin mensaje");
+    // Desde 2026-11-02 se describe lo que llegó, en vez de perderlo.
+    expect(buildErrorPayload([null, undefined, 42]).message).toBe("valor vacío (null) — valor vacío (undefined) — number: 42");
   });
 
   it("recorta url/userAgent largos y tolera que falten", () => {
@@ -54,5 +55,45 @@ describe("debeReportar (2026-11-02)", () => {
     const enviados = new Set();
     for (let i = 0; i < 3; i++) expect(debeReportar(`e${i}`, enviados, 3)).toBe(true);
     expect(debeReportar("e3", enviados, 3)).toBe(false);
+  });
+});
+
+describe("describirSinMensaje (2026-11-02)", () => {
+  it("un Event dice de qué tipo y sobre qué elemento", () => {
+    const ev = new Event("error");
+    Object.defineProperty(ev, "target", { value: { tagName: "IMG" } });
+    expect(describirSinMensaje(ev)).toBe('Event "error" en IMG');
+  });
+
+  it("un Error vacío, un objeto o algo que no se puede serializar", () => {
+    expect(describirSinMensaje(new TypeError(""))).toBe("TypeError sin mensaje");
+    expect(describirSinMensaje({ code: 7 })).toBe('Object {"code":7}');
+    const ciclo = {};
+    ciclo.yo = ciclo;
+    expect(describirSinMensaje(ciclo)).toBe("Object sin datos");
+  });
+
+  it("el texto del llamador más qué llegó", () => {
+    expect(buildErrorPayload(["No se pudo procesar la foto", new Error("")]).message).toBe("No se pudo procesar la foto — Error sin mensaje");
+  });
+});
+
+describe("esEsperable (2026-11-02)", () => {
+  it("lo que no es una falla de Felpus no se manda", () => {
+    for (const m of [
+      "Google Identity Services no expuso window.google.accounts.id",
+      "No se pudo activar las notificaciones push — No diste permiso para las notificaciones.",
+      "No se pudo cargar el contacto del reporte — Demasiadas consultas de contacto desde esta conexión.",
+      "Ya le mandaste un corazón hoy a este colaborador.",
+      "No se pudieron cargar los reportes — JWT issued at future",
+      "Google Maps rechazó la key (gm_authFailure) en http://localhost:3000/",
+    ]) {
+      expect(esEsperable(m), m).toBe(true);
+    }
+  });
+
+  it("los errores reales sí", () => {
+    expect(esEsperable("No se pudieron cargar los reportes — permission denied for table reports")).toBe(false);
+    expect(esEsperable("Google Maps rechazó la key (gm_authFailure) en https://felpus.com/")).toBe(false);
   });
 });

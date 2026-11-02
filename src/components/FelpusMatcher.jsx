@@ -15,6 +15,7 @@ import { novedadesDue, NOVEDADES_KEY_PREFIX } from "../lib/emailAvisos";
 import { findDuplicates, duplicateMessage } from "../lib/duplicates";
 import { REPORT_DRAFT_KEY, serializeReportDraft, parseReportDraft } from "../lib/reportDraft";
 import { track } from "../lib/analytics";
+import { conReintentos } from "../lib/retry";
 import { reloadOnceForStaleDeploy, isStaleListingError } from "../lib/staleDeploy";
 import { isTooDark, isBlurry, photoAnalysis } from "../lib/photoQuality";
 import { importPost } from "../lib/postImportClient";
@@ -1758,7 +1759,9 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
       // Sin await: el listado ya se muestra; los vectores llegan solos. Si
       // fallan, el matching compara sin fotos (mejor que no mostrar nada).
       setVectoresListos(false);
-      vectoresRef.current.promise = fetchReportVectors()
+      // Con reintentos: es el pedido más pesado (los vectores de todas las
+      // fotos) y en datos móviles fallaba seguido ("Failed to fetch").
+      vectoresRef.current.promise = conReintentos(() => fetchReportVectors())
         .then((rows) => {
           vectoresRef.current.rows = rows;
           setReports((prev) => mergeReportVectors(prev, rows));
@@ -1767,10 +1770,13 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
         .finally(() => setVectoresListos(true));
       await loadLeaderboard();
     } catch (e) {
-      logError("No se pudieron cargar los reportes", e);
       // Página abierta desde antes de un deploy que pide columnas que ya no
       // están habilitadas: recargar trae la versión nueva (una sola vez).
+      // Antes de registrar el error (2026-11-02): cada pestaña vieja que se
+      // arreglaba sola contaba como "el listado no carga" (91 en error_logs)
+      // y le mandaba al admin alertas críticas falsas.
       if (reloadOnceForStaleDeploy(e, { match: isStaleListingError })) return;
+      logError("No se pudieron cargar los reportes", e);
       pushToast("error", "No pudimos conectar con la base de datos. Revisá tu configuración de Supabase.");
       setLoadError(true);
     } finally {
