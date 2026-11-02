@@ -196,3 +196,18 @@ export async function searchPlaces(query, { near = null, signal } = {}) {
     .filter((p) => (seen.has(p.label) ? false : seen.add(p.label)))
     .slice(0, 5);
 }
+
+// Zona escrita a mano → punto para abrir el mapa (2026-11-02). Primero
+// Photon con prioridad a lo cercano (`near`), que encuentra barrios
+// ("Tres Cerritos" en Salta); Nominatim a secas devolvía una parada de
+// colectivo con ese nombre, o el "Barrio Norte" de Buenos Aires. Si Photon
+// no encuentra nada, Nominatim. null si ninguno.
+export async function ubicarZona(texto, near = null) {
+  try {
+    const [primero] = await searchPlaces(texto, { near });
+    if (primero && Number.isFinite(primero.lat) && Number.isFinite(primero.lng)) return { lat: primero.lat, lng: primero.lng };
+  } catch (e) {
+    logError("No se pudo ubicar la zona escrita (Photon)", e);
+  }
+  return geocodeText(texto);
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { zonaConCiudad } from "./zona";
+import { zonaConCiudad, textoZonaFormulario } from "./zona";
 
 describe("zonaConCiudad", () => {
   it("agrega la ciudad entre paréntesis", () => {
@@ -15,5 +15,18 @@ describe("zonaConCiudad", () => {
   });
   it("sin zona muestra la ciudad", () => {
     expect(zonaConCiudad({ zona: "", ciudad: "Salta" })).toBe("Salta");
+  });
+});
+
+describe("textoZonaFormulario", () => {
+  it("zona + ciudad + provincia, sin repetir", () => {
+    expect(textoZonaFormulario({ zona: "Tres Cerritos", ciudad: "Salta", provincia: "Salta" })).toBe("Tres Cerritos, Salta");
+    expect(textoZonaFormulario({ zona: " Centro de Salta ", ciudad: "Salta" })).toBe("Centro de Salta");
+    expect(textoZonaFormulario({ zona: "Barrio Norte", ciudad: "", provincia: "Tucumán" })).toBe("Barrio Norte, Tucumán");
+  });
+
+  it("sin zona escrita, vacío", () => {
+    expect(textoZonaFormulario({ zona: "  ", ciudad: "Salta" })).toBe("");
+    expect(textoZonaFormulario(null)).toBe("");
   });
 });
