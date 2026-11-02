@@ -45,8 +45,9 @@ describe("getClientIp", () => {
     expect(getClientIp(makeRequest({ "x-forwarded-for": "  1.2.3.4  , 5.6.7.8" }))).toBe("1.2.3.4");
   });
 
-  it("devuelve null sin el header", () => {
-    expect(getClientIp(makeRequest({}))).toBeNull();
+  it("sin el header, un balde común (nunca null: ninguna ruta saltea su límite)", () => {
+    expect(getClientIp(makeRequest({}))).toBe("sin-ip");
+    expect(getClientIp(makeRequest({ "x-forwarded-for": "  " }))).toBe("sin-ip");
   });
 });
 

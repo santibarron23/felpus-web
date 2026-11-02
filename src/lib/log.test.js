@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildErrorPayload } from "./log";
+import { buildErrorPayload, debeReportar } from "./log";
 
 // buildErrorPayload (revisión 2026-10-11): caso real de producción — un
 // error de Supabase (objeto plano, no instanceof Error) llegaba a
@@ -39,5 +39,20 @@ describe("buildErrorPayload", () => {
     const p = buildErrorPayload(["x"], { url: "u".repeat(900), userAgent: undefined });
     expect(p.url).toHaveLength(500);
     expect(p.userAgent).toBeNull();
+  });
+});
+
+describe("debeReportar (2026-11-02)", () => {
+  it("el mismo mensaje una sola vez por página", () => {
+    const enviados = new Set();
+    expect(debeReportar("x falló", enviados)).toBe(true);
+    expect(debeReportar("x falló", enviados)).toBe(false);
+    expect(debeReportar("otra cosa", enviados)).toBe(true);
+  });
+
+  it("y como mucho N distintos", () => {
+    const enviados = new Set();
+    for (let i = 0; i < 3; i++) expect(debeReportar(`e${i}`, enviados, 3)).toBe(true);
+    expect(debeReportar("e3", enviados, 3)).toBe(false);
   });
 });

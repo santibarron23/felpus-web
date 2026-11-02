@@ -35,8 +35,12 @@ export function isJsonRequest(request) {
 // la función serverless (a diferencia del header que ve un cliente
 // llamando a Supabase directo, este no lo puede falsificar quien visita el
 // sitio). Ver PENDIENTE_DECISION.md #-14 para el hallazgo completo.
+// Sin el header (en Vercel siempre viene) devuelve SIN_IP, un balde común:
+// antes devolvía null y varias rutas salteaban su límite por IP — entre
+// ellas las de IA, que cuestan (revisión de seguridad 2026-11-02).
+export const SIN_IP = "sin-ip";
 export function getClientIp(request) {
-  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || SIN_IP;
 }
 
 // Control integral (2026-08-10): flag-report y report-contact convertían
