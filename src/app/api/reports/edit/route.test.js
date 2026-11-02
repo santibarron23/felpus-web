@@ -124,4 +124,36 @@ describe("PATCH /api/reports/edit", () => {
     expect(res.status).toBe(400);
     expect(patchCall()).toBeUndefined();
   });
+
+  it("contacto: valida como al publicar y guarda normalizado", async () => {
+    stubFetch({ userId: "u1", row: { ...ROW, tipo: "perdida", resuelto: false, detalles: {} } });
+    const res = await PATCH(request({ reportId: "r1", contacto: { whatsapp: "+54 9 387 588-5427", email: " yo@mail.com " } }, "sesion"));
+    expect(res.status).toBe(200);
+    expect(patchCall().body).toEqual({ contacto_whatsapp: "5493875885427", contacto_email: "yo@mail.com" });
+  });
+
+  it("contacto: al menos uno (salvo avistamiento)", async () => {
+    stubFetch({ userId: "u1", row: { ...ROW, tipo: "perdida", resuelto: false, detalles: {} } });
+    const res = await PATCH(request({ reportId: "r1", contacto: { whatsapp: "", email: "" } }, "sesion"));
+    expect(res.status).toBe(400);
+    expect(patchCall()).toBeUndefined();
+
+    stubFetch({ userId: "u1", row: { ...ROW, tipo: "encontrada", resuelto: false, detalles: { avistamiento: true } } });
+    const ok = await PATCH(request({ reportId: "r1", contacto: { whatsapp: "", email: "" } }, "sesion"));
+    expect(ok.status).toBe(200);
+    expect(patchCall().body).toEqual({ contacto_whatsapp: null, contacto_email: null });
+  });
+
+  it("contacto: inválido, ajeno o en un aviso resuelto", async () => {
+    stubFetch({ userId: "u1", row: { ...ROW, tipo: "perdida", resuelto: false } });
+    expect((await PATCH(request({ reportId: "r1", contacto: { whatsapp: "12", email: "" } }, "sesion"))).status).toBe(400);
+    expect((await PATCH(request({ reportId: "r1", contacto: "5493875885427" }, "sesion"))).status).toBe(400);
+
+    stubFetch({ userId: "u1", row: { ...ROW, tipo: "perdida", resuelto: true } });
+    expect((await PATCH(request({ reportId: "r1", contacto: { whatsapp: "5493875885427" } }, "sesion"))).status).toBe(409);
+
+    stubFetch({ userId: "otra", ownsRow: false });
+    expect((await PATCH(request({ reportId: "r1", contacto: { whatsapp: "5493875885427" } }, "sesion"))).status).toBe(403);
+    expect(patchCall()).toBeUndefined();
+  });
 });

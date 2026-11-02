@@ -13,12 +13,17 @@
 //  - Ubicación (2026-11-02): mover el pin con el mapa a pantalla completa.
 //    Solo se manda si se movió: lo que trae el cliente es el punto
 //    aproximado (lat_aprox), y mandarlo sin tocar pisaría el real.
+//  - Contacto (2026-11-02, solo el dueño): WhatsApp y email. Se precarga con
+//    /api/reports/contacto y se manda solo si cambió; el servidor lo valida
+//    como al publicar (al menos uno).
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { ArrowLeft, ArrowRight, Crop, Loader2, MapPin, Star, Trash2, X } from "lucide-react";
 import FullscreenMapPicker from "../FullscreenMapPicker";
 import { reverseGeocode } from "../../lib/osmMap";
 import { CITIES } from "../../lib/cities";
+import PhoneInput from "./PhoneInput";
+import { parseWhatsappPhone, splitStoredWhatsapp } from "../../lib/phone";
 import { useTheme } from "./ThemeProvider";
 import { useFocusTrap } from "./useFocusTrap";
 import { authedFetch } from "../../lib/push";
@@ -68,6 +73,10 @@ export default function AdminEditReport({ report, onClose, onSaved, owner = fals
   const [punto, setPunto] = useState(null);
   const [mapaAbierto, setMapaAbierto] = useState(false);
   const [zonaDelMapa, setZonaDelMapa] = useState(false);
+  // Contacto (solo dueño): null mientras carga o si no se pudo cargar.
+  const [contacto, setContacto] = useState(null); // { whatsapp, country, email }
+  const contactoOriginal = useRef(null);
+  const [contactoEstado, setContactoEstado] = useState(owner && !report.resuelto ? "cargando" : "no"); // cargando | listo | error | no
   const firstRef = useRef(null);
   const formRef = useRef(null);
   // Tab no se escapa del diálogo y Escape lo cierra (antes solo Escape).
@@ -99,6 +108,52 @@ export default function AdminEditReport({ report, onClose, onSaved, owner = fals
       document.body.style.overflow = prevOverflow;
     };
   }, []);
+
+  useEffect(() => {
+    if (contactoEstado !== "cargando") return;
+    let cancelado = false;
+    (async () => {
+      try {
+        const res = await authedFetch("/api/reports/contacto", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reportId: report.id, ...(pushToken ? { pushToken } : {}) }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || "No se pudo cargar el contacto.");
+        const { country, national } = await splitStoredWhatsapp(data.whatsapp || "");
+        if (cancelado) return;
+        const inicial = { whatsapp: national, country: country || "AR", email: data.email || "" };
+        contactoOriginal.current = inicial;
+        setContacto(inicial);
+        setContactoEstado("listo");
+      } catch {
+        if (!cancelado) setContactoEstado("error");
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+    // Una sola vez al abrir.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // { contacto: { whatsapp, email } } para el body si cambió, {} si no, o
+  // { error } si el WhatsApp escrito no es válido.
+  async function contactoBody() {
+    const o = contactoOriginal.current;
+    if (!contacto || !o) return {};
+    const cambio = contacto.whatsapp !== o.whatsapp || contacto.country !== o.country || contacto.email.trim() !== o.email;
+    if (!cambio) return {};
+    let whatsapp = "";
+    if (contacto.whatsapp.trim()) {
+      const parsed = await parseWhatsappPhone(contacto.whatsapp, contacto.country);
+      if (!parsed.isValid) return { error: "Revisá el WhatsApp de contacto, no parece válido." };
+      whatsapp = parsed.digits;
+    }
+    if (!whatsapp && !contacto.email.trim()) return { error: "Dejá un WhatsApp o un email de contacto." };
+    return { contacto: { whatsapp, email: contacto.email.trim() } };
+  }
 
   const set = (key) => (e) => setFields((f) => ({ ...f, [key]: e.target.value }));
   const move = (i, delta) =>
@@ -134,6 +189,11 @@ export default function AdminEditReport({ report, onClose, onSaved, owner = fals
       setError("La zona no puede quedar vacía.");
       return;
     }
+    const extra = await contactoBody();
+    if (extra.error) {
+      setError(extra.error);
+      return;
+    }
     setSaving(true);
     try {
       const original = (report.fotos || []).map((f) => f.url).filter(Boolean);
@@ -161,6 +221,7 @@ export default function AdminEditReport({ report, onClose, onSaved, owner = fals
             color_otro: fields.color === "Otro color" ? fields.color_otro : "",
             ...(punto ? { lat: punto.lat, lng: punto.lng } : {}),
           },
+          ...(owner && extra.contacto ? { contacto: extra.contacto } : {}),
           ...fotosBody,
         }),
       });
@@ -216,8 +277,8 @@ export default function AdminEditReport({ report, onClose, onSaved, owner = fals
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
           {owner && (
             <p className="text-[13px] leading-snug" style={{ color: C.muted }}>
-              Corregí lo que haga falta y tocá &ldquo;Guardar cambios&rdquo;. El contacto y si está perdida o encontrada no se
-              cambian desde acá.
+              Corregí lo que haga falta y tocá &ldquo;Guardar cambios&rdquo;. Si está perdida o encontrada no se cambia desde
+              acá.
             </p>
           )}
           {fotos.length > 0 && (
@@ -429,6 +490,52 @@ export default function AdminEditReport({ report, onClose, onSaved, owner = fals
             <label htmlFor="ae-descripcion" className={label}>Descripción</label>
             <textarea id="ae-descripcion" value={fields.descripcion} onChange={set("descripcion")} maxLength={1000} rows={4} className={input} style={inputStyle} />
           </div>
+
+          {contactoEstado !== "no" && (
+            <section aria-labelledby="ae-contacto">
+              <h3 id="ae-contacto" className={label}>Contacto</h3>
+              <p className="text-[12px] mb-2" style={{ color: C.muted }}>
+                Al menos uno. Se muestra a quien quiera contactarte desde el aviso; no aparece en el listado ni en el mapa.
+              </p>
+              {contactoEstado === "cargando" && (
+                <p className="text-[13px] flex items-center gap-1.5" style={{ color: C.muted }}>
+                  <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> Cargando tu contacto…
+                </p>
+              )}
+              {contactoEstado === "error" && (
+                <p className="text-[13px]" style={{ color: C.muted }}>
+                  No pudimos cargar el contacto ahora. El resto de los cambios se guardan igual.
+                </p>
+              )}
+              {contactoEstado === "listo" && contacto && (
+                <div className="space-y-3">
+                  <div>
+                    <label htmlFor="ae-whatsapp" className="text-[12px] font-semibold mb-1 block" style={{ color: C.muted }}>WhatsApp</label>
+                    <PhoneInput
+                      id="ae-whatsapp"
+                      country={contacto.country}
+                      onCountryChange={(code) => setContacto((c) => ({ ...c, country: code }))}
+                      value={contacto.whatsapp}
+                      onChange={(text) => setContacto((c) => ({ ...c, whatsapp: text }))}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="ae-email" className="text-[12px] font-semibold mb-1 block" style={{ color: C.muted }}>Email</label>
+                    <input
+                      id="ae-email"
+                      type="email"
+                      value={contacto.email}
+                      onChange={(e) => setContacto((c) => ({ ...c, email: e.target.value }))}
+                      maxLength={120}
+                      autoComplete="email"
+                      className={input}
+                      style={inputStyle}
+                    />
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
         </div>
 
         <footer className="px-4 py-3 border-t shrink-0 space-y-2" style={{ borderColor: C.border, background: C.surface, paddingBottom: "calc(12px + env(safe-area-inset-bottom, 0px))" }}>
