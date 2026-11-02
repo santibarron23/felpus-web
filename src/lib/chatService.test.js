@@ -92,6 +92,17 @@ describe("runChat", () => {
     expect(p).not.toHaveProperty("thinking");
   });
 
+  it("por defecto usa Haiku 5.5 (2026-11-02, costo), sin fallbacks y con effort low", async () => {
+    const client = fakeClient([text("ok")]);
+    await runChat({ ...base, client, readReports: vi.fn() });
+    const p = client.calls[0];
+    expect(p.model).toBe("claude-haiku-5-5");
+    expect(p).not.toHaveProperty("fallbacks");
+    expect(p).not.toHaveProperty("betas");
+    expect(p.output_config).toEqual({ effort: "low" });
+    expect(p).not.toHaveProperty("temperature");
+  });
+
   it("con Haiku no manda fallbacks (no los soporta)", async () => {
     const client = fakeClient([text("ok")]);
     await runChat({ ...base, client, readReports: vi.fn(), model: "claude-haiku-5-5" });
