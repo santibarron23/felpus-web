@@ -37,6 +37,39 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
 
+  # Pruebas de punta a punta (2026-11-02): antes solo corrían a mano y se
+  # rompieron sin que nadie se enterara (las de alertas). Simulan toda la red
+  # (Supabase, Google, push) con page.route: no tocan ningún servicio real,
+  # por eso alcanzan los mismos placeholders que el build.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      - run: npm run test:e2e
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+
+      # Con una falla, el trace de Playwright (pasos, red y capturas) queda
+      # para descargar desde la corrida.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-trace
+          path: test-results/
+          retention-days: 7
+
   # Escaneo de secretos (2026-10-23): falla el PR si algún commit trae una
   # clave real (service_role de Supabase, tokens de IA, etc.). El repo es
   # público: una clave que llega a GitHub hay que darla por filtrada.
