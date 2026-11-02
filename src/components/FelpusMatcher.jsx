@@ -894,6 +894,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   // "metricas" | "denuncias" | "reportes"
   const [adminSection, setAdminSection] = useState("impacto");
   const [alertaPrueba, setAlertaPrueba] = useState(null); // null | "enviando" | mensaje
+  const [usoSupabase, setUsoSupabase] = useState(null); // null | "revisando" | mensaje
   const [adminMetrics, setAdminMetrics] = useState(null);
   const [adminFlags, setAdminFlags] = useState([]);
   const [adminAllReports, setAdminAllReports] = useState([]);
@@ -5518,6 +5519,35 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                   </button>
                   {alertaPrueba && alertaPrueba !== "enviando" && (
                     <p className="text-[12px]" style={{ color: C.text }} role="status">{alertaPrueba}</p>
+                  )}
+                  {/* Uso de Supabase (serverUsoSupabase.js): cada hora se
+                      revisa solo; esto lo muestra ahora y confirma el token. */}
+                  <button
+                    type="button"
+                    disabled={usoSupabase === "revisando"}
+                    onClick={async () => {
+                      setUsoSupabase("revisando");
+                      try {
+                        const res = await authedFetch("/api/admin/uso", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+                        const d = await res.json().catch(() => ({}));
+                        setUsoSupabase(
+                          d.configurado === false
+                            ? "Falta configurar SUPABASE_ACCESS_TOKEN en Vercel."
+                            : d.error
+                              ? `No se pudo consultar: ${d.error}. Revisá el token (permiso analytics_logs_read).`
+                              : `Última hora: ${Number(d.total).toLocaleString("es-AR")} eventos de log (aviso desde ${Number(d.umbral).toLocaleString("es-AR")}). ${(d.porFuente || []).map((f) => `${f.fuente}: ${f.n.toLocaleString("es-AR")}`).join(", ")}`
+                        );
+                      } catch {
+                        setUsoSupabase("No se pudo consultar. Probá de nuevo.");
+                      }
+                    }}
+                    className="min-h-[44px] px-3 rounded-lg border text-[13px] font-bold disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                    style={{ borderColor: C.border, color: C.text }}
+                  >
+                    {usoSupabase === "revisando" ? "Revisando…" : "Revisar uso de Supabase ahora"}
+                  </button>
+                  {usoSupabase && usoSupabase !== "revisando" && (
+                    <p className="text-[12px]" style={{ color: C.text }} role="status">{usoSupabase}</p>
                   )}
                 </div>
 
