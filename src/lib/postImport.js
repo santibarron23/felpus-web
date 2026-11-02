@@ -22,6 +22,9 @@ import {
   EDAD_CHAT_OPTIONS,
   ACCESORIO_IDS,
   MARCA_IDS,
+  REACCION_IDS,
+  MANCHA_UBICACION_IDS,
+  MANCHA_COLOR_CHAT,
 } from "./chatbot";
 
 // Plan gratuito: los modelos "lite" tienen bastante más cupo diario que los
@@ -31,6 +34,11 @@ export const DEFAULT_GEMINI_MODEL = "gemini-flash-lite-latest";
 export const FALLBACK_GEMINI_MODEL = "gemini-flash-latest";
 
 export const MAX_POST_TEXT_CHARS = 3000;
+// Varias capturas del MISMO aviso (2026-11-02): la foto en una y el texto en
+// otra, o un texto largo partido. Van todas en una sola lectura.
+export const MAX_CAPTURAS = 3;
+// Texto pegado: menos que esto no alcanza para leer un aviso.
+export const MIN_POST_TEXT_CHARS = 20;
 
 // ---------------------------------------------------------------------------
 // Datos personales de terceros: fuera antes de llegar al formulario.
@@ -78,6 +86,13 @@ export const GEMINI_RESPONSE_SCHEMA = {
     fecha: S({ description: "AAAA-MM-DD en que se perdió o se encontró, solo si el aviso permite saberla. Vacío si no." }),
     accesorios: { type: "ARRAY", items: { type: "STRING", enum: ACCESORIO_IDS } },
     marcas: { type: "ARRAY", items: { type: "STRING", enum: MARCA_IDS } },
+    reaccion: {
+      type: "ARRAY",
+      items: { type: "STRING", enum: REACCION_IDS },
+      description: "Cómo reacciona con desconocidos, solo si el aviso lo dice (\"es miedoso\", \"se deja agarrar\", \"no se deja agarrar\" = puede_escapar).",
+    },
+    mancha_ubicacion: E(MANCHA_UBICACION_IDS, { description: "Si tiene una mancha particular: dónde. Solo si se ve o el aviso lo dice." }),
+    mancha_color: E(MANCHA_COLOR_CHAT, { description: "Color de esa mancha, si se sabe." }),
     contacto_telefono: S({ description: "Teléfono o WhatsApp de contacto que figura en el aviso, tal cual está escrito. Vacío si no hay." }),
     contacto_email: S({ description: "Email de contacto que figura en el aviso. Vacío si no hay." }),
     detalle_libre: {
@@ -92,11 +107,15 @@ export const GEMINI_RESPONSE_SCHEMA = {
       description:
         "Recuadro [ymin, xmin, ymax, xmax] (0 a 1000) de la FOTO del animal dentro de la imagen. Lista vacía si no hay una foto del animal.",
     },
+    foto_imagen: {
+      type: "INTEGER",
+      description: "Número de la imagen (1, 2 o 3) donde está la mejor foto del animal y su foto_recuadro. 1 si hay una sola.",
+    },
   },
   required: [
     "es_publicacion_mascota", "tipo", "especie", "nombre", "raza", "color", "color_detalle", "tamano", "sexo",
-    "edad", "zona", "provincia", "fecha", "accesorios", "marcas", "contacto_telefono", "contacto_email",
-    "detalle_libre", "foto_recuadro",
+    "edad", "zona", "provincia", "fecha", "accesorios", "marcas", "reaccion", "mancha_ubicacion", "mancha_color",
+    "contacto_telefono", "contacto_email", "detalle_libre", "foto_recuadro", "foto_imagen",
   ],
 };
 
@@ -104,7 +123,8 @@ export function buildGeminiPrompt(now = new Date()) {
   const hoy = now.toISOString().slice(0, 10);
   return [
     "Leés avisos de redes sociales sobre perros y gatos perdidos o encontrados en Argentina (sobre todo Salta) y",
-    "completás un formulario. Recibís el texto de la publicación, una foto o una captura de pantalla, o ambos.",
+    "completás un formulario. Recibís el texto de la publicación, hasta 3 imágenes (fotos o capturas de pantalla), o ambos.",
+    "Todo es del MISMO aviso: combiná lo que dice cada parte (por ejemplo, la foto en una captura y el texto en otra).",
     `Hoy es ${hoy}. Si dice "ayer", "hoy" o una fecha sin año, calculala; si no hay forma de saberla, dejala vacía.`,
     "Reglas:",
     "- Usá solo lo que dice el aviso o se ve claramente en la foto. Si no lo sabés, \"no_se\" o \"\". No inventes.",
@@ -113,6 +133,8 @@ export function buildGeminiPrompt(now = new Date()) {
     "  salvo el teléfono y el email de contacto del aviso, que van solo en contacto_telefono y contacto_email.",
     "- Si es otra cosa (adopción, venta, un meme, algo que no es un animal perdido/encontrado), es_publicacion_mascota = false.",
     "- foto_recuadro: si es una captura de pantalla, el recuadro de la foto del animal (sin textos ni bordes de la app).",
+    "  foto_imagen: en qué imagen (1, 2 o 3) está esa foto; elegí la más grande y nítida del animal.",
+    "- reaccion, mancha_ubicacion y mancha_color: solo si el aviso lo dice o se ve claramente; si no, vacío o \"no_se\".",
   ].join("\n");
 }
 
@@ -131,12 +153,17 @@ export function buildPhotoPrompt() {
   ].join("\n");
 }
 
-export function buildGeminiRequest({ text = "", image = null, now = new Date(), modo = "captura" } = {}) {
+// images: hasta MAX_CAPTURAS (o `image`, una sola, como antes).
+export function buildGeminiRequest({ text = "", image = null, images = null, now = new Date(), modo = "captura" } = {}) {
   const parts = [];
   const t = (text || "").slice(0, MAX_POST_TEXT_CHARS).trim();
   if (modo === "foto") parts.push({ text: "Foto de la mascota:" });
-  else parts.push({ text: t ? `Texto de la publicación:\n"""\n${t}\n"""` : "No hay texto aparte: está todo en la imagen." });
-  if (image) parts.push({ inlineData: { mimeType: image.media_type, data: image.data } });
+  else parts.push({ text: t ? `Texto de la publicación:\n"""\n${t}\n"""` : "No hay texto aparte: está todo en las imágenes." });
+  const lista = (images || (image ? [image] : [])).slice(0, MAX_CAPTURAS);
+  lista.forEach((img, i) => {
+    if (lista.length > 1) parts.push({ text: `Imagen ${i + 1}:` });
+    parts.push({ inlineData: { mimeType: img.media_type, data: img.data } });
+  });
   return {
     systemInstruction: { parts: [{ text: modo === "foto" ? buildPhotoPrompt() : buildGeminiPrompt(now) }] },
     contents: [{ role: "user", parts }],
@@ -215,15 +242,22 @@ export function interpretExtraction(raw) {
   for (const k of TEXT_FIELDS) input[k] = scrubPersonalData(noSe(r[k]));
   input.accesorios = r.accesorios;
   input.marcas = r.marcas;
+  input.reaccion = r.reaccion;
+  input.mancha_ubicacion = noSe(r.mancha_ubicacion);
+  input.mancha_color = noSe(r.mancha_color);
   const draft = normalizeDraft(input);
-  // Sin mancha_ubicacion/color en el schema: una "mancha" sin dónde ni de
-  // qué color no suma y deja la frase rara en la descripción.
-  draft.marcas = draft.marcas.filter((m) => m !== "mancha");
+  // Una "mancha" sin dónde no suma y deja la frase rara en la descripción.
+  if (!draft.manchaUbicacion) {
+    draft.marcas = draft.marcas.filter((m) => m !== "mancha");
+    draft.manchaColor = "";
+  }
   return {
     esMascota: r.es_publicacion_mascota !== false,
     especieNoSoportada: r.especie === "otra",
     draft,
     box: sanitizeBox(r.foto_recuadro),
+    // Índice (desde 0) de la imagen con la foto del animal.
+    boxImagen: Number.isInteger(r.foto_imagen) && r.foto_imagen >= 1 && r.foto_imagen <= MAX_CAPTURAS ? r.foto_imagen - 1 : 0,
     contacto: extraerContacto(r),
   };
 }
@@ -239,6 +273,9 @@ const FIELD_LABELS = {
   edad: "edad",
   zona: "zona",
   fecha: "fecha",
+  reaccion: "cómo reacciona",
+  marcas: "señas particulares",
+  accesorios: "collar o accesorios",
   detalleLibre: "detalles",
 };
 
@@ -247,7 +284,7 @@ const FIELD_LABELS = {
 export function importSummary(draft, { hasPhoto = false } = {}) {
   const d = normalizeDraft(draft);
   const completados = Object.keys(FIELD_LABELS)
-    .filter((k) => (k === "color" ? d.color || d.colorDetalle : d[k]))
+    .filter((k) => (k === "color" ? d.color || d.colorDetalle : Array.isArray(d[k]) ? d[k].filter((v) => v !== "nada").length > 0 : d[k]))
     .map((k) => FIELD_LABELS[k]);
   const faltan = missingFields(d, { hasPhoto })
     .filter((f) => f.requerido)

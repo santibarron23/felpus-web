@@ -80,10 +80,10 @@ export const CHAT_SECTIONS = ["inicio", "explorar", "reportar", "resultado", "ra
 export const SEXO_CHAT_OPTIONS = ["Macho", "Hembra", "No sé"];
 export const EDAD_CHAT_OPTIONS = EDAD_OPTIONS.filter((e) => e !== "No sé");
 export const ACCESORIO_IDS = ACCESORIO_OPTIONS.map((o) => o.id);
-const REACCION_IDS = REACCION_OPTIONS.map((o) => o.id).filter((id) => id !== "no_se");
+export const REACCION_IDS = REACCION_OPTIONS.map((o) => o.id).filter((id) => id !== "no_se");
 export const MARCA_IDS = MARCA_OPTIONS.map((o) => o.id).filter((id) => id !== "otro");
-const MANCHA_UBICACION_IDS = MANCHA_UBICACION_OPTIONS.map((o) => o.id).filter((id) => id !== "otro");
-const MANCHA_COLOR_CHAT = MANCHA_COLOR_OPTIONS.filter((c) => c !== "Otro color");
+export const MANCHA_UBICACION_IDS = MANCHA_UBICACION_OPTIONS.map((o) => o.id).filter((id) => id !== "otro");
+export const MANCHA_COLOR_CHAT = MANCHA_COLOR_OPTIONS.filter((c) => c !== "Otro color");
 export const SEARCH_DIAS_OPTIONS = [0, 1, 3, 7, 14, 30, 90];
 
 export const DRAFT_TOOL = {
