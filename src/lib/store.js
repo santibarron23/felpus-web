@@ -213,8 +213,12 @@ export async function fetchReports({ includeHidden = false, light = false } = {}
 }
 
 // Segundo paso de la carga (ver fetchReports({ light })): solo id + vectores.
-export async function fetchReportVectors() {
-  const { data, error } = await supabase.from(REPORTS_TABLE).select(["id", ...REPORT_VECTOR_FIELDS].join(","));
+// Con `ids`, solo esos avisos (los que no están guardados en el dispositivo,
+// ver vectorCache.js).
+export async function fetchReportVectors(ids = null) {
+  let query = supabase.from(REPORTS_TABLE).select(["id", ...REPORT_VECTOR_FIELDS].join(","));
+  if (ids) query = query.in("id", ids);
+  const { data, error } = await query;
   if (error) throw error;
   return data || [];
 }

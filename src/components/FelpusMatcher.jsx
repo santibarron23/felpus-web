@@ -16,6 +16,7 @@ import { findDuplicates, duplicateMessage } from "../lib/duplicates";
 import { REPORT_DRAFT_KEY, serializeReportDraft, parseReportDraft } from "../lib/reportDraft";
 import { track } from "../lib/analytics";
 import { conReintentos } from "../lib/retry";
+import { vectoresConCache } from "../lib/vectorCache";
 import { reloadOnceForStaleDeploy, isStaleListingError } from "../lib/staleDeploy";
 import { isTooDark, isBlurry, photoAnalysis } from "../lib/photoQuality";
 import { importPost } from "../lib/postImportClient";
@@ -388,6 +389,27 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   const vectoresRef = useRef({ promise: null, rows: null });
   const reportsRef = useRef(reports);
   reportsRef.current = reports;
+  // Vectores de las fotos (2026-11-02): eran lo más pesado de cada visita
+  // (≈460 KB, 9 veces el listado) y casi todo el egress de Supabase. Ahora se
+  // piden solo cuando hacen falta y se guardan en el dispositivo
+  // (vectorCache.js): en la próxima visita solo bajan los de avisos nuevos o
+  // con fotos cambiadas. Una sola carga a la vez por listado.
+  const cargarVectores = useCallback((lista = null) => {
+    if (vectoresRef.current.promise) return vectoresRef.current.promise;
+    // Con reintentos: en datos móviles fallaba seguido ("Failed to fetch").
+    const promise = vectoresConCache(lista || reportsRef.current, (ids) => conReintentos(() => fetchReportVectors(ids)))
+      .then(({ rows }) => {
+        if (vectoresRef.current.promise !== promise) return;
+        vectoresRef.current.rows = rows;
+        setReports((prev) => mergeReportVectors(prev, rows));
+      })
+      .catch((e) => logError("No se pudieron cargar los vectores de las fotos", e))
+      .finally(() => {
+        if (vectoresRef.current.promise === promise) setVectoresListos(true);
+      });
+    vectoresRef.current.promise = promise;
+    return promise;
+  }, []);
   const [loadingReports, setLoadingReports] = useState(true);
   // Antes reports=[] significaba lo mismo para "todavía no hay reportes" que
   // para "no se pudo conectar" — el empty-state mostraba siempre el mismo
@@ -1757,18 +1779,14 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
       const items = await fetchReports({ light: true });
       setReports(items);
       setLoadError(false);
-      // Sin await: el listado ya se muestra; los vectores llegan solos. Si
-      // fallan, el matching compara sin fotos (mejor que no mostrar nada).
+      // Los vectores de las fotos ya no se bajan acá: solo cuando hacen
+      // falta (ver cargarVectores). Si ya se habían pedido en esta visita
+      // (por ejemplo, recarga después de editar), se vuelven a armar con el
+      // listado nuevo, desde lo guardado en el dispositivo.
+      const yaSePidieron = !!vectoresRef.current.promise;
+      vectoresRef.current = { promise: null, rows: null };
       setVectoresListos(false);
-      // Con reintentos: es el pedido más pesado (los vectores de todas las
-      // fotos) y en datos móviles fallaba seguido ("Failed to fetch").
-      vectoresRef.current.promise = conReintentos(() => fetchReportVectors())
-        .then((rows) => {
-          vectoresRef.current.rows = rows;
-          setReports((prev) => mergeReportVectors(prev, rows));
-        })
-        .catch((e) => logError("No se pudieron cargar los vectores de las fotos", e))
-        .finally(() => setVectoresListos(true));
+      if (yaSePidieron) cargarVectores(items);
       await loadLeaderboard();
     } catch (e) {
       // Página abierta desde antes de un deploy que pide columnas que ya no
@@ -1783,11 +1801,21 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     } finally {
       setLoadingReports(false);
     }
-  }, [loadLeaderboard, pushToast]);
+  }, [loadLeaderboard, pushToast, cargarVectores]);
 
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  // Cuándo hacen falta los vectores: la campanita de coincidencias nuevas
+  // (sesión con avisos propios activos) y el aviso de duplicado mientras se
+  // carga un formulario con foto. Publicar y "ver coincidencias" los piden
+  // solos (reportesParaComparar). Quien solo mira avisos no los baja.
+  const tengoAvisosActivos = !!user && reports.some((r) => r.userId === user.id && !r.resuelto);
+  const cargandoFotoEnFormulario = activeTab === "reportar" && form.fotos.length > 0;
+  useEffect(() => {
+    if (tengoAvisosActivos || cargandoFotoEnFormulario) cargarVectores();
+  }, [tengoAvisosActivos, cargandoFotoEnFormulario, cargarVectores]);
 
   // Deep link desde un flyer/QR o un enlace compartido (?r=<id>) — abre esa
   // publicación directamente apenas cargan los reportes. Solo una vez: si el
@@ -2583,7 +2611,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   // Reportes con los vectores de las fotos ya cargados (ver vectoresListos):
   // si todavía están llegando, espera; si fallaron, devuelve lo que hay.
   async function reportesParaComparar() {
-    await vectoresRef.current.promise;
+    await cargarVectores();
     return vectoresRef.current.rows ? mergeReportVectors(reportsRef.current, vectoresRef.current.rows) : reportsRef.current;
   }
 
