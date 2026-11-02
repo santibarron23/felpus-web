@@ -114,3 +114,17 @@ describe("rebuildPhotos", async () => {
     expect(rebuildPhotos(row, row.foto_urls.map((url) => ({ url })))).toEqual({ patch: {}, quitadas: [] });
   });
 });
+
+describe("punto en el mapa (lat/lng)", () => {
+  it("acepta los dos juntos", async () => {
+    const { buildOwnerPatch } = await import("./adminEdit");
+    expect(buildOwnerPatch({ lat: -24.78, lng: -65.41 }).patch).toEqual({ lat: -24.78, lng: -65.41 });
+  });
+
+  it("rechaza uno solo, texto o fuera de rango", async () => {
+    const { buildOwnerPatch } = await import("./adminEdit");
+    for (const input of [{ lat: -24.78 }, { lng: -65.41 }, { lat: "-24", lng: "-65" }, { lat: 95, lng: 0 }, { lat: 0, lng: 200 }, { lat: NaN, lng: 0 }]) {
+      expect(buildOwnerPatch(input).error, JSON.stringify(input)).toBe("Ubicación inválida.");
+    }
+  });
+});
