@@ -8,8 +8,11 @@
 // desde acá — la persona revisa el formulario y toca Publicar como siempre.
 //
 // Protección de datos: la captura no se guarda en ningún lado, y de los
-// textos se borran teléfonos, mails, links y @usuarios (el contacto se lo
-// pide Felpus a quien publica, como en cualquier reporte).
+// textos se borran teléfonos, mails, links y @usuarios.
+// Contacto (2026-11-02, a pedido): el teléfono y el email que figuren en el
+// aviso vuelven aparte (extraerContacto) y el formulario los usa SOLO si sus
+// campos de contacto están vacíos, con una nota para que quien publica
+// confirme que corresponden (la captura puede ser del post de otra persona).
 import { COLOR_OPTIONS, TAMANO_OPTIONS } from "./matching";
 import {
   normalizeDraft,
@@ -75,6 +78,8 @@ export const GEMINI_RESPONSE_SCHEMA = {
     fecha: S({ description: "AAAA-MM-DD en que se perdió o se encontró, solo si el aviso permite saberla. Vacío si no." }),
     accesorios: { type: "ARRAY", items: { type: "STRING", enum: ACCESORIO_IDS } },
     marcas: { type: "ARRAY", items: { type: "STRING", enum: MARCA_IDS } },
+    contacto_telefono: S({ description: "Teléfono o WhatsApp de contacto que figura en el aviso, tal cual está escrito. Vacío si no hay." }),
+    contacto_email: S({ description: "Email de contacto que figura en el aviso. Vacío si no hay." }),
     detalle_libre: {
       type: "STRING",
       description:
@@ -90,7 +95,8 @@ export const GEMINI_RESPONSE_SCHEMA = {
   },
   required: [
     "es_publicacion_mascota", "tipo", "especie", "nombre", "raza", "color", "color_detalle", "tamano", "sexo",
-    "edad", "zona", "provincia", "fecha", "accesorios", "marcas", "detalle_libre", "foto_recuadro",
+    "edad", "zona", "provincia", "fecha", "accesorios", "marcas", "contacto_telefono", "contacto_email",
+    "detalle_libre", "foto_recuadro",
   ],
 };
 
@@ -103,7 +109,8 @@ export function buildGeminiPrompt(now = new Date()) {
     "Reglas:",
     "- Usá solo lo que dice el aviso o se ve claramente en la foto. Si no lo sabés, \"no_se\" o \"\". No inventes.",
     "- Color, tamaño y especie se pueden sacar de la foto; sexo, nombre, edad y raza solo si el aviso lo dice.",
-    "- NO copies teléfonos, mails, links, nombres de personas, direcciones exactas ni recompensas en ningún campo.",
+    "- NO copies teléfonos, mails, links, nombres de personas, direcciones exactas ni recompensas en ningún campo,",
+    "  salvo el teléfono y el email de contacto del aviso, que van solo en contacto_telefono y contacto_email.",
     "- Si es otra cosa (adopción, venta, un meme, algo que no es un animal perdido/encontrado), es_publicacion_mascota = false.",
     "- foto_recuadro: si es una captura de pantalla, el recuadro de la foto del animal (sin textos ni bordes de la app).",
   ].join("\n");
@@ -181,6 +188,22 @@ export function sanitizeBox(value, margin = 0.01) {
 }
 
 const noSe = (v) => (v === NO_SE ? "" : v);
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Contacto que figura en el aviso: { telefono, email }, vacíos si no hay o
+// no parecen válidos. El teléfono va tal cual (lo interpreta el formulario
+// con libphonenumber, según el país elegido); acá solo se exige que tenga
+// entre 8 y 15 dígitos y nada raro.
+export function extraerContacto(raw) {
+  const r = raw && typeof raw === "object" ? raw : {};
+  const tel = typeof r.contacto_telefono === "string" ? r.contacto_telefono.trim() : "";
+  const digitos = tel.replace(/\D/g, "");
+  const telefono = /^[+\d\s().-]{8,30}$/.test(tel) && digitos.length >= 8 && digitos.length <= 15 ? tel : "";
+  const mail = typeof r.contacto_email === "string" ? r.contacto_email.trim() : "";
+  const email = mail.length <= 120 && EMAIL_RE.test(mail) ? mail : "";
+  return { telefono, email };
+}
 const TEXT_FIELDS = ["nombre", "raza", "color_detalle", "zona", "provincia", "detalle_libre"];
 
 // Lo que devolvió Gemini (ya parseado) -> { esMascota, especieNoSoportada,
@@ -201,6 +224,7 @@ export function interpretExtraction(raw) {
     especieNoSoportada: r.especie === "otra",
     draft,
     box: sanitizeBox(r.foto_recuadro),
+    contacto: extraerContacto(r),
   };
 }
 

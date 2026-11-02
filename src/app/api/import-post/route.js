@@ -107,7 +107,8 @@ export async function POST(request) {
       return json({ error: "Por ahora Felpus es solo para perros y gatos.", code: "not_pet" }, 422);
     }
     // box: recuadro de la mascota dentro de la captura (el navegador la recorta).
-    return json({ draft: out.draft, box: out.box });
+    // contacto: teléfono/email del aviso, si había (ver extraerContacto).
+    return json({ draft: out.draft, box: out.box, contacto: out.contacto });
   } catch (e) {
     if (e?.name === "TimeoutError" || e?.name === "AbortError") {
       return json({ error: "La IA tardó demasiado. Probá de nuevo.", code: "unavailable" }, 503);
