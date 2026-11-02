@@ -9,6 +9,9 @@ import {
   parseGeminiResponse,
   interpretExtraction,
   photoSuggestion,
+  MAX_CAPTURAS,
+  MAX_POST_TEXT_CHARS,
+  MIN_POST_TEXT_CHARS,
 } from "../../../lib/postImport";
 
 // Leer la captura de una publicación (Facebook, Instagram, WhatsApp, un
@@ -22,8 +25,9 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 45;
 
-// A lo sumo una captura ya achicada en el navegador (ver chatbot.js).
-const MAX_BODY_CHARS = 1_600_000;
+// Hasta MAX_CAPTURAS capturas ya achicadas en el navegador (ver
+// ImportPostCard) + el texto pegado. Debajo del límite de 4,5 MB de Vercel.
+const MAX_BODY_CHARS = 4_200_000;
 const GEMINI_TIMEOUT_MS = 30_000;
 
 const checkRateLimit = makeAiRateLimit({ maxPerMinute: 6 });
@@ -69,19 +73,30 @@ export async function POST(request) {
     return json({ error: "Body inválido." }, 400);
   }
 
-  const img = parseImageDataUrl(body?.image);
-  if (img.error) return json({ error: img.error }, 400);
-  if (!img.image) return json({ error: "Falta la captura." }, 400);
   // "foto": la foto real de la mascota recién subida al formulario; devuelve
   // solo sugerencias (especie, color, tamaño, raza). Si no, una captura.
   const modo = body?.modo === "foto" ? "foto" : "captura";
+  // Capturas: `images` (hasta MAX_CAPTURAS) o `image` (una, como antes).
+  const crudas = Array.isArray(body?.images) ? body.images : body?.image ? [body.image] : [];
+  if (crudas.length > MAX_CAPTURAS) return json({ error: `Hasta ${MAX_CAPTURAS} capturas por vez.` }, 400);
+  const images = [];
+  for (const raw of crudas) {
+    const img = parseImageDataUrl(raw);
+    if (img.error) return json({ error: img.error }, 400);
+    if (img.image) images.push(img.image);
+  }
+  // Texto del aviso pegado (opcional, solo en modo captura).
+  const text = modo === "captura" && typeof body?.text === "string" ? body.text.slice(0, MAX_POST_TEXT_CHARS).trim() : "";
+  const hayTexto = text.length >= MIN_POST_TEXT_CHARS;
+  if (modo === "foto" && images.length !== 1) return json({ error: "Falta la foto." }, 400);
+  if (!images.length && !hayTexto) return json({ error: "Subí una captura o pegá el texto del aviso." }, 400);
 
   if (!(await checkRateLimit(getClientIp(request)))) {
     return json({ error: "Demasiados intentos seguidos. Probá de nuevo en un rato.", code: "rate_limit" }, 429);
   }
 
   try {
-    const result = await callGemini(apiKey, buildGeminiRequest({ image: img.image, modo }));
+    const result = await callGemini(apiKey, buildGeminiRequest({ images, text: hayTexto ? text : "", modo }));
     if (!result.body) {
       logEvent("import_post_gemini_error", { status: result.status });
       if (result.status === 429) return json({ error: "La IA está saturada. Probá de nuevo en un rato.", code: "unavailable" }, 503);
@@ -96,7 +111,7 @@ export async function POST(request) {
       return json({ error: "No pudimos entender la captura. Completá el formulario a mano.", code: "error" }, 502);
     }
     const out = interpretExtraction(parsed.data);
-    logEvent("import_post_ok", { model: result.model, modo, esMascota: out.esMascota, conRecuadro: !!out.box });
+    logEvent("import_post_ok", { model: result.model, modo, capturas: images.length, conTexto: hayTexto, esMascota: out.esMascota, conRecuadro: !!out.box });
     if (modo === "foto") {
       return json({ sugerencia: out.esMascota && !out.especieNoSoportada ? photoSuggestion(out.draft) : null });
     }
@@ -108,7 +123,8 @@ export async function POST(request) {
     }
     // box: recuadro de la mascota dentro de la captura (el navegador la recorta).
     // contacto: teléfono/email del aviso, si había (ver extraerContacto).
-    return json({ draft: out.draft, box: out.box, contacto: out.contacto });
+    // boxImagen: en cuál de las capturas está esa foto (índice desde 0).
+    return json({ draft: out.draft, box: images.length ? out.box : null, boxImagen: Math.min(out.boxImagen, Math.max(0, images.length - 1)), contacto: out.contacto });
   } catch (e) {
     if (e?.name === "TimeoutError" || e?.name === "AbortError") {
       return json({ error: "La IA tardó demasiado. Probá de nuevo.", code: "unavailable" }, 503);

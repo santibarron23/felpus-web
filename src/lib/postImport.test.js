@@ -71,7 +71,7 @@ describe("buildGeminiRequest", () => {
 
   it("sin texto avisa que todo está en la imagen", () => {
     const req = buildGeminiRequest({ image: { media_type: "image/png", data: "AA==" } });
-    expect(req.contents[0].parts[0].text).toMatch(/imagen/);
+    expect(req.contents[0].parts[0].text).toMatch(/está todo en las imágenes/);
   });
 
   it("el schema usa exactamente las opciones del formulario", () => {
@@ -249,5 +249,45 @@ describe("extraerContacto (2026-11-02)", () => {
     const r = interpretExtraction({ es_publicacion_mascota: true, detalle_libre: "Llamar al 3875885427", contacto_telefono: "3875885427", contacto_email: "" });
     expect(r.contacto).toEqual({ telefono: "3875885427", email: "" });
     expect(r.draft.detalleLibre || "").not.toMatch(/3875885427/);
+  });
+});
+
+describe("varias capturas y más datos (2026-11-02)", () => {
+  const img = (d) => ({ media_type: "image/jpeg", data: d });
+
+  it("manda hasta 3 capturas numeradas, con el texto pegado al principio", () => {
+    const req = buildGeminiRequest({ images: [img("A"), img("B"), img("C"), img("D")], text: "Se perdió Luna en Tres Cerritos, es muy miedosa" });
+    const parts = req.contents[0].parts;
+    expect(parts[0].text).toContain("Se perdió Luna");
+    expect(parts.filter((p) => p.inlineData).map((p) => p.inlineData.data)).toEqual(["A", "B", "C"]);
+    expect(parts.filter((p) => p.text?.startsWith("Imagen ")).map((p) => p.text)).toEqual(["Imagen 1:", "Imagen 2:", "Imagen 3:"]);
+  });
+
+  it("una sola captura: sin rótulos, como antes", () => {
+    const parts = buildGeminiRequest({ images: [img("A")] }).contents[0].parts;
+    expect(parts.some((p) => p.text?.startsWith("Imagen "))).toBe(false);
+    expect(parts.filter((p) => p.inlineData)).toHaveLength(1);
+  });
+
+  it("lee cómo reacciona, la mancha y en qué captura está la foto", () => {
+    const r = interpretExtraction({
+      es_publicacion_mascota: true,
+      reaccion: ["miedoso", "inventado"],
+      marcas: ["mancha"],
+      mancha_ubicacion: "cara",
+      mancha_color: "Negro",
+      foto_imagen: 2,
+    });
+    expect(r.draft.reaccion).toEqual(["miedoso"]);
+    expect(r.draft.marcas).toContain("mancha");
+    expect(r.draft.manchaUbicacion).toBe("cara");
+    expect(r.boxImagen).toBe(1);
+  });
+
+  it("una mancha sin dónde no se usa; foto_imagen fuera de rango → la primera", () => {
+    const r = interpretExtraction({ es_publicacion_mascota: true, marcas: ["mancha"], mancha_ubicacion: "no_se", mancha_color: "Negro", foto_imagen: 7 });
+    expect(r.draft.marcas).not.toContain("mancha");
+    expect(r.draft.manchaColor).toBe("");
+    expect(r.boxImagen).toBe(0);
   });
 });

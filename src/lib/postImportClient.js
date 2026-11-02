@@ -57,7 +57,8 @@ export function toPhotoFile(source, box = null) {
   });
 }
 
-// { image } -> { ok: true, draft, box } o { ok: false, code, error }.
+// { images (hasta 3) y/o text } o { image, modo: "foto" } -> { ok: true,
+// draft, box, boxImagen, contacto } o { ok: false, code, error }.
 export async function importPost(payload) {
   try {
     const res = await fetch("/api/import-post", {
