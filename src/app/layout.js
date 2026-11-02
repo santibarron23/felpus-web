@@ -4,6 +4,7 @@ import { GoogleAnalytics } from "@next/third-parties/google";
 import "leaflet/dist/leaflet.css";
 import "./globals.css";
 import ServiceWorkerRegister from "../components/felpus/ServiceWorkerRegister";
+import GlobalErrorCapture from "../components/felpus/GlobalErrorCapture";
 import InstallBanner from "../components/felpus/InstallBanner";
 import { ThemeProvider } from "../components/felpus/ThemeProvider";
 import { C } from "../lib/theme";
@@ -117,6 +118,7 @@ export default function RootLayout({ children }) {
         />
         <ThemeProvider>
           <ServiceWorkerRegister />
+          <GlobalErrorCapture />
           <InstallBanner />
           {children}
         </ThemeProvider>

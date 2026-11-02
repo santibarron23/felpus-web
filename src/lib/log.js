@@ -60,11 +60,26 @@ export function buildErrorPayload(args, { url = null, userAgent = null } = {}) {
   };
 }
 
+// Por página cargada (2026-11-02): el mismo mensaje se manda una sola vez y
+// en total hasta MAX_REPORTES_POR_PAGINA. Antes un error dentro de un bucle o
+// un re-render podía mandar decenas de copias y gastar el cupo por IP de
+// /api/log-error (40/hora), tapando errores distintos que venían después.
+export const MAX_REPORTES_POR_PAGINA = 15;
+const reportados = new Set();
+
+export function debeReportar(message, enviados = reportados, max = MAX_REPORTES_POR_PAGINA) {
+  const clave = String(message || "").slice(0, 300);
+  if (enviados.has(clave) || enviados.size >= max) return false;
+  enviados.add(clave);
+  return true;
+}
+
 function reportToSupabase(args) {
   const payload = buildErrorPayload(args, {
     url: window.location?.href,
     userAgent: navigator.userAgent,
   });
+  if (!debeReportar(payload.message)) return;
 
   // Fire-and-forget a propósito: nadie espera este resultado, y un .catch
   // vacío evita el "unhandled promise rejection" si la ruta no responde
