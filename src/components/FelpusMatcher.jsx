@@ -142,11 +142,12 @@ import {
 } from "../lib/store";
 import { usersReportToCsv } from "../lib/csv";
 import { petTitle, nombreReal } from "../lib/petTitle";
-import { zonaConCiudad } from "../lib/zona";
+import { zonaConCiudad, textoZonaFormulario } from "../lib/zona";
 import { ADMIN_EMAIL } from "../lib/adminEdit";
 import AdminEditReport from "./felpus/AdminEditReport";
 import { playTap, playSuccess } from "../lib/sound";
-import { reverseGeocode } from "../lib/osmMap";
+import { reverseGeocode, ubicarZona } from "../lib/osmMap";
+import { CITIES } from "../lib/cities";
 import { requestLocation, geolocationErrorMessage } from "../lib/geolocation";
 import { dictationErrorMessage } from "../lib/dictation";
 import {
@@ -428,6 +429,11 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   // al tab "Reportar", aunque terminara usando el botón "Ubicación" (GPS) o
   // escribiendo la zona a mano, que cubren la mayoría de los casos.
   const [showMapPicker, setShowMapPicker] = useState(false);
+  // La zona escrita a mano, ubicada en el mapa (ubicarZona): el mapa abre
+  // con el pin ahí cuando todavía no hay punto marcado.
+  const [zonaEnMapa, setZonaEnMapa] = useState(null);
+  const [buscandoZona, setBuscandoZona] = useState(false);
+  const zonaBuscadaRef = useRef("");
   // Última zona que se completó sola a partir de coordenadas (GPS o pin del
   // mapa) — si la persona después mueve el pin, se puede reemplazar por la
   // del lugar nuevo; lo que escribió a mano nunca se pisa.
@@ -2508,6 +2514,36 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     }
   }
 
+  // "Marcar ubicación exacta en el mapa": si ya se escribió la zona y todavía
+  // no hay punto, primero se la ubica en el mapa para abrirlo con el pin ahí.
+  async function abrirMapaDelFormulario() {
+    const texto = textoZonaFormulario(form);
+    if (form.lat == null && texto) {
+      setBuscandoZona(true);
+      zonaBuscadaRef.current = texto;
+      const loc = await ubicarZona(texto, myLocation || CITIES.salta.geo);
+      setBuscandoZona(false);
+      setZonaEnMapa(loc);
+    }
+    setShowMapPicker(true);
+  }
+
+  // Con el mapa ya abierto y sin punto marcado, si la persona corrige la zona
+  // escrita, el pin la sigue (con una pausa, para no buscar letra por letra).
+  useEffect(() => {
+    if (!showMapPicker || form.lat != null) return;
+    const texto = textoZonaFormulario(form);
+    if (!texto || texto === zonaBuscadaRef.current) return;
+    const t = setTimeout(async () => {
+      zonaBuscadaRef.current = texto;
+      const loc = await ubicarZona(texto, myLocation || CITIES.salta.geo);
+      if (loc) setZonaEnMapa(loc);
+    }, 900);
+    return () => clearTimeout(t);
+    // Solo importan la zona escrita y si ya hay punto.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showMapPicker, form.lat, form.zona, form.ciudad, form.provincia]);
+
   // Formulario en blanco: después de publicar o con "Empezar de nuevo".
   // También borra el borrador guardado en el dispositivo.
   function resetReportForm() {
@@ -3919,16 +3955,19 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                       lat={form.lat}
                       lng={form.lng}
                       onChange={setUbicacionDesdeCoordenadas}
+                      startAt={form.lat == null ? zonaEnMapa : null}
+                      startAtLabel={form.zona.trim()}
                     />
                   ) : (
                     <button
                       type="button"
-                      onClick={() => setShowMapPicker(true)}
-                      className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-dashed px-3 py-2.5 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                      onClick={abrirMapaDelFormulario}
+                      disabled={buscandoZona}
+                      className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-dashed px-3 py-2.5 text-xs font-semibold disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
                       style={{ borderColor: C.border, color: C.muted }}
                     >
-                      <MapPin className="w-3.5 h-3.5" />
-                      Marcar ubicación exacta en el mapa
+                      {buscandoZona ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5" />}
+                      {buscandoZona ? "Buscando la zona en el mapa…" : "Marcar ubicación exacta en el mapa"}
                     </button>
                   )}
                 </div>

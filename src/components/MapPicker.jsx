@@ -28,6 +28,10 @@ import { useTheme } from "./felpus/ThemeProvider";
 // ciudad — para pantallas como /configuracion/alertas donde el mapa es la
 // ÚNICA forma de elegir la zona (en el formulario de reporte ya existe el
 // botón "Ubicación" aparte, por eso no es el default).
+// startAt (opcional, 2026-11-02): sin punto marcado, dónde poner el pin al
+// abrir — la zona que la persona escribió, ya ubicada en el mapa. Queda
+// como propuesta a confirmar (no marca el reporte) y no lo pisa el GPS.
+// startAtLabel: el texto de esa zona, para el aviso debajo del mapa.
 export default function MapPicker({
   lat,
   lng,
@@ -36,6 +40,8 @@ export default function MapPicker({
   radiusM = null,
   fallbackActions = false,
   defaultCenterLabel = null,
+  startAt = null,
+  startAtLabel = "",
 }) {
   const C = useTheme();
   const containerRef = useRef(null);
@@ -82,11 +88,12 @@ export default function MapPicker({
         if (cancelled || !containerRef.current) return;
         const isTouch = !!window.matchMedia?.("(pointer: coarse)").matches;
         setTouch(isTouch);
+        const desdeZona = lat == null && startAt ? startAt : null;
         const center = {
-          lat: lat ?? defaultCenter?.lat ?? FALLBACK_CENTER.lat,
-          lng: lng ?? defaultCenter?.lng ?? FALLBACK_CENTER.lng,
+          lat: lat ?? desdeZona?.lat ?? defaultCenter?.lat ?? FALLBACK_CENTER.lat,
+          lng: lng ?? desdeZona?.lng ?? defaultCenter?.lng ?? FALLBACK_CENTER.lng,
         };
-        const map = createMap(L, containerRef.current, { center, zoom: lat != null ? 15 : 12, interactive: !isTouch });
+        const map = createMap(L, containerRef.current, { center, zoom: lat != null || desdeZona ? 15 : 12, interactive: !isTouch });
         mapToRemove = map;
         const marker = L.marker([center.lat, center.lng], { draggable: !isTouch, icon: pinIcon(L, C.redSolid), keyboard: false }).addTo(map);
         marker.on("dragend", () => {
@@ -107,7 +114,12 @@ export default function MapPicker({
         stopResizeObserver = observeMapResize(map, containerRef.current);
         setStatus("ready");
         startCenterRef.current = center;
-        if (lat == null || lng == null) {
+        if (desdeZona) {
+          // La zona escrita manda: pin ahí, como propuesta, y sin GPS.
+          locatedRef.current = true;
+          marker.setOpacity(0.55);
+          setPending({ lat: desdeZona.lat, lng: desdeZona.lng });
+        } else if (lat == null || lng == null) {
           // Si la persona no da permiso (o tarda), el mapa queda donde estaba.
           requestLocation(
             (pos) => {
@@ -146,6 +158,23 @@ export default function MapPicker({
       setPending(null);
     }
   }, [lat, lng, status]);
+
+  // La zona escrita cambió con el mapa ya abierto (y todavía sin punto ni
+  // movimientos de la persona): el pin la sigue.
+  useEffect(() => {
+    if (status !== "ready" || !startAt || lat != null || userMovedRef.current) return;
+    const map = mapObjRef.current;
+    const marker = markerObjRef.current;
+    if (!map || !marker) return;
+    startCenterRef.current = startAt;
+    locatedRef.current = true;
+    marker.setLatLng([startAt.lat, startAt.lng]);
+    marker.setOpacity(0.55);
+    map.setView([startAt.lat, startAt.lng], 15);
+    setPending({ lat: startAt.lat, lng: startAt.lng });
+    // startAt llega como objeto nuevo en cada búsqueda: alcanza con lat/lng.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, startAt?.lat, startAt?.lng, lat]);
 
   useEffect(() => {
     const map = mapObjRef.current;
@@ -349,6 +378,12 @@ export default function MapPicker({
         </button>
       )}
       {geoMessage}
+      {!hasPoint && startAt && startAtLabel && !userMovedRef.current && (
+        <p className="text-[12px] mt-2" role="status" style={{ color: C.text }}>
+          Ubicamos &ldquo;{startAtLabel}&rdquo; en el mapa. Ajustá el pin si hace falta y{" "}
+          {touch ? "tocá \u201cMarcar en el mapa\u201d para confirmarlo." : "confirmalo."}
+        </p>
+      )}
       {touch ? null : pending ? (
         <div className="mt-2 flex items-center gap-2 rounded-lg p-2.5" style={{ background: C.surfaceSubtle, border: `1px solid ${C.border}` }}>
           <span className="text-[12px] flex-1" style={{ color: C.muted }}>¿Confirmás esta ubicación?</span>
