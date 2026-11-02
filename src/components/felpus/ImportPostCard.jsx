@@ -54,7 +54,7 @@ export default function ImportPostCard({ onImport }) {
       }
       setCompletados(importSummary(result.draft).completados.length);
       setOpen(false);
-      await onImport({ fields: importToFormFields(result.draft), photoFile });
+      await onImport({ fields: importToFormFields(result.draft), photoFile, contacto: result.contacto || null });
     } catch (err) {
       logError("No se pudo leer la captura", err);
       setError({ code: "error", message: "No pudimos leer esa imagen. Probá con otra." });

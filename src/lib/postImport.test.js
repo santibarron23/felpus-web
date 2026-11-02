@@ -5,6 +5,7 @@ import {
   parseGeminiResponse,
   sanitizeBox,
   interpretExtraction,
+  extraerContacto,
   importSummary,
   importToFormFields,
   photoSuggestion,
@@ -222,5 +223,31 @@ describe("modo foto", () => {
       tamano: "mediano",
       raza: "Caniche",
     });
+  });
+});
+
+describe("extraerContacto (2026-11-02)", () => {
+  it("devuelve el teléfono y el email del aviso si parecen válidos", () => {
+    expect(extraerContacto({ contacto_telefono: " +54 9 387 588-5427 ", contacto_email: " luna@gmail.com " })).toEqual({
+      telefono: "+54 9 387 588-5427",
+      email: "luna@gmail.com",
+    });
+    expect(extraerContacto({ contacto_telefono: "(387) 155-885427" }).telefono).toBe("(387) 155-885427");
+  });
+
+  it("vacío si no hay, si es muy corto/largo o trae otra cosa", () => {
+    expect(extraerContacto(null)).toEqual({ telefono: "", email: "" });
+    for (const t of ["1234", "llamar al 3875885427 o al 1155", "1".repeat(16), "<b>3875885427</b>", 3875885427]) {
+      expect(extraerContacto({ contacto_telefono: t }).telefono, String(t)).toBe("");
+    }
+    for (const m of ["no tiene", "a@b", "x".repeat(115) + "@b.com", "a b@c.com"]) {
+      expect(extraerContacto({ contacto_email: m }).email, m).toBe("");
+    }
+  });
+
+  it("interpretExtraction lo devuelve aparte y no lo deja en los textos", () => {
+    const r = interpretExtraction({ es_publicacion_mascota: true, detalle_libre: "Llamar al 3875885427", contacto_telefono: "3875885427", contacto_email: "" });
+    expect(r.contacto).toEqual({ telefono: "3875885427", email: "" });
+    expect(r.draft.detalleLibre || "").not.toMatch(/3875885427/);
   });
 });
