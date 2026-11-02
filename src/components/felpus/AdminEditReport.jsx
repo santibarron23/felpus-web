@@ -10,9 +10,15 @@
 //  - Fotos: el dueño las reordena; el admin además las recorta o las saca
 //    (2026-10-29). Una recortada se sube al bucket recién al guardar, con su
 //    histograma y embedding nuevos; la vieja la borra la ruta.
+//  - Ubicación (2026-11-02): mover el pin con el mapa a pantalla completa.
+//    Solo se manda si se movió: lo que trae el cliente es el punto
+//    aproximado (lat_aprox), y mandarlo sin tocar pisaría el real.
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { ArrowLeft, ArrowRight, Crop, Loader2, Star, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Crop, Loader2, MapPin, Star, Trash2, X } from "lucide-react";
+import FullscreenMapPicker from "../FullscreenMapPicker";
+import { reverseGeocode } from "../../lib/osmMap";
+import { CITIES } from "../../lib/cities";
 import { useTheme } from "./ThemeProvider";
 import { useFocusTrap } from "./useFocusTrap";
 import { authedFetch } from "../../lib/push";
@@ -58,11 +64,32 @@ export default function AdminEditReport({ report, onClose, onSaved, owner = fals
   const [procesando, setProcesando] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // Punto nuevo elegido en el mapa ({ lat, lng }); null = sin cambios.
+  const [punto, setPunto] = useState(null);
+  const [mapaAbierto, setMapaAbierto] = useState(false);
+  const [zonaDelMapa, setZonaDelMapa] = useState(false);
   const firstRef = useRef(null);
   const formRef = useRef(null);
   // Tab no se escapa del diálogo y Escape lo cierra (antes solo Escape).
   // En pausa mientras está abierto el recortador, que tiene el suyo.
-  useFocusTrap(recortando == null, formRef, onClose);
+  useFocusTrap(recortando == null && !mapaAbierto, formRef, onClose);
+
+  const tienePunto = typeof report.lat === "number" && typeof report.lng === "number";
+  const centroMapa = punto || (tienePunto ? { lat: report.lat, lng: report.lng } : CITIES.salta.geo);
+
+  // Al mover el pin, se sugiere la zona y la ciudad de ese punto (se pueden
+  // corregir a mano después).
+  function puntoElegido(lat, lng) {
+    setMapaAbierto(false);
+    setPunto({ lat, lng });
+    reverseGeocode(lat, lng)
+      .then((place) => {
+        if (!place?.zona) return;
+        setFields((f) => ({ ...f, zona: place.zona.slice(0, 100), ciudad: (place.ciudad || f.ciudad).slice(0, 80) }));
+        setZonaDelMapa(true);
+      })
+      .catch(() => {});
+  }
 
   useEffect(() => {
     firstRef.current?.focus();
@@ -129,7 +156,11 @@ export default function AdminEditReport({ report, onClose, onSaved, owner = fals
         body: JSON.stringify({
           reportId: report.id,
           ...(owner && pushToken ? { pushToken } : {}),
-          fields: { ...(owner ? sinTipo : { ...sinTipo, tipo }), color_otro: fields.color === "Otro color" ? fields.color_otro : "" },
+          fields: {
+            ...(owner ? sinTipo : { ...sinTipo, tipo }),
+            color_otro: fields.color === "Otro color" ? fields.color_otro : "",
+            ...(punto ? { lat: punto.lat, lng: punto.lng } : {}),
+          },
           ...fotosBody,
         }),
       });
@@ -326,6 +357,29 @@ export default function AdminEditReport({ report, onClose, onSaved, owner = fals
               <input id="ae-ciudad" value={fields.ciudad} onChange={set("ciudad")} maxLength={80} className={input} style={inputStyle} />
             </div>
           </div>
+          {zonaDelMapa && (
+            <p className="text-[12px] -mt-2" role="status" style={{ color: C.muted }}>
+              Actualizamos la zona y la ciudad según el mapa. Podés corregirlas.
+            </p>
+          )}
+
+          <div>
+            <p className={label}>Ubicación en el mapa</p>
+            <button
+              type="button"
+              onClick={() => setMapaAbierto(true)}
+              className="w-full min-h-[48px] rounded-xl border flex items-center justify-center gap-1.5 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+              style={{ borderColor: C.border, color: C.text, background: C.surface }}
+            >
+              <MapPin className="w-4 h-4" style={{ color: C.red }} aria-hidden="true" />
+              {punto ? "Ubicación cambiada — tocá para ajustarla" : tienePunto ? "Mover el pin en el mapa" : "Marcar en el mapa"}
+            </button>
+            <p className="text-[12px] mt-1" style={{ color: C.muted }}>
+              {punto
+                ? "Se guarda al tocar \u201cGuardar cambios\u201d. En el aviso se sigue mostrando una zona aproximada."
+                : "En el aviso se muestra una zona aproximada, nunca el punto exacto."}
+            </p>
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -404,6 +458,9 @@ export default function AdminEditReport({ report, onClose, onSaved, owner = fals
           onCancel={() => setRecortando(null)}
           onDone={recorteListo}
         />
+      )}
+      {mapaAbierto && (
+        <FullscreenMapPicker center={centroMapa} zoom={tienePunto || punto ? 16 : 13} onConfirm={puntoElegido} onClose={() => setMapaAbierto(false)} />
       )}
     </div>
   );

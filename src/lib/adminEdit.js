@@ -42,6 +42,15 @@ export function buildAdminPatch(input, { allowTipo = true } = {}) {
     if (typeof input.fecha !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(input.fecha)) return { error: "Fecha inválida." };
     patch.fecha = input.fecha;
   }
+  // Punto en el mapa (2026-11-02): los dos juntos, o ninguno. Las columnas
+  // lat_aprox/lng_aprox son generadas: la base las recalcula sola.
+  if (input.lat !== undefined || input.lng !== undefined) {
+    const { lat, lng } = input;
+    const ok = (v, max) => typeof v === "number" && Number.isFinite(v) && Math.abs(v) <= max;
+    if (!ok(lat, 90) || !ok(lng, 180)) return { error: "Ubicación inválida." };
+    patch.lat = lat;
+    patch.lng = lng;
+  }
   return { patch };
 }
 
