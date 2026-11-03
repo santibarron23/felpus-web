@@ -16,6 +16,7 @@ import { findDuplicates, duplicateMessage } from "../lib/duplicates";
 import { REPORT_DRAFT_KEY, serializeReportDraft, parseReportDraft } from "../lib/reportDraft";
 import { track } from "../lib/analytics";
 import { conReintentos } from "../lib/retry";
+import { useAutoScroll } from "./felpus/useAutoScroll";
 import { vectoresConCache } from "../lib/vectorCache";
 import { reloadOnceForStaleDeploy, isStaleListingError } from "../lib/staleDeploy";
 import { isTooDark, isBlurry, photoAnalysis } from "../lib/photoQuality";
@@ -30,6 +31,8 @@ import {
   LayoutGrid,
   Loader2,
   Sparkles,
+  Pause,
+  Play,
   Lightbulb,
   ChevronRight,
   ChevronDown,
@@ -389,6 +392,9 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   const vectoresRef = useRef({ promise: null, rows: null });
   const reportsRef = useRef(reports);
   reportsRef.current = reports;
+  // "Reencuentros felices" pasa solo, lento, de derecha a izquierda
+  // (useAutoScroll, 2026-11-03).
+  const reencuentrosRef = useRef(null);
   // Vectores de las fotos (2026-11-02): eran lo más pesado de cada visita
   // (≈460 KB, 9 veces el listado) y casi todo el egress de Supabase. Ahora se
   // piden solo cuando hacen falta y se guardan en el dispositivo
@@ -2859,6 +2865,11 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     () => [...resueltas].sort((a, b) => (b.resueltoEn || b.creadoEn) - (a.resueltoEn || a.creadoEn)).slice(0, 10),
     [resueltas]
   );
+  // Con pocas tarjetas no hace falta moverlas; con "reducir movimiento" en el
+  // sistema tampoco (y no se duplica la lista ni se muestra el botón).
+  const hayReencuentrosParaMover = happyReunions.length >= 3;
+  const carrusel = useAutoScroll(reencuentrosRef, { activo: hayReencuentrosParaMover && activeTab === "inicio" });
+  const carruselAnima = hayReencuentrosParaMover && !carrusel.reducirMovimiento;
   // Franja de actividad de la comunidad en Inicio — números reales (no
   // simulados) derivados de los reportes ya cargados, para transmitir que
   // hay gente usando la app ahora mismo sin inventar datos. Memoizado por el
@@ -3549,19 +3560,39 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                 simular estrellas se muestra el final feliz real de cada caso. */}
             {happyReunions.length > 0 && (
               <div>
-                <h2 className="felpus-display text-lg mb-0.5" style={{ color: C.text }}>
-                  Reencuentros felices
-                </h2>
-                <p className="text-xs mb-3" style={{ color: C.muted }}>
-                  Historias reales de la comunidad — mascotas que volvieron a casa gracias a Felpus.
-                </p>
-                <div className="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4 snap-x snap-mandatory">
-                  {happyReunions.map((r) => (
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <h2 className="felpus-display text-lg mb-0.5" style={{ color: C.text }}>
+                      Reencuentros felices
+                    </h2>
+                    <p className="text-xs mb-3" style={{ color: C.muted }}>
+                      Historias reales de la comunidad — mascotas que volvieron a casa gracias a Felpus.
+                    </p>
+                  </div>
+                  {carruselAnima && (
                     <button
-                      key={r.id}
+                      type="button"
+                      onClick={() => carrusel.setPausado((p) => !p)}
+                      aria-pressed={carrusel.pausado}
+                      aria-label={carrusel.pausado ? "Reanudar el desplazamiento de los reencuentros" : "Pausar el desplazamiento de los reencuentros"}
+                      className="shrink-0 w-11 h-11 rounded-full flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
+                      style={{ color: C.muted }}
+                    >
+                      {carrusel.pausado ? <Play className="w-4 h-4" aria-hidden="true" /> : <Pause className="w-4 h-4" aria-hidden="true" />}
+                    </button>
+                  )}
+                </div>
+                {/* Sin snap: frenaría el desplazamiento suave. La segunda copia
+                    (solo si se mueve) cierra el bucle; no se lee ni se enfoca. */}
+                <div ref={reencuentrosRef} className="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4">
+                  {(carruselAnima ? [...happyReunions.map((r) => [r, false]), ...happyReunions.map((r) => [r, true])] : happyReunions.map((r) => [r, false])).map(([r, copia], i) => (
+                    <button
+                      key={`${copia ? "c" : "o"}-${r.id}`}
                       type="button"
                       onClick={() => openReportDetail(r)}
-                      className="felpus-card-hover shrink-0 w-44 snap-start text-left rounded-2xl p-3.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
+                      {...(copia ? { "aria-hidden": true, tabIndex: -1 } : {})}
+                      {...(copia && i === happyReunions.length ? { "data-bucle": "copia" } : {})}
+                      className="felpus-card-hover shrink-0 w-44 text-left rounded-2xl p-3.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/40"
                       style={{ background: C.brandTintBg }}
                     >
                       <div className="relative w-12 h-12 mb-2">
