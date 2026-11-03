@@ -35,6 +35,22 @@ export function loadLeaflet() {
   return leafletPromise;
 }
 
+// Adelanta la carga del mapa apenas se intuye que se va a abrir (2026-11-03):
+// baja Leaflet (~145 KB sin comprimir) y abre la conexión con el servidor de
+// teselas, así cuando el mapa se monta ya no espera ninguna de las dos cosas.
+// Nunca tira: si falla, el mapa lo vuelve a intentar al montarse.
+export function warmMap() {
+  if (typeof document === "undefined") return;
+  if (!document.querySelector("link[data-felpus-tiles]")) {
+    const link = document.createElement("link");
+    link.rel = "preconnect";
+    link.href = "https://tile.openstreetmap.org";
+    link.dataset.felpusTiles = "";
+    document.head.appendChild(link);
+  }
+  loadLeaflet().catch(() => {});
+}
+
 // Mapa con las teselas de OpenStreetMap. interactive=false: se ve pero no se
 // mueve ni hace zoom (la vista chica en el celular, ver MapPicker).
 export function createMap(L, el, { center, zoom, interactive = true, zoomControl = true } = {}) {
@@ -89,15 +105,33 @@ export function pinIcon(L, color, { ghost = false } = {}) {
   });
 }
 
+// Foto del pin en miniatura (2026-11-03). Antes cada pin bajaba la foto
+// original (131 KB en promedio, medido en producción) para mostrarla en un
+// círculo de 40 px: con 206 pines en Explorar eran ~27 MB. Ahora pasa por el
+// optimizador de Next con los mismos anchos y calidad que las miniaturas de
+// la lista (ver next.config.mjs, imageSizes/qualities): ~5 KB por pin, y
+// casi siempre ya está guardada en la caché de Vercel y del navegador. 128 px
+// alcanza para el pin de 40 px hasta en pantallas 3x; el de la ficha (52 px)
+// usa 256. Solo las fotos del bucket propio: el optimizador rechaza las
+// demás (y las fotos locales, data:/blob:, no lo necesitan).
+const PHOTOS_PATH = "/storage/v1/object/public/felpus-photos/";
+export function markerPhotoUrl(foto, size = 40) {
+  const url = String(foto || "");
+  if (!url.startsWith("https://") || !url.includes(PHOTOS_PATH)) return url;
+  return `/_next/image?url=${encodeURIComponent(url)}&w=${size <= 42 ? 128 : 256}&q=75`;
+}
+
 // Círculo con la foto de la mascota y borde de color (Explorar y ficha).
+// loading="lazy": los pines que quedan fuera del mapa no bajan su foto
+// hasta que se mueve el mapa hacia ellos.
 export function photoIcon(L, { foto, color, size = 40 }) {
-  const safe = String(foto || "").replace(/"/g, "%22");
+  const safe = markerPhotoUrl(foto, size).replace(/"/g, "%22");
   return L.divIcon({
     className: "",
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
     html: `<div style="width:${size}px;height:${size}px;border-radius:9999px;overflow:hidden;border:4px solid ${color};background:${color};box-shadow:0 2px 6px rgba(0,0,0,.35);cursor:pointer">${
-      safe ? `<img src="${safe}" alt="" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.remove()">` : ""
+      safe ? `<img src="${safe}" alt="" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.remove()">` : ""
     }</div>`,
   });
 }

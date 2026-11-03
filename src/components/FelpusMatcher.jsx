@@ -151,7 +151,7 @@ import { zonaConCiudad, textoZonaFormulario } from "../lib/zona";
 import { ADMIN_EMAIL } from "../lib/adminEdit";
 import AdminEditReport from "./felpus/AdminEditReport";
 import { playTap, playSuccess } from "../lib/sound";
-import { reverseGeocode, ubicarZona } from "../lib/osmMap";
+import { reverseGeocode, ubicarZona, warmMap } from "../lib/osmMap";
 import { CITIES } from "../lib/cities";
 import { requestLocation, geolocationErrorMessage } from "../lib/geolocation";
 import { dictationErrorMessage } from "../lib/dictation";
@@ -2558,6 +2558,9 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   // "Marcar ubicación exacta en el mapa": si ya se escribió la zona y todavía
   // no hay punto, primero se la ubica en el mapa para abrirlo con el pin ahí.
   async function abrirMapaDelFormulario() {
+    // Leaflet y la conexión a las teselas se piden ya, en paralelo con la
+    // búsqueda de la zona escrita: antes recién empezaban cuando terminaba.
+    warmMap();
     const texto = textoZonaFormulario(form);
     if (form.lat == null && texto) {
       setBuscandoZona(true);
@@ -5023,6 +5026,10 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
               <button
                 type="button"
                 onClick={() => setExploreView("mapa")}
+                // Apenas el dedo o el mouse se acercan al botón, el mapa empieza a cargar.
+                onPointerDown={warmMap}
+                onMouseEnter={warmMap}
+                onFocus={warmMap}
                 className="lg:hidden flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 min-h-[40px] text-xs font-bold border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--felpus-focus)]/50"
                 style={exploreView === "mapa" ? { background: C.ink, color: C.cream, borderColor: C.ink } : { color: C.muted, borderColor: C.border, background: C.surface }}
               >

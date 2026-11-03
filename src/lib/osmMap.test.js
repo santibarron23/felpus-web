@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { placeFromNominatimAddress, photonToPlace, ubicarZona } from "./osmMap";
+import { placeFromNominatimAddress, photonToPlace, ubicarZona, markerPhotoUrl, photoIcon } from "./osmMap";
 
 describe("placeFromNominatimAddress", () => {
   it("usa el barrio como zona y nunca calle/altura", () => {
@@ -56,5 +56,34 @@ describe("ubicarZona", () => {
   it("null si ninguno lo encuentra", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url) => (String(url).includes("photon") ? Response.json(photon([])) : Response.json([]))));
     expect(await ubicarZona("asdfgh")).toBeNull();
+  });
+});
+
+describe("markerPhotoUrl", () => {
+  const foto = "https://abc.supabase.co/storage/v1/object/public/felpus-photos/123-x.jpg";
+
+  it("pide la miniatura al optimizador, con un ancho que ya usa la lista", () => {
+    expect(markerPhotoUrl(foto)).toBe(`/_next/image?url=${encodeURIComponent(foto)}&w=128&q=75`);
+    expect(markerPhotoUrl(foto, 52)).toContain("&w=256&");
+  });
+
+  it("deja tal cual las fotos de otro origen y las locales", () => {
+    expect(markerPhotoUrl("https://otro.com/a.jpg")).toBe("https://otro.com/a.jpg");
+    expect(markerPhotoUrl("data:image/png;base64,AAA")).toBe("data:image/png;base64,AAA");
+    expect(markerPhotoUrl(null)).toBe("");
+  });
+});
+
+describe("photoIcon", () => {
+  const L = { divIcon: (opts) => opts };
+
+  it("usa la miniatura y la carga en diferido", () => {
+    const { html } = photoIcon(L, { foto: "https://abc.supabase.co/storage/v1/object/public/felpus-photos/1.jpg", color: "red" });
+    expect(html).toContain('src="/_next/image?url=');
+    expect(html).toContain('loading="lazy"');
+  });
+
+  it("sin foto, solo el círculo de color", () => {
+    expect(photoIcon(L, { foto: "", color: "red" }).html).not.toContain("<img");
   });
 });
