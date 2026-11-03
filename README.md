@@ -103,7 +103,9 @@ evitarlo, sin pagar nada:
    Console → *Credentials* → tu OAuth Client → campo "Client ID", termina en
    `.apps.googleusercontent.com`). No es el Client Secret, y no hace falta
    crear uno nuevo.
-2. Agregalo como `NEXT_PUBLIC_GOOGLE_CLIENT_ID` en tu `.env.local` (y en las
+2. Agregalo **completo** (con el número de proyecto adelante, ej.
+   `885118143352-xxxx.apps.googleusercontent.com`; sin ese prefijo Google
+   responde "Error 401: invalid_client") como `NEXT_PUBLIC_GOOGLE_CLIENT_ID` en tu `.env.local` (y en las
    variables de entorno de tu hosting en producción).
 3. En **Supabase Dashboard → Authentication → Providers → Google**, buscá el
    campo **"Authorized Client IDs"** y agregá ahí el mismo Client ID.

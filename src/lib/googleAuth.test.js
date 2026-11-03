@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { loadGoogleIdentity, generateNonce } from "./googleAuth";
+import { loadGoogleIdentity, generateNonce, parseGoogleClientId } from "./googleAuth";
 
 describe("loadGoogleIdentity", () => {
   it("rechaza fuera del navegador (sin window) — mismo guard que loadLeaflet", async () => {
@@ -32,5 +32,29 @@ describe("generateNonce", () => {
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
     expect(recomputed).toBe(hashedNonce);
+  });
+});
+
+describe("parseGoogleClientId", () => {
+  const valido = "885118143352-lf4fq52h4jgkbk1q7d39bahf0b2jjus7.apps.googleusercontent.com";
+
+  it("acepta un Client ID completo", () => {
+    expect(parseGoogleClientId(valido)).toBe(valido);
+  });
+
+  it("recorta espacios y saltos de línea pegados de más", () => {
+    expect(parseGoogleClientId(`  ${valido}
+`)).toBe(valido);
+  });
+
+  it("rechaza el valor que estaba en producción, sin el número de proyecto (incidente 2026-11-03)", () => {
+    expect(parseGoogleClientId("lf4fq52h4jgkbk1q7d39bahf0b2jjus7.apps.googleusercontent.com")).toBeNull();
+  });
+
+  it("rechaza vacío, undefined, el Client Secret u otros valores", () => {
+    expect(parseGoogleClientId("")).toBeNull();
+    expect(parseGoogleClientId(undefined)).toBeNull();
+    expect(parseGoogleClientId("GOCSPX-abc123")).toBeNull();
+    expect(parseGoogleClientId(`${valido} otro`)).toBeNull();
   });
 });

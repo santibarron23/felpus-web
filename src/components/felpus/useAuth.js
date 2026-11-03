@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import { logError } from "../../lib/log";
-import { loadGoogleIdentity, generateNonce } from "../../lib/googleAuth";
+import { loadGoogleIdentity, generateNonce, parseGoogleClientId } from "../../lib/googleAuth";
 
 // Sesión con Google (opcional) — sin login, se puede seguir aportando como
 // invitado escribiendo un apodo a mano. Solo posee lo que es genuinamente
@@ -55,8 +55,15 @@ export function useAuth(pushToast) {
   // ese mismo cartel termina reflejando el origen real. Ver
   // PENDIENTE_DECISION.md para el detalle y los pasos de configuración.
   useEffect(() => {
-    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-    if (!clientId) return;
+    const rawClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    const clientId = parseGoogleClientId(rawClientId);
+    if (!clientId) {
+      // Variable cargada pero con formato inválido (ver parseGoogleClientId):
+      // se ignora y queda solo el flujo clásico. Se avisa a error_logs para
+      // que el dato mal cargado no pase desapercibido.
+      if (rawClientId) logError(new Error("NEXT_PUBLIC_GOOGLE_CLIENT_ID con formato inválido: se ignora el One Tap"));
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {

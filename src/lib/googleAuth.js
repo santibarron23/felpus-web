@@ -1,3 +1,22 @@
+// Client IDs de OAuth de Google: "<número de proyecto>-<id>.apps.googleusercontent.com".
+// Incidente 2026-11-03: en producción NEXT_PUBLIC_GOOGLE_CLIENT_ID quedó
+// cargada SIN el prefijo numérico ("lf4f...jus7.apps.googleusercontent.com"
+// en vez de "885118143352-lf4f...jus7.apps.googleusercontent.com"). Ese
+// cliente no existe, así que a los usuarios a los que Google SÍ les mostraba
+// el One Tap (Chrome en Android con una cuenta de Google en el teléfono) les
+// aparecía "Acceso bloqueado: The OAuth client was not found — Error 401:
+// invalid_client" y no podían entrar. Con un valor mal formado (o con
+// espacios/saltos de línea pegados de más) es mejor no activar nada y dejar
+// el flujo clásico, que siempre funciona.
+const GOOGLE_CLIENT_ID_RE = /^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$/;
+
+// Devuelve el Client ID listo para usar, o null si no hay uno válido.
+export function parseGoogleClientId(raw) {
+  if (typeof raw !== "string") return null;
+  const value = raw.trim();
+  return GOOGLE_CLIENT_ID_RE.test(value) ? value : null;
+}
+
 let identityLoadingPromise = null;
 
 // Carga el script de Google Identity Services (accounts.google.com/gsi/client)
