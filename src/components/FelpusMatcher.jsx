@@ -138,6 +138,7 @@ import {
   adminFetchUsers,
   fetchProfile,
   updateProfile,
+  updateMyReportsNickname,
   fetchMySupport,
   uploadAvatar,
   deleteAvatarFile,
@@ -879,6 +880,11 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
         if (supportDraft.acepta !== !!mySupport?.acepta) extra.acepta_apoyos = supportDraft.acepta;
       }
       await updateProfile(user.id, { nickname: name, ...extra });
+      // El nombre también va a los reportes propios (cada uno guarda una copia).
+      // Si falla, el perfil igual quedó guardado.
+      if (await updateMyReportsNickname(user.id, name)) {
+        setReports((prev) => prev.map((r) => (r.userId === user.id ? { ...r, nickname: name.trim() } : r)));
+      }
       if ("alias_pago" in extra || "acepta_apoyos" in extra || "link_cobro" in extra) {
         setMySupport({
           alias: "alias_pago" in extra ? extra.alias_pago || "" : mySupport?.alias || "",

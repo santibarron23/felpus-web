@@ -27,6 +27,7 @@ const {
   bumpStreak,
   fetchProfile,
   updateProfile,
+  updateMyReportsNickname,
   fetchSavedReportIds,
   saveReport,
   unsaveReport,
@@ -747,6 +748,28 @@ describe("updateProfile", () => {
       .mockReturnValueOnce(makeBuilder({ error: null }))
       .mockReturnValueOnce(makeBuilder({ error: { code: "42501", message: "permission denied for table contributors" } }));
     await expect(updateProfile("user-1", { nickname: "Ana", alias_pago: "FILO.SOMBRA.SUERTE", acepta_apoyos: true })).rejects.toThrow(/problema nuestro/i);
+  });
+});
+
+describe("updateMyReportsNickname", () => {
+  it("pone el nombre nuevo en todos los reportes propios", async () => {
+    const b = makeBuilder({ error: null });
+    supabaseMock.from.mockReturnValueOnce(b);
+    expect(await updateMyReportsNickname("user-1", "  Santiago B ")).toBe(true);
+    expect(supabaseMock.from).toHaveBeenCalledWith("reports");
+    expect(b.update).toHaveBeenCalledWith({ nickname: "Santiago B" });
+    expect(b.eq).toHaveBeenCalledWith("user_id", "user-1");
+  });
+
+  it("sin usuario o sin nombre no toca la base", async () => {
+    expect(await updateMyReportsNickname(null, "Ana")).toBe(false);
+    expect(await updateMyReportsNickname("user-1", "   ")).toBe(false);
+    expect(supabaseMock.from).not.toHaveBeenCalled();
+  });
+
+  it("si la base falla devuelve false sin tirar (el perfil ya quedó guardado)", async () => {
+    supabaseMock.from.mockReturnValueOnce(makeBuilder({ error: { code: "42501", message: "permission denied" } }));
+    expect(await updateMyReportsNickname("user-1", "Ana")).toBe(false);
   });
 });
 
