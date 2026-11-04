@@ -115,6 +115,15 @@ const securityHeaders = [
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Protección de código (2026-11-04). Nunca publicar mapas de código del
+  // navegador: con ellos cualquiera ve el código fuente original (nombres,
+  // comentarios, estructura) en las herramientas del navegador. Es el valor
+  // por defecto; queda escrito para que nadie lo active sin querer.
+  // nextConfig.test.js lo vigila.
+  productionBrowserSourceMaps: false,
+  // Sin el header "X-Powered-By: Next.js" (no regala qué framework y qué
+  // versión buscar).
+  poweredByHeader: false,
   // lucide-react ya usa imports nombrados (tree-shakeable de por sí), pero
   // esta opción le ahorra a Next tener que inferirlo: acelera el build y
   // asegura que solo los íconos realmente importados entren al bundle.

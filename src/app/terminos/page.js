@@ -24,7 +24,7 @@ export default function TerminosPage() {
   return (
     <LegalPage
       title="Términos y Condiciones de Uso de Felpus"
-      updated="6 de agosto de 2026"
+      updated="4 de noviembre de 2026"
       otherHref="/privacidad"
       otherLabel="la Política de Privacidad"
     >
@@ -139,7 +139,26 @@ export default function TerminosPage() {
         </p>
       </LegalSection>
 
-      <LegalSection n={11} title="Servicios de terceros">
+      <LegalSection n={11} title="Propiedad intelectual y uso automatizado">
+        <p>
+          El nombre Felpus, el logotipo, las ilustraciones, los textos propios, el diseño del sitio, el software y
+          los métodos de comparación de mascotas son de Felpus y están protegidos por las leyes de propiedad
+          intelectual. No pueden copiarse, reproducirse ni usarse para ofrecer un servicio similar sin autorización
+          previa por escrito.
+        </p>
+        <p>
+          Quien publica conserva los derechos sobre sus fotos y textos, y autoriza a Felpus a mostrarlos, adaptarlos
+          (por ejemplo, recortarlos o reducirlos) y compartirlos dentro de la plataforma y en redes, con el único fin
+          de ayudar a reencontrar mascotas.
+        </p>
+        <p>
+          No está permitido extraer datos de Felpus de forma automatizada o masiva (por ejemplo, con robots o
+          scripts), ni usar sus funciones o su interfaz de programación (API) desde otros sitios o aplicaciones.
+          Compartir los enlaces de las publicaciones está permitido y es bienvenido.
+        </p>
+      </LegalSection>
+
+      <LegalSection n={12} title="Servicios de terceros">
         <p>Felpus depende parcialmente de servicios proporcionados por terceros.</p>
         <p>
           Felpus no controla ni garantiza la disponibilidad, seguridad o funcionamiento permanente de dichos
@@ -148,7 +167,7 @@ export default function TerminosPage() {
         </p>
       </LegalSection>
 
-      <LegalSection n={12} title="Aportes y contribuciones">
+      <LegalSection n={13} title="Aportes y contribuciones">
         <p>
           Felpus podrá permitir aportes económicos voluntarios destinados a colaborar con el mantenimiento o
           desarrollo de la plataforma.
@@ -172,7 +191,7 @@ export default function TerminosPage() {
         </p>
       </LegalSection>
 
-      <LegalSection n={13} title="Limitación de responsabilidad">
+      <LegalSection n={14} title="Limitación de responsabilidad">
         <p>
           En la máxima medida permitida por la legislación aplicable, Felpus, sus titulares, desarrolladores,
           colaboradores y proveedores no serán responsables por daños directos o indirectos, pérdida de información,
@@ -191,7 +210,7 @@ export default function TerminosPage() {
         </p>
       </LegalSection>
 
-      <LegalSection n={14} title="Indemnidad">
+      <LegalSection n={15} title="Indemnidad">
         <p>
           En la medida permitida por la legislación aplicable, el usuario se compromete a mantener indemne a Felpus
           frente a reclamaciones de terceros derivadas del contenido que publique, del uso indebido de la
@@ -199,19 +218,19 @@ export default function TerminosPage() {
         </p>
       </LegalSection>
 
-      <LegalSection n={15} title="Modificaciones">
+      <LegalSection n={16} title="Modificaciones">
         <p>Felpus podrá modificar estos Términos para adaptarlos a cambios legales, técnicos o funcionales.</p>
         <p>La versión vigente será la publicada en el sitio web.</p>
       </LegalSection>
 
-      <LegalSection n={16} title="Legislación aplicable">
+      <LegalSection n={17} title="Legislación aplicable">
         <p>
           Estos Términos se interpretarán conforme a la legislación que resulte aplicable, sin perjuicio de las
           normas imperativas de protección de consumidores, usuarios y datos personales que correspondan.
         </p>
       </LegalSection>
 
-      <LegalSection n={17} title="Contacto">
+      <LegalSection n={18} title="Contacto">
         <p>
           Para consultas relacionadas con estos Términos y Condiciones, reportes sobre el funcionamiento de la
           plataforma o cualquier otra comunicación relacionada con Felpus, los usuarios podrán comunicarse a través

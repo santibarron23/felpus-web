@@ -74,3 +74,35 @@ export function publicRpcError(status, body, fallback) {
   }
   return fallback;
 }
+
+// Protección contra uso desde otros sitios (2026-11-04). Si otro sitio (por
+// ejemplo, un clon de Felpus) llamara a estas rutas desde el navegador de
+// SUS visitantes, cada visitante pondría su propia IP y el cupo por IP no
+// lo frenaría. Hoy CORS ya lo impide (no se devuelve
+// Access-Control-Allow-Origin), pero CORS no es una autorización: esto lo
+// corta también en el servidor, por si alguna vez se abre CORS.
+//
+// Solo mira lo que mandan los navegadores (Origin y Sec-Fetch-Site), que una
+// página web no puede falsificar. Un pedido sin esos headers (curl, un
+// servidor, la app de Android) pasa: a esos los frenan los cupos de la base
+// (felpus_limite) — no hay forma de distinguir un script de un navegador en
+// una API pública sin login.
+export function esPedidoDeOtroSitio(request) {
+  if (request.headers.get("sec-fetch-site") === "cross-site") return true;
+  const origin = request.headers.get("origin");
+  if (!origin) return false;
+  let originHost;
+  try {
+    originHost = new URL(origin).host.toLowerCase();
+  } catch {
+    return true; // "null" u otro valor raro: no es una página de Felpus
+  }
+  const host = (request.headers.get("x-forwarded-host") || request.headers.get("host") || "").split(",")[0].trim().toLowerCase();
+  if (host && originHost === host) return false;
+  return !ORIGENES_PROPIOS.has(originHost);
+}
+const ORIGENES_PROPIOS = new Set(["felpus.com", "www.felpus.com"]);
+
+export function respuestaOtroSitio() {
+  return Response.json({ error: "Pedido no permitido." }, { status: 403 });
+}

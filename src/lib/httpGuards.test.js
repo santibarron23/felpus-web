@@ -89,3 +89,25 @@ describe("publicRpcError", () => {
     expect(publicRpcError(400, null, "Genérico")).toBe("Genérico");
   });
 });
+
+describe("esPedidoDeOtroSitio", () => {
+  const req = (headers) => new Request("https://felpus.com/api/chat", { method: "POST", headers });
+  it("deja pasar pedidos del propio sitio (felpus.com, www, previews de Vercel)", async () => {
+    const { esPedidoDeOtroSitio } = await import("./httpGuards");
+    expect(esPedidoDeOtroSitio(req({ origin: "https://felpus.com", host: "felpus.com", "sec-fetch-site": "same-origin" }))).toBe(false);
+    expect(esPedidoDeOtroSitio(req({ origin: "https://www.felpus.com", host: "felpus.com" }))).toBe(false);
+    expect(esPedidoDeOtroSitio(req({ origin: "https://felpus-web-git-x.vercel.app", host: "felpus-web-git-x.vercel.app" }))).toBe(false);
+    expect(esPedidoDeOtroSitio(req({ origin: "http://localhost:3000", host: "localhost:3000" }))).toBe(false);
+  });
+  it("sin Origin (curl, servidores, la app) pasa: lo frenan los cupos", async () => {
+    const { esPedidoDeOtroSitio } = await import("./httpGuards");
+    expect(esPedidoDeOtroSitio(req({ host: "felpus.com" }))).toBe(false);
+  });
+  it("frena pedidos que el navegador marca como de otro sitio", async () => {
+    const { esPedidoDeOtroSitio } = await import("./httpGuards");
+    expect(esPedidoDeOtroSitio(req({ origin: "https://clon-felpus.example", host: "felpus.com" }))).toBe(true);
+    expect(esPedidoDeOtroSitio(req({ "sec-fetch-site": "cross-site", host: "felpus.com" }))).toBe(true);
+    expect(esPedidoDeOtroSitio(req({ origin: "null", host: "felpus.com" }))).toBe(true);
+    expect(esPedidoDeOtroSitio(req({ origin: "https://felpus.com.evil.example", host: "felpus.com" }))).toBe(true);
+  });
+});

@@ -149,7 +149,7 @@ import {
 import { usersReportToCsv } from "../lib/csv";
 import { petTitle, nombreReal } from "../lib/petTitle";
 import { zonaConCiudad, textoZonaFormulario } from "../lib/zona";
-import { ADMIN_EMAIL } from "../lib/adminEdit";
+import { esEmailAdmin } from "../lib/adminClient";
 import AdminEditReport from "./felpus/AdminEditReport";
 import { playTap, playSuccess } from "../lib/sound";
 import { reverseGeocode, ubicarZona, warmMap } from "../lib/osmMap";
@@ -687,7 +687,18 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   const chatOriginRef = useRef(null);
   const [chatPublishedToken, setChatPublishedToken] = useState(0);
   const [chatOpenToken, setChatOpenToken] = useState(0);
-  const isAdmin = user?.email === ADMIN_EMAIL;
+  // Solo decide si se muestra el panel; la barrera real está en la base y en
+  // /api/admin/* (ver adminClient.js: el email del admin ya no va en el JS).
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    let vigente = true;
+    esEmailAdmin(user?.email).then((v) => {
+      if (vigente) setIsAdmin(v);
+    });
+    return () => {
+      vigente = false;
+    };
+  }, [user?.email]);
 
   // "Mi Felpus" — perfil personal + mascotas guardadas. Igual que el panel
   // de admin, estado propio en vez de mezclarlo con `reports`/`user`: solo
@@ -5451,7 +5462,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
         {/* Panel de administrador — no está en la navegación inferior a
             propósito (agregarla ahí desbalancearía el layout para las demás
             5000+ personas que no son admin). Se llega solo desde el ícono
-            del header, visible únicamente para ADMIN_EMAIL. La barrera real
+            del header, visible únicamente para el admin. La barrera real
             no es esta condición de React (visual/UX), sino que cada RPC
             admin_* vuelve a chequear auth.email() del lado del servidor. */}
         {activeTab === "admin" && isAdmin && (

@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { logError } from "../../../lib/log";
-import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
+import { isJsonRequest, getClientIp, esPedidoDeOtroSitio, respuestaOtroSitio } from "../../../lib/httpGuards";
 import { DEFAULT_CHAT_MODEL, sanitizeHistory, sanitizeContext, parseImageDataUrl } from "../../../lib/chatbot";
 import { runChat, makeReportsReader, fetchOpenReport } from "../../../lib/chatService";
 import { makeAiRateLimit } from "../../../lib/serverAiRateLimit";
@@ -26,6 +26,7 @@ function logEvent(event, data) {
 }
 
 export async function POST(request) {
+  if (esPedidoDeOtroSitio(request)) return respuestaOtroSitio();
   if (!isJsonRequest(request)) {
     return Response.json({ error: "Content-Type inválido." }, { status: 415 });
   }

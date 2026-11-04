@@ -1,5 +1,5 @@
 import { logError } from "../../../lib/log";
-import { isJsonRequest, getClientIp, isRateLimitMessage, publicRpcError } from "../../../lib/httpGuards";
+import { isJsonRequest, getClientIp, isRateLimitMessage, publicRpcError, esPedidoDeOtroSitio, respuestaOtroSitio } from "../../../lib/httpGuards";
 import { ipParaLimite } from "../../../lib/serverRateLimit";
 
 // Corre en el servidor — nunca en el navegador, así que la service role key
@@ -20,6 +20,7 @@ const VALID_REASONS = ["falsa", "info_incorrecta", "inapropiado", "otro"];
 // que se le pasa acá es la que determina Vercel en el request real, no
 // falsificable por quien visita el sitio.
 export async function POST(request) {
+  if (esPedidoDeOtroSitio(request)) return respuestaOtroSitio();
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) {

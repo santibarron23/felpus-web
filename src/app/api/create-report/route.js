@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { logError } from "../../../lib/log";
 import { alertarAdmin, esFallaDePublicacion } from "../../../lib/serverAdminAlerts";
-import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
+import { isJsonRequest, getClientIp, esPedidoDeOtroSitio, respuestaOtroSitio } from "../../../lib/httpGuards";
 import { validateReportContact, validarResguardo } from "../../../lib/reportValidation";
 import { sanitizeReportRow } from "../../../lib/reportRow";
 import { validarDatosAvistamiento } from "../../../lib/sighting";
@@ -88,6 +88,7 @@ export async function permitirPublicacion(supabase, ip, userId, { consultar = co
 }
 
 export async function POST(request) {
+  if (esPedidoDeOtroSitio(request)) return respuestaOtroSitio();
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) {
