@@ -2,13 +2,15 @@
 // las mascotas vuelvan a casa? No visitas, sino reencuentros, cuánto tardan,
 // cuántos avisos tienen alguna coincidencia y cuántos quedan sin novedades.
 //
-// Se calcula en el navegador sobre adminListAllReports (todos los reportes,
+// Se calcula en el servidor (/api/admin/impacto) sobre todos los reportes (todos los reportes,
 // con fechas y vectores de las fotos): no hace falta ninguna función nueva
 // en la base. Lo que la base no registra no se inventa: los contactos se
 // miden con el evento "contacto_iniciado" de GA4, y si un reencuentro vino
 // de una coincidencia de Felpus, con "reencuentro_confirmado"
 // (con_coincidencia) desde el 2026-10-29.
-import { findMatches } from "./matching";
+// El comparador (findMatches de matchingScore.js) lo pasa el servidor
+// (serverImpacto.js): así este archivo no arrastra el puntaje al navegador,
+// donde ImpactPanel usa sus constantes.
 import { isSighting } from "./sighting";
 
 const DIA_MS = 86_400_000;
@@ -45,7 +47,7 @@ function porMes(fechas, now, meses) {
   return out;
 }
 
-export function computeImpactMetrics(reports, { now = Date.now(), meses = 6, matcher = findMatches } = {}) {
+export function computeImpactMetrics(reports, { now = Date.now(), meses = 6, matcher = () => [] } = {}) {
   const visibles = (reports || []).filter((r) => r && !r.oculto && Number.isFinite(r.creadoEn));
   const perdidas = visibles.filter((r) => r.tipo === "perdida");
   const avistamientos = visibles.filter((r) => isSighting(r));

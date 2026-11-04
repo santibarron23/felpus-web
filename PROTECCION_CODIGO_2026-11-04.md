@@ -93,16 +93,15 @@ mapas, fotos, login o modo invitado.
 
 ## 5. Riesgos pendientes (no resueltos acá)
 
-1. **Algoritmo de coincidencias en el navegador (medio).** Para que no se
-   pueda leer habría que calcular las coincidencias en el servidor (una ruta
-   `/api/coincidencias` que reciba el id del aviso y devuelva ids, puntajes
-   y el desglose), y dejar de mandar al navegador `matching.js` y los
-   vectores de las fotos. Ventaja extra: el navegador ya no bajaría los
-   vectores, lo que ahorra tráfico de Supabase (hoy el plan está pasado de
-   cupo). Contras: es un cambio grande (3 pantallas, la tarjeta de puntaje,
-   avisos duplicados), suma una espera de red al buscar, y hace falta
-   caché en el servidor para no multiplicar el tráfico. Conviene hacerlo
-   en un PR aparte, con pruebas en el teléfono.
+1. **Algoritmo de coincidencias en el navegador — RESUELTO en la rama
+   `coincidencias-servidor`.** El puntaje (`src/lib/matchingScore.js`) corre
+   solo en el servidor (`/api/coincidencias`, `/api/admin/impacto`);
+   `matchingScore.test.js` frena el CI si algún componente lo importa. Con
+   datos reales, 20 avisos dieron los mismos resultados que el cálculo del
+   navegador. De paso apareció un error de producción: al buscar
+   coincidencias desde una tarjeta, la foto del aviso consultado no contaba
+   (se comparaba la versión sin vectores), y los puntajes salían más bajos
+   (ej. 32% en vez de 40%). Con el cálculo en el servidor queda corregido.
 2. **Subida de fotos sin login y sin límite (medio).** Pendiente desde la
    revisión anterior (M2): URLs de subida firmadas desde el servidor.
 3. **El listado público se puede descargar entero (bajo, por diseño).**

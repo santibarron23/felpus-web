@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { classifyScores, countReadableWords, PHOTO_CHECK_THRESHOLD, OCR_WORDS_THRESHOLD } from "./photoCheck";
-import { imageSimilarity, marcarDudosas, matchBreakdown, scoreMatch } from "./matching";
+import { marcarDudosas } from "./matching";
+import { imageSimilarity, matchBreakdown, scoreMatch } from "./matchingScore";
 
 const real = { perro: 0.9, gato: 0.02, mascota: 0.06, cartel: 0.01, captura: 0.005, ilustracion: 0.005 };
 

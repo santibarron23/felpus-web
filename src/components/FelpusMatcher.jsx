@@ -75,10 +75,7 @@ import {
   resizeImageFile,
   addWatermark,
   getImageEmbedding,
-  findMatches,
-  candidatosParaComparar,
   scoreLabel,
-  matchBreakdown,
   getTier,
   getTierProgress,
   getBadges,
@@ -170,7 +167,7 @@ import AlertOptInModal from "./felpus/AlertOptInModal";
 import OnboardingTutorial, { markWelcomeSeen, welcomeSeen } from "./felpus/OnboardingTutorial";
 import ImpactPanel from "./felpus/ImpactPanel";
 import PhotoCropper from "./felpus/PhotoCropper";
-import { computeImpactMetrics } from "../lib/impactMetrics";
+import { pedirCoincidencias } from "../lib/coincidenciasClient";
 import { logError } from "../lib/log";
 import { useTheme, useThemeToggle } from "./felpus/ThemeProvider";
 import MapPicker from "./MapPicker";
@@ -388,7 +385,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   // Carga en dos pasos (2026-10-28): primero el listado liviano, sin
   // histogramas ni embeddings (Explorar y el mapa aparecen enseguida), y
   // después, en segundo plano, los vectores de las fotos. Todo lo que compara
-  // fotos espera a vectoresListos o a reportesParaComparar().
+  // fotos (duplicados) espera a vectoresListos.
   const [vectoresListos, setVectoresListos] = useState(false);
   const vectoresRef = useRef({ promise: null, rows: null });
   const reportsRef = useRef(reports);
@@ -1079,10 +1076,22 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   const adminBreakdowns = useMemo(() => computeAdminBreakdowns(adminAllReports), [adminAllReports]);
   // Impacto (ImpactPanel): compara todos los avisos activos entre sí, así
   // que se calcula solo con esa pestaña abierta.
-  const adminImpact = useMemo(
-    () => (adminSection === "impacto" && adminAllReports.length ? computeImpactMetrics(adminAllReports) : null),
-    [adminSection, adminAllReports]
-  );
+  // Desde 2026-11-04 se calcula en el servidor (/api/admin/impacto): usa el
+  // puntaje de coincidencias, que ya no viaja al navegador.
+  const [adminImpact, setAdminImpact] = useState(null);
+  useEffect(() => {
+    if (adminSection !== "impacto" || !isAdmin) return;
+    let vigente = true;
+    authedFetch("/api/admin/impacto", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`impacto ${res.status}`))))
+      .then((data) => {
+        if (vigente) setAdminImpact(data?.metricas || null);
+      })
+      .catch((e) => logError("No se pudieron cargar las métricas de impacto", e));
+    return () => {
+      vigente = false;
+    };
+  }, [adminSection, isAdmin, adminAllReports]);
 
   const adminSearchNormalized = normalizeText(adminSearch.trim());
   const tieneFotoDudosa = (r) => !r.detalles?.sin_foto && (r.fotos || []).some((f) => f.dudosa);
@@ -1319,20 +1328,46 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   // mandaba a Explorar a ciegas — ahora la campanita puede mostrar
   // directamente CUÁL reporte tuyo tiene una coincidencia nueva y con qué,
   // para poder ir directo al detalle en vez de tener que buscarlo.
+  // Desde 2026-11-04 el puntaje se calcula en el servidor
+  // (/api/coincidencias): se piden las coincidencias de los avisos propios
+  // activos y acá solo se filtran las nuevas desde el último "visto".
+  const misActivosKey = user
+    ? reports
+        .filter((r) => r.userId === user.id && !r.resuelto)
+        .map((r) => r.id)
+        .slice(0, 10)
+        .join(",")
+    : "";
+  const [misCoincidencias, setMisCoincidencias] = useState({});
+  useEffect(() => {
+    if (!misActivosKey) {
+      setMisCoincidencias({});
+      return;
+    }
+    let vigente = true;
+    pedirCoincidencias(misActivosKey.split(","), { limit: 50, reports: reportsRef.current })
+      .then((res) => {
+        if (vigente) setMisCoincidencias(res);
+      })
+      .catch((e) => logError("No se pudieron cargar las coincidencias nuevas", e));
+    return () => {
+      vigente = false;
+    };
+  }, [misActivosKey]);
   const newMatchItems = useMemo(() => {
-    if (!user || !vectoresListos) return [];
-    const myActive = reports.filter((r) => r.userId === user.id && !r.resuelto);
-    if (myActive.length === 0) return [];
+    if (!user) return [];
+    const porId = new Map(reports.map((r) => [r.id, r]));
     const items = [];
-    for (const mine of myActive) {
-      const candidates = candidatosParaComparar(mine, reports).filter((r) => r.creadoEn > matchesSeenAt);
-      const scored = findMatches(mine, candidates);
-      if (scored.length > 0) {
-        items.push({ mine, best: scored[0].report, score: scored[0].score, extraCount: scored.length - 1 });
+    for (const id of misActivosKey ? misActivosKey.split(",") : []) {
+      const mine = porId.get(id);
+      if (!mine) continue;
+      const nuevas = (misCoincidencias[id]?.coincidencias || []).filter((m) => (porId.get(m.id) || m.report).creadoEn > matchesSeenAt);
+      if (nuevas.length > 0) {
+        items.push({ mine, best: porId.get(nuevas[0].id) || nuevas[0].report, score: nuevas[0].score, extraCount: nuevas.length - 1 });
       }
     }
     return items;
-  }, [reports, user, matchesSeenAt, vectoresListos]);
+  }, [reports, user, matchesSeenAt, misActivosKey, misCoincidencias]);
   const newMatchesCount = newMatchItems.length;
 
   // Rediseño de "Detalles para reconocerlo" (ver CHIP_BTN_CLASS/
@@ -1830,15 +1865,14 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     loadAll();
   }, [loadAll]);
 
-  // Cuándo hacen falta los vectores: la campanita de coincidencias nuevas
-  // (sesión con avisos propios activos) y el aviso de duplicado mientras se
-  // carga un formulario con foto. Publicar y "ver coincidencias" los piden
-  // solos (reportesParaComparar). Quien solo mira avisos no los baja.
-  const tengoAvisosActivos = !!user && reports.some((r) => r.userId === user.id && !r.resuelto);
+  // Cuándo hacen falta los vectores: solo para el aviso de duplicado mientras
+  // se carga un formulario con foto (duplicates.js). Las coincidencias se
+  // calculan en el servidor desde 2026-11-04 (/api/coincidencias), así que
+  // quien solo mira avisos, o tiene avisos propios, ya no los baja.
   const cargandoFotoEnFormulario = activeTab === "reportar" && form.fotos.length > 0;
   useEffect(() => {
-    if (tengoAvisosActivos || cargandoFotoEnFormulario) cargarVectores();
-  }, [tengoAvisosActivos, cargandoFotoEnFormulario, cargarVectores]);
+    if (cargandoFotoEnFormulario) cargarVectores();
+  }, [cargandoFotoEnFormulario, cargarVectores]);
 
   // Deep link desde un flyer/QR o un enlace compartido (?r=<id>) — abre esa
   // publicación directamente apenas cargan los reportes. Solo una vez: si el
@@ -2500,12 +2534,17 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
       setPushSubState("idle");
       goToTab("resultado");
     }
-    // Con los vectores de las fotos ya cargados (ver vectoresListos).
-    const candidates = candidatosParaComparar(savedReport, await reportesParaComparar());
+    // Puntaje en el servidor (/api/coincidencias, 2026-11-04). Si falla, se
+    // muestra el aviso publicado sin coincidencias (se pueden ver después
+    // desde la tarjeta).
+    let resultado = { hayCandidatos: false, coincidencias: [] };
+    try {
+      resultado = (await pedirCoincidencias([savedReport.id], { limit: 6, reports: reportsRef.current }))[savedReport.id] || resultado;
+    } catch (e) {
+      logError("No se pudieron calcular las coincidencias al publicar", e);
+    }
 
-    const scored = findMatches(savedReport, candidates, { limit: 6 });
-
-    setMatchResult({ source: savedReport, results: scored, hadCandidates: candidates.length > 0 });
+    setMatchResult({ source: savedReport, results: resultado.coincidencias, hadCandidates: resultado.hayCandidatos });
     rememberReportToken(savedReport.id, savedReport.pushToken);
     setReports((prev) => [savedReport, ...prev]);
     playSuccess();
@@ -2632,13 +2671,6 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     } catch {
       // localStorage no disponible: no había borrador.
     }
-  }
-
-  // Reportes con los vectores de las fotos ya cargados (ver vectoresListos):
-  // si todavía están llegando, espera; si fallaron, devuelve lo que hay.
-  async function reportesParaComparar() {
-    await cargarVectores();
-    return vectoresRef.current.rows ? mergeReportVectors(reportsRef.current, vectoresRef.current.rows) : reportsRef.current;
   }
 
   async function handleSubmit(e) {
@@ -2839,8 +2871,12 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     }
     setExpandedCard(report.id);
     if (cardMatches[report.id]) return;
-    const candidates = candidatosParaComparar(report, await reportesParaComparar());
-    const scored = findMatches(report, candidates, { limit: 6 });
+    let scored = [];
+    try {
+      scored = (await pedirCoincidencias([report.id], { limit: 6, reports: reportsRef.current }))[report.id]?.coincidencias || [];
+    } catch (e) {
+      logError("No se pudieron calcular las coincidencias de la tarjeta", e);
+    }
     let descartados = new Set();
     try {
       const res = await authedFetch(`/api/matches?reportId=${encodeURIComponent(report.id)}`);
@@ -4872,7 +4908,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                         {comparingId === m.report.id ? (
                           <MatchScorecard source={matchResult.source} match={m} />
                         ) : (
-                          <MatchBreakdownChips items={matchBreakdown(matchResult.source, m.report)} />
+                          <MatchBreakdownChips items={m.breakdown || []} />
                         )}
                         {!m.report.resuelto && !matchResult.source.resuelto && (
                           <div className="mt-2 pt-2 border-t flex items-center flex-wrap gap-x-3 gap-y-1.5" style={{ borderColor: C.border }}>
@@ -5219,7 +5255,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                             </div>
                             <ChevronRight className="w-3.5 h-3.5 shrink-0" style={{ color: C.muted }} />
                           </div>
-                          <MatchBreakdownChips items={matchBreakdown(r, m.report)} />
+                          <MatchBreakdownChips items={m.breakdown || []} />
                         </button>
                       ))}
                     </div>
@@ -6095,7 +6131,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                                   </div>
                                   <ChevronRight className="w-3.5 h-3.5 shrink-0" style={{ color: C.muted }} />
                                 </div>
-                                <MatchBreakdownChips items={matchBreakdown(r, m.report)} />
+                                <MatchBreakdownChips items={m.breakdown || []} />
                               </button>
                               <div className="flex items-center gap-3 px-1">
                                 <button

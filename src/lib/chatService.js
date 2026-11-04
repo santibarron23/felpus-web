@@ -17,9 +17,7 @@ import {
   normalizeDraft,
   missingFields,
   draftReadyForMatching,
-  runMatching,
   normalizeSearchInput,
-  filterReports,
   reportsQuery,
   openReportForModel,
   contentForEcho,
@@ -31,6 +29,7 @@ import {
   detectAskedField,
   userMentionsSpecies,
 } from "./chatbot";
+import { runMatching, filterReports } from "./chatbotSearch";
 
 const REFUSAL_REPLY =
   "Perdón, eso no lo puedo responder. Si querés, contame qué pasó con la mascota y te ayudo a buscarla o a armar el reporte.";

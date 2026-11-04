@@ -14,8 +14,6 @@ import {
   draftToFormFields,
   composeDraftDescription,
   draftToMatchable,
-  runMatching,
-  filterReports,
   normalizeSearchInput,
   reportsQuery,
   reportCard,
@@ -32,6 +30,7 @@ import {
   MAX_HISTORY_MESSAGES,
   MAX_USER_CHARS,
 } from "./chatbot";
+import { runMatching, filterReports } from "./chatbotSearch";
 import { COLOR_OPTIONS } from "./matching";
 
 const hoy = new Date().toISOString().slice(0, 10);
