@@ -1,5 +1,5 @@
 import { logError } from "../../../lib/log";
-import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
+import { isJsonRequest, getClientIp, esPedidoDeOtroSitio, respuestaOtroSitio } from "../../../lib/httpGuards";
 import { checkPhoto } from "../../../lib/photoCheck";
 import { makeAiRateLimit } from "../../../lib/serverAiRateLimit";
 
@@ -18,6 +18,7 @@ const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const checkRateLimit = makeAiRateLimit({ maxPerMinute: 12, bucket: "embed", legacy: ["check_embed_rate_limit"], failClosed: false });
 
 export async function POST(request) {
+  if (esPedidoDeOtroSitio(request)) return respuestaOtroSitio();
   if (!isJsonRequest(request)) {
     return Response.json({ error: "Content-Type inválido." }, { status: 415 });
   }

@@ -1,5 +1,5 @@
 import { logError } from "../../../lib/log";
-import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
+import { isJsonRequest, getClientIp, esPedidoDeOtroSitio, respuestaOtroSitio } from "../../../lib/httpGuards";
 import { parseImageDataUrl } from "../../../lib/chatbot";
 import { makeAiRateLimit } from "../../../lib/serverAiRateLimit";
 import {
@@ -59,6 +59,7 @@ async function callGemini(apiKey, request) {
 }
 
 export async function POST(request) {
+  if (esPedidoDeOtroSitio(request)) return respuestaOtroSitio();
   if (!isJsonRequest(request)) return json({ error: "Content-Type inválido." }, 415);
 
   const apiKey = process.env.GEMINI_API_KEY?.trim();

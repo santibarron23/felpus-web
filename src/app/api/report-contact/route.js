@@ -1,5 +1,5 @@
 import { logError } from "../../../lib/log";
-import { isJsonRequest, getClientIp, isRateLimitMessage, publicRpcError } from "../../../lib/httpGuards";
+import { isJsonRequest, getClientIp, isRateLimitMessage, publicRpcError, esPedidoDeOtroSitio, respuestaOtroSitio } from "../../../lib/httpGuards";
 import { getAuthUserId } from "../../../lib/serverAuth";
 import { avisarTopeGlobal, clavesLimite, ipParaLimite } from "../../../lib/serverRateLimit";
 
@@ -21,6 +21,7 @@ export const runtime = "nodejs";
 // request que le llega a este servidor — no falsificable por quien visita
 // el sitio, a diferencia del header que mandaba el cliente antes.
 export async function POST(request) {
+  if (esPedidoDeOtroSitio(request)) return respuestaOtroSitio();
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) {

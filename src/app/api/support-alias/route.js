@@ -1,5 +1,5 @@
 import { logError } from "../../../lib/log";
-import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
+import { isJsonRequest, getClientIp, esPedidoDeOtroSitio, respuestaOtroSitio } from "../../../lib/httpGuards";
 import { callServiceRpc, CONTRIBUTOR_ID_RE } from "../../../lib/serverSupport";
 import { normalizeLinkCobro } from "../../../lib/support";
 import { ipParaLimite } from "../../../lib/serverRateLimit";
@@ -11,6 +11,7 @@ import { ipParaLimite } from "../../../lib/serverRateLimit";
 export const runtime = "nodejs";
 
 export async function POST(request) {
+  if (esPedidoDeOtroSitio(request)) return respuestaOtroSitio();
   if (!isJsonRequest(request)) return Response.json({ error: "Content-Type inválido." }, { status: 415 });
   let contributorId;
   try {
