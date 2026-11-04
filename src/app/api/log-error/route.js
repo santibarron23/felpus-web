@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
 import { alertarAdmin, esRuido, evaluarError, PICO_VENTANA_MIN } from "../../../lib/serverAdminAlerts";
+import { ipParaLimite } from "../../../lib/serverRateLimit";
 
 // Corre en el servidor — nunca en el navegador, así que la service role key
 // nunca queda expuesta al público.
@@ -53,7 +54,7 @@ export async function POST(request) {
     user_agent: body?.userAgent ? String(body.userAgent).slice(0, 500) : null,
   };
 
-  const ip = getClientIp(request);
+  const ip = ipParaLimite(getClientIp(request));
   try {
     if (ip) {
       await supabase

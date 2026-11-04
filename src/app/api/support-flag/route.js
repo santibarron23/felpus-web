@@ -1,6 +1,7 @@
 import { logError } from "../../../lib/log";
 import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
 import { callServiceRpc, CONTRIBUTOR_ID_RE, SUPPORT_FLAG_REASONS } from "../../../lib/serverSupport";
+import { ipParaLimite } from "../../../lib/serverRateLimit";
 
 // "Reportar abuso" desde la ventana de Apoyar. Una denuncia por IP y alias;
 // con 3 de IPs distintas el alias deja de mostrarse hasta que el admin lo
@@ -23,7 +24,7 @@ export async function POST(request) {
   try {
     const r = await callServiceRpc(
       "flag_support",
-      { p_contributor_id: contributorId, p_reason: reason, p_client_ip: getClientIp(request) },
+      { p_contributor_id: contributorId, p_reason: reason, p_client_ip: ipParaLimite(getClientIp(request)) },
       "No se pudo enviar la denuncia."
     );
     if (r.error) {

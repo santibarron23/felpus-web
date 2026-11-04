@@ -1,5 +1,7 @@
 import { logError } from "../../../lib/log";
 import { isJsonRequest, getClientIp, isRateLimitMessage, publicRpcError } from "../../../lib/httpGuards";
+import { getAuthUserId } from "../../../lib/serverAuth";
+import { avisarTopeGlobal, clavesLimite, ipParaLimite } from "../../../lib/serverRateLimit";
 
 // Corre en el servidor — nunca en el navegador, así que la service role key
 // nunca queda expuesta al público.
@@ -47,16 +49,50 @@ export async function POST(request) {
   }
 
   const ip = getClientIp(request);
+  // Con sesión, el cupo es por cuenta (y la IP con más margen): así varias
+  // personas detrás de la misma IP no se frenan entre sí. Sin sesión, por IP.
+  const userId = request.headers.get("authorization")?.startsWith("Bearer ")
+    ? await getAuthUserId(request, { supabaseUrl, serviceKey })
+    : null;
+  const headers = {
+    apikey: serviceKey,
+    Authorization: `Bearer ${serviceKey}`,
+    "Content-Type": "application/json",
+  };
 
   try {
+    // Revisión de seguridad (2026-11-04): obtener_contacto_reporte suma un
+    // tope por día y por cuenta, cuenta avisos distintos (reabrir el mismo
+    // no gasta cupo) y uno global. Sin la migración 20261104_01, la de antes.
+    const nuevo = await fetch(`${supabaseUrl}/rest/v1/rpc/obtener_contacto_reporte`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ p_report_id: reportId, p_claves: clavesLimite({ ip, userId }) }),
+    });
+    if (nuevo.status !== 404) {
+      if (!nuevo.ok) {
+        logError("obtener_contacto_reporte rechazó el pedido", await nuevo.json().catch(() => ({})));
+        return Response.json({ error: "No se pudo obtener el contacto." }, { status: 500 });
+      }
+      const rows = await nuevo.json();
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      if (row?.limite) {
+        if (row.limite === "global") await avisarTopeGlobal("contacto");
+        return Response.json(
+          { error: "Viste muchos contactos seguidos. Probá de nuevo más tarde." },
+          { status: 429 }
+        );
+      }
+      return Response.json({
+        contactoWhatsapp: row?.contacto_whatsapp || "",
+        contactoEmail: row?.contacto_email || "",
+      });
+    }
+
     const res = await fetch(`${supabaseUrl}/rest/v1/rpc/get_report_contact`, {
       method: "POST",
-      headers: {
-        apikey: serviceKey,
-        Authorization: `Bearer ${serviceKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ p_report_id: reportId, p_client_ip: ip }),
+      headers,
+      body: JSON.stringify({ p_report_id: reportId, p_client_ip: ipParaLimite(ip) }),
     });
 
     if (!res.ok) {

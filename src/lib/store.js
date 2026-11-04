@@ -254,9 +254,17 @@ export function mergeReportVectors(reports, vectorRows) {
 // quedó restringida al rol service_role — ya no es alcanzable con la anon
 // key ni siquiera llamándola directo.
 export async function fetchReportContact(reportId) {
+  // Con sesión, el cupo de consultas es por cuenta y no por IP (2026-11-04):
+  // así no se frenan entre sí personas que comparten la conexión.
+  let accessToken = null;
+  try {
+    accessToken = (await supabase.auth.getSession())?.data?.session?.access_token || null;
+  } catch {
+    accessToken = null;
+  }
   const res = await fetch("/api/report-contact", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
     body: JSON.stringify({ reportId }),
   });
   const data = await res.json().catch(() => ({}));
