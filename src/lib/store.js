@@ -707,6 +707,23 @@ export async function updateProfile(userId, { nickname, whatsapp, ...extra }) {
   }
 }
 
+// Cada reporte guarda una copia del nombre de quien lo publicó (columna
+// nickname): al cambiar el nombre del perfil, esa copia quedaba con el
+// nombre viejo en Explorar, el mapa y la ficha (2026-11-04). Esto pone el
+// nombre nuevo en todos los reportes propios. Lo permite la policy
+// reports_update_owner (solo filas con user_id = auth.uid()). Se llama
+// después de guardar el perfil y nunca lo hace fallar.
+export async function updateMyReportsNickname(userId, nickname) {
+  const name = typeof nickname === "string" ? nickname.trim() : "";
+  if (!userId || !name) return false;
+  const { error } = await supabase.from(REPORTS_TABLE).update({ nickname: name }).eq("user_id", userId);
+  if (error) {
+    logError("No se pudo actualizar el nombre en los reportes propios", error);
+    return false;
+  }
+  return true;
+}
+
 // Foto de perfil: va al mismo bucket público que las fotos de mascotas, en
 // avatars/<id>/ (el check contributors_avatar_url_bucket solo acepta esa
 // carpeta). uploadPhoto ya le agrega un sufijo aleatorio al nombre.
