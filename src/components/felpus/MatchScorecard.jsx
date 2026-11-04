@@ -9,7 +9,7 @@
 import Image from "next/image";
 import { Check, X } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
-import { formatFechaAR, matchBreakdown, reportPhotoAlt, scoreLabel } from "../../lib/matching";
+import { formatFechaAR, reportPhotoAlt, scoreLabel } from "../../lib/matching";
 import { petTitle } from "../../lib/petTitle";
 import { zonaConCiudad } from "../../lib/zona";
 import { estadoLabel, isSighting } from "../../lib/sighting";
@@ -57,7 +57,8 @@ function ReportSide({ report }) {
 
 export default function MatchScorecard({ source, match }) {
   const C = useTheme();
-  const rows = matchBreakdown(source, match.report);
+  // El desglose llega calculado del servidor (/api/coincidencias).
+  const rows = [...(match.breakdown || [])];
   const fecha = fechaRow(source, match.report, match.fechaSim);
   if (fecha) rows.push(fecha);
   const pct = Math.round(match.score * 100);

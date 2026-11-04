@@ -1,7 +1,8 @@
 // Despacho de alertas automáticas (servidor). Lo usan /api/notify-match (el
 // trigger de siempre), /api/alerts/dispatch y /api/alerts/flush. Todo lo que
 // toca red (Supabase, web-push) entra por `deps`, así se testea con dobles.
-import { findMatches, marcarDudosas } from "./matching";
+import { marcarDudosas } from "./matching";
+import { findMatches } from "./matchingScore";
 import {
   matchThresholds,
   classifyMatch,

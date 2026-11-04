@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { findMatches } from "../../../lib/matching";
+import { findMatches } from "../../../lib/matchingScore";
 import { rowToMatchable, makeDb, makePusher, dispatchNewReport } from "../../../lib/alertsServer";
 import { logError } from "../../../lib/log";
 import { SITE_URL } from "../../../lib/site";

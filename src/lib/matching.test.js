@@ -8,10 +8,6 @@ import {
   haversineKm,
   histIntersection,
   cosineSimilarity,
-  imageSimilarity,
-  scoreMatch,
-  matchBreakdown,
-  findMatches,
   scoreLabel,
   getTier,
   getTierProgress,
@@ -36,13 +32,13 @@ import {
   RAZA_NO_SE,
   SCORE_MINIMO,
   computeAdminBreakdowns,
-  colorSimilarity,
   histogramSimilarity,
   histogramV1FromPixels,
   histogramV2FromPixels,
   HIST_V1_BINS,
   HIST_V2_BINS,
 } from "./matching";
+import { imageSimilarity, scoreMatch, matchBreakdown, findMatches, colorSimilarity } from "./matchingScore";
 
 // Reporte base reutilizable — cada test sobreescribe solo lo que le importa,
 // así el caso de prueba deja claro qué campo es el que se está variando.
