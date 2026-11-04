@@ -32,7 +32,22 @@ jobs:
       # para que el build compile (createClient() exige un supabaseUrl no
       # vacío, ver supabaseClient.js), sin necesitar credenciales reales ni
       # secrets configurados para este workflow.
-      - run: npm run build
+      #
+      # Reintento (2026-11-04): next/font baja las fuentes de Google en el
+      # build, y desde los servidores de GitHub esa descarga falla a veces
+      # ("An error occurred in `next/font`", pasó 2 veces el 04/11 con el
+      # código bien). Solo se reintenta ESA falla, hasta 3 veces; cualquier
+      # otro error del build corta en el primer intento.
+      - name: npm run build (con reintento si fallan las fuentes de Google)
+        run: |
+          set -o pipefail
+          for intento in 1 2 3; do
+            if npm run build 2>&1 | tee build.log; then exit 0; fi
+            if ! grep -q "next/font" build.log; then exit 1; fi
+            echo "::warning::Falló la descarga de fuentes de Google (intento $intento de 3)"
+            sleep 20
+          done
+          exit 1
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
