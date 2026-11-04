@@ -1,54 +1,71 @@
-// Límite por IP para las rutas que llaman a un modelo de IA (/api/chat e
-// /api/import-post). Extraído de /api/chat para no duplicarlo.
+// Límite para las rutas que cuestan: IA (/api/chat, /api/import-post) y
+// vectores/chequeo de fotos (/api/embed, /api/photo-check).
 //
-// Rate limit real (en la base, vía RPC con service_role — misma razón que
-// /api/embed: la IP la determina Vercel, no quien llama). Ver
-// check_chat_rate_limit en supabase/schema.sql (8 por minuto, 80 por día,
-// compartido entre las dos rutas: es el cupo de "IA" de cada IP). Si esa
-// función todavía no existe (no se corrió la migración), se usa la de
-// /api/embed como respaldo, para que nunca quede sin límite.
-async function rpcRateLimit(name, ip) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const res = await fetch(`${supabaseUrl}/rest/v1/rpc/${name}`, {
+// 1. Primero un respaldo en memoria por IP (frena ráfagas sin ir a la base).
+// 2. Después el cupo real en la base: felpus_limite (migración 20261104_01),
+//    por IP (bloque /64 en IPv6) y un tope GLOBAL por día, que es el que
+//    pone techo al costo aunque alguien rote IPs. La IP la determina Vercel,
+//    no quien llama.
+// 3. Si felpus_limite no existe todavía, la función vieja (check_chat_rate_limit
+//    o check_embed_rate_limit), como antes.
+// 4. Si la base no responde: en las de IA (failClosed) solo pasa un cupo
+//    chico por instancia, en vez de dejar pasar todo como antes; en las de
+//    fotos se deja pasar (no cuestan plata y no deben trabar la publicación).
+import { avisarTopeGlobal, clavesLimite, consultarLimite, ipParaLimite, makeWindowLimiter } from "./serverRateLimit";
+
+async function rpcViejo(name, ip, env, fetchImpl) {
+  const res = await fetchImpl(`${env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/rpc/${name}`, {
     method: "POST",
-    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({ client_ip: ip }),
   });
   if (res.status === 404) return null; // función inexistente
-  if (!res.ok) return true;
+  if (!res.ok) return undefined; // error de la base
   return (await res.json()) !== false;
 }
 
-// Respaldo en memoria por instancia: no reemplaza al de la base (cada cold
-// start arranca de cero), pero frena una ráfaga aunque Supabase falle.
+// Compatibilidad: respaldo en memoria por IP (por minuto).
 export function makeMemoryRateLimit(maxPerMinute) {
-  const hits = new Map();
-  return function memoryRateLimit(ip, now = Date.now()) {
-    const recent = (hits.get(ip) || []).filter((t) => now - t < 60_000);
-    if (recent.length >= maxPerMinute) return false;
-    recent.push(now);
-    hits.set(ip, recent);
-    if (hits.size > 5000) hits.clear();
-    return true;
-  };
+  return makeWindowLimiter({ max: maxPerMinute, windowMs: 60_000 });
 }
 
-export function makeAiRateLimit({ maxPerMinute = 10 } = {}) {
-  const memoryRateLimit = makeMemoryRateLimit(maxPerMinute);
+export function makeAiRateLimit({
+  maxPerMinute = 10,
+  bucket = "ia",
+  legacy = ["check_chat_rate_limit", "check_embed_rate_limit"],
+  failClosed = true,
+  instanceMaxPerMinute = 20,
+  env = process.env,
+  fetchImpl = (...args) => fetch(...args),
+} = {}) {
+  const porIp = makeWindowLimiter({ max: maxPerMinute, windowMs: 60_000 });
+  const porInstancia = makeWindowLimiter({ max: instanceMaxPerMinute, windowMs: 60_000 });
+  const sinBase = () => (failClosed ? porInstancia("todo") : true);
+
   return async function checkRateLimit(ip) {
-    if (!ip) return true;
-    if (!memoryRateLimit(ip)) return false;
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return true;
-    try {
-      const chat = await rpcRateLimit("check_chat_rate_limit", ip);
-      if (chat !== null) return chat;
-      const embed = await rpcRateLimit("check_embed_rate_limit", ip);
-      return embed !== false;
-    } catch {
-      // Mismo criterio que el resto de las rutas: un problema de infra ajeno
-      // no tumba la función (el límite en memoria sigue activo).
-      return true;
+    const red = ipParaLimite(ip);
+    if (!porIp(red)) return false;
+    if (!env.NEXT_PUBLIC_SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) return sinBase();
+
+    const r = await consultarLimite(bucket, clavesLimite({ ip }), { env, fetchImpl });
+    if (r.estado === "ok") return true;
+    if (r.estado === "limite") {
+      if (r.tipo === "global") await avisarTopeGlobal(bucket, env);
+      return false;
     }
+    if (r.estado === "error") return sinBase();
+
+    // Sin la migración 20261104_01: límite viejo por IP.
+    try {
+      for (const name of legacy) {
+        const ok = await rpcViejo(name, red, env, fetchImpl);
+        if (ok === null) continue;
+        if (ok === undefined) return sinBase();
+        return ok;
+      }
+    } catch {
+      // Cae al de abajo.
+    }
+    return sinBase();
   };
 }

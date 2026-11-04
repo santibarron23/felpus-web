@@ -1,6 +1,7 @@
 import { logError } from "../../../lib/log";
 import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
 import { checkPhoto } from "../../../lib/photoCheck";
+import { makeAiRateLimit } from "../../../lib/serverAiRateLimit";
 
 // ¿Foto real o flyer/captura/ilustración? Ver photoCheck.js. Mismo modelo
 // de ejecución y mismos controles que /api/embed (Node, ONNX Runtime nativo,
@@ -12,28 +13,9 @@ export const maxDuration = 60;
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
-// Mismo límite por IP que /api/embed (check_embed_rate_limit, 12 por
-// minuto, compartido): una foto usa un pedido de cada uno.
-async function checkRateLimit(ip) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!ip || !supabaseUrl || !serviceKey) return true;
-  try {
-    const res = await fetch(`${supabaseUrl}/rest/v1/rpc/check_embed_rate_limit`, {
-      method: "POST",
-      headers: {
-        apikey: serviceKey,
-        Authorization: `Bearer ${serviceKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ client_ip: ip }),
-    });
-    if (!res.ok) return true;
-    return await res.json();
-  } catch (e) {
-    return true;
-  }
-}
+// Mismo cupo que /api/embed (bucket "embed", compartido: una foto usa un
+// pedido de cada uno). Ver serverAiRateLimit.js.
+const checkRateLimit = makeAiRateLimit({ maxPerMinute: 12, bucket: "embed", legacy: ["check_embed_rate_limit"], failClosed: false });
 
 export async function POST(request) {
   if (!isJsonRequest(request)) {

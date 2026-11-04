@@ -1,5 +1,6 @@
 import { logError } from "../../../lib/log";
 import { isJsonRequest, getClientIp, isRateLimitMessage, publicRpcError } from "../../../lib/httpGuards";
+import { ipParaLimite } from "../../../lib/serverRateLimit";
 
 // Corre en el servidor — nunca en el navegador, así que la service role key
 // nunca queda expuesta al público.
@@ -44,7 +45,9 @@ export async function POST(request) {
     return Response.json({ error: "Motivo de denuncia no reconocido." }, { status: 400 });
   }
 
-  const ip = getClientIp(request);
+  // Bloque /64 en IPv6: si no, una sola conexión mandaba las 3 denuncias
+  // "de IPs distintas" que ocultan un aviso (revisión 2026-11-04).
+  const ip = ipParaLimite(getClientIp(request));
 
   try {
     const res = await fetch(`${supabaseUrl}/rest/v1/rpc/flag_report`, {

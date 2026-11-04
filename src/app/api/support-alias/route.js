@@ -2,6 +2,7 @@ import { logError } from "../../../lib/log";
 import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
 import { callServiceRpc, CONTRIBUTOR_ID_RE } from "../../../lib/serverSupport";
 import { normalizeLinkCobro } from "../../../lib/support";
+import { ipParaLimite } from "../../../lib/serverRateLimit";
 
 // Alias y link de cobro de un colaborador para "Apoyar" (ver serverSupport.js). El alias no se
 // puede leer por la API pública: solo por acá, de a uno y con límite por IP
@@ -23,7 +24,7 @@ export async function POST(request) {
   try {
     const r = await callServiceRpc(
       "get_support_alias",
-      { p_contributor_id: contributorId, p_client_ip: getClientIp(request) },
+      { p_contributor_id: contributorId, p_client_ip: ipParaLimite(getClientIp(request)) },
       "No se pudo obtener el alias."
     );
     if (r.error) {

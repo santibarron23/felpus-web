@@ -1,6 +1,7 @@
 import { logError } from "../../../lib/log";
 import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
 import { embedImage } from "../../../lib/imageEmbedding";
+import { makeAiRateLimit } from "../../../lib/serverAiRateLimit";
 
 // El modelo (DINOv2, ver imageEmbedding.js) corre acá mismo con ONNX
 // Runtime nativo: necesita Node, no Edge. maxDuration cubre el arranque en
@@ -11,40 +12,15 @@ export const maxDuration = 60;
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8MB — de sobra para una foto ya redimensionada en el cliente.
 
-// Rate limit real (en la base, vía RPC) — el anterior vivía en un Map en
-// memoria adentro de la función serverless, así que no protegía nada: cada
-// cold start arranca en cero y las instancias concurrentes no comparten
-// memoria. Ver check_embed_rate_limit() en supabase/schema.sql. Si el
-// chequeo mismo falla (Supabase caído, no configurado, etc.) se deja pasar
-// el pedido — un problema de infra ajeno no debería tumbar la función real.
+// Cupo real en la base (felpus_limite: 12 por minuto y 600 por día por IP,
+// más un tope global diario; compartido con /api/photo-check), con respaldo
+// en memoria. Ver serverAiRateLimit.js. Si la base no responde se deja pasar
+// (falla abierta): estas fotos no cuestan plata de un proveedor y no deben
+// trabar la publicación.
 //
-// Auditoría integral (2026-08-09): esta RPC estaba otorgada a
-// anon/authenticated — cualquiera con la anon key (pública) podía llamarla
-// directo pasando cualquier client_ip inventada (mismo truco que ya se
-// cerró para get_report_contact/flag_report) y un max_per_minute absurdo.
-// Ahora requiere service_role — la IP que se le pasa es exclusivamente la
-// que determina Vercel en este request, y el tope máximo ya no es un
-// parámetro (queda fijo dentro de la función).
-async function checkRateLimit(ip) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!ip || !supabaseUrl || !serviceKey) return true;
-  try {
-    const res = await fetch(`${supabaseUrl}/rest/v1/rpc/check_embed_rate_limit`, {
-      method: "POST",
-      headers: {
-        apikey: serviceKey,
-        Authorization: `Bearer ${serviceKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ client_ip: ip }),
-    });
-    if (!res.ok) return true;
-    return await res.json();
-  } catch (e) {
-    return true;
-  }
-}
+// Auditoría integral (2026-08-09): la RPC vieja estaba otorgada a
+// anon/authenticated; ahora todas requieren service_role.
+const checkRateLimit = makeAiRateLimit({ maxPerMinute: 12, bucket: "embed", legacy: ["check_embed_rate_limit"], failClosed: false });
 
 export async function POST(request) {
   if (!isJsonRequest(request)) {

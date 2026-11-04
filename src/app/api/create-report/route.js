@@ -5,6 +5,7 @@ import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
 import { validateReportContact, validarResguardo } from "../../../lib/reportValidation";
 import { sanitizeReportRow } from "../../../lib/reportRow";
 import { validarDatosAvistamiento } from "../../../lib/sighting";
+import { avisarTopeGlobal, clavesLimite, consultarLimite, ipParaLimite, makeWindowLimiter } from "../../../lib/serverRateLimit";
 
 // Corre en el servidor — nunca en el navegador, así que la service role key
 // nunca queda expuesta al público.
@@ -42,6 +43,50 @@ export function missingOptionalColumn(error) {
 //    protege reports_insert_own_or_guest (RLS) para cualquier otro camino
 //    de inserción. Publicar como invitado (sin sesión) sigue funcionando
 //    igual: si no hay token, user_id queda null.
+// Cupos para publicar (reportes y avistamientos), revisión de seguridad
+// 2026-11-04: antes solo 8 por hora por IP, contados con un SELECT y un
+// INSERT separados (una ráfaga en paralelo pasaba entera), sin tope diario,
+// sin tope por cuenta ni global, y si la consulta fallaba no había límite.
+// Ahora (felpus_limite, migración 20261104_01, atómico): por IP 8/hora y
+// 20/día; con sesión, por cuenta 8/hora y 20/día (y la IP con el doble, para
+// no frenar a varias personas detrás de la misma IP); global 120/hora y
+// 600/día. Los cupos se cambian en la tabla limites_config.
+// Si la base no responde se deja publicar (nunca frenar a alguien real por
+// una falla nuestra), con un respaldo en memoria por instancia.
+const respaldoPublicar = makeWindowLimiter({ max: MAX_PER_HOUR, windowMs: 3600_000 });
+
+export async function permitirPublicacion(supabase, ip, userId, { consultar = consultarLimite } = {}) {
+  const r = await consultar("reporte", clavesLimite({ ip, userId }));
+  if (r.estado === "ok") return true;
+  if (r.estado === "limite") {
+    if (r.tipo === "global") await avisarTopeGlobal("reporte");
+    return false;
+  }
+  const claveMemoria = userId ? `user:${userId}` : ipParaLimite(ip);
+  if (r.estado === "error") return respaldoPublicar(claveMemoria);
+
+  // Sin la migración 20261104_01: el límite de antes (report_submissions).
+  try {
+    await supabase
+      .from("report_submissions")
+      .delete()
+      .lt("created_at", new Date(Date.now() - 24 * 3600 * 1000).toISOString());
+    const red = ipParaLimite(ip);
+    const { count, error } = await supabase
+      .from("report_submissions")
+      .select("*", { count: "exact", head: true })
+      .eq("ip", red)
+      .gt("created_at", new Date(Date.now() - 3600 * 1000).toISOString());
+    if (error) throw error;
+    if ((count || 0) >= MAX_PER_HOUR) return false;
+    await supabase.from("report_submissions").insert({ ip: red });
+    return true;
+  } catch (e) {
+    logError("No se pudo aplicar el rate limit de creación de reportes", e);
+    return respaldoPublicar(claveMemoria);
+  }
+}
+
 export async function POST(request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -117,34 +162,13 @@ export async function POST(request) {
     }
   }
 
-  const ip = getClientIp(request);
-  if (ip) {
-    try {
-      await supabase
-        .from("report_submissions")
-        .delete()
-        .lt("created_at", new Date(Date.now() - 24 * 3600 * 1000).toISOString());
-
-      const { count } = await supabase
-        .from("report_submissions")
-        .select("*", { count: "exact", head: true })
-        .eq("ip", ip)
-        .gt("created_at", new Date(Date.now() - 3600 * 1000).toISOString());
-
-      if ((count || 0) >= MAX_PER_HOUR) {
-        return Response.json(
-          { error: "Se alcanzó el límite de reportes por hora desde esta conexión. Probá de nuevo más tarde." },
-          { status: 429 }
-        );
-      }
-
-      await supabase.from("report_submissions").insert({ ip });
-    } catch (e) {
-      // Un problema con el rate limiting en sí (tabla no migrada todavía,
-      // etc.) no debería impedir publicar — mismo criterio de "falla
-      // abierto" que ya usaba el trigger anterior.
-      logError("No se pudo aplicar el rate limit de creación de reportes", e);
-    }
+  if (!(await permitirPublicacion(supabase, getClientIp(request), realUserId))) {
+    // Mismo texto para todos los cupos (IP, cuenta o global): no se dice
+    // cuál ni cuánto falta.
+    return Response.json(
+      { error: "Llegaste al límite de publicaciones por ahora. Probá de nuevo más tarde." },
+      { status: 429 }
+    );
   }
 
   let attemptRow = { ...row, user_id: realUserId, resuelto: false };
