@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { contactoCapturaParaForm, avisoContactoCaptura } from "./contactoCaptura";
+import { contactoCapturaParaForm, avisoContactoCaptura, formConContactoCaptura } from "./contactoCaptura";
 
 describe("contactoCapturaParaForm", () => {
   it("normaliza un celular argentino del flyer como el PhoneInput", async () => {
@@ -37,5 +37,45 @@ describe("avisoContactoCaptura", () => {
     expect(avisoContactoCaptura({ telefono: false, email: true })).toBe("Usamos el email del aviso.");
     expect(avisoContactoCaptura({ telefono: true, email: true })).toBe("Usamos el teléfono y el email del aviso.");
     expect(avisoContactoCaptura({ telefono: false, email: false })).toBe("");
+  });
+});
+
+describe("formConContactoCaptura: si ya había teléfono", () => {
+  const conTelefono = {
+    nombre: "Luna",
+    contactoWhatsapp: "11 2345-6789",
+    contactoWhatsappCountry: "AR",
+    contactoEmail: "yo@mail.com",
+  };
+
+  it("el teléfono del flyer reemplaza al que estaba cargado", async () => {
+    const capt = await contactoCapturaParaForm({ telefono: "387 15 588-5427", email: "" }, conTelefono.contactoWhatsappCountry);
+    const f = formConContactoCaptura(conTelefono, capt);
+    expect(f.contactoWhatsapp).toBe("387 588-5427");
+    expect(f.contactoWhatsappCountry).toBe("AR");
+    // Lo demás queda como estaba (el email no venía en el flyer).
+    expect(f.contactoEmail).toBe("yo@mail.com");
+    expect(f.nombre).toBe("Luna");
+  });
+
+  it("también si el número cargado era de otro país y el flyer no trae +54", async () => {
+    const uruguayo = { ...conTelefono, contactoWhatsapp: "94 123 456", contactoWhatsappCountry: "UY" };
+    const capt = await contactoCapturaParaForm({ telefono: "387 15 588-5427" }, uruguayo.contactoWhatsappCountry);
+    const f = formConContactoCaptura(uruguayo, capt);
+    expect(f.contactoWhatsapp).toBe("387 588-5427");
+    expect(f.contactoWhatsappCountry).toBe("AR");
+  });
+
+  it("si el flyer no trae teléfono, se mantiene el que había", async () => {
+    const capt = await contactoCapturaParaForm({ telefono: "", email: "duenio@mail.com" }, "AR");
+    const f = formConContactoCaptura(conTelefono, capt);
+    expect(f.contactoWhatsapp).toBe("11 2345-6789");
+    expect(f.contactoWhatsappCountry).toBe("AR");
+    expect(f.contactoEmail).toBe("duenio@mail.com");
+  });
+
+  it("si el teléfono del flyer no es válido, se mantiene el que había", async () => {
+    const capt = await contactoCapturaParaForm({ telefono: "123" }, "AR");
+    expect(formConContactoCaptura(conTelefono, capt)).toEqual(conTelefono);
   });
 });

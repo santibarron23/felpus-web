@@ -18,10 +18,17 @@ export async function contactoCapturaParaForm(contacto, paisActual) {
 
   const telefono = typeof contacto.telefono === "string" ? contacto.telefono.trim() : "";
   if (telefono) {
-    const parsed = await parseWhatsappPhone(telefono, paisActual || DEFAULT_COUNTRY);
-    if (parsed.isValid) {
+    // Primero con el país que tiene el formulario; si ahí no es válido, con
+    // Argentina. Caso: el WhatsApp cargado antes era de Uruguay y el flyer
+    // dice "387 15 588-5427" sin +54 — con UY no valida y se quedaba el
+    // número viejo, aunque el flyer sí traía un teléfono.
+    const paises = [...new Set([paisActual || DEFAULT_COUNTRY, DEFAULT_COUNTRY])];
+    for (const pais of paises) {
+      const parsed = await parseWhatsappPhone(telefono, pais);
+      if (!parsed.isValid) continue;
       const { country, national } = await splitStoredWhatsapp(parsed.digits);
-      if (national) out.whatsapp = { national, country: country || paisActual || DEFAULT_COUNTRY };
+      if (national) out.whatsapp = { national, country: country || pais };
+      break;
     }
   }
 
@@ -37,4 +44,16 @@ export function avisoContactoCaptura({ telefono, email }) {
   if (telefono) return "Usamos el teléfono del aviso.";
   if (email) return "Usamos el email del aviso.";
   return "";
+}
+
+// Formulario después de aplicar el contacto de la captura (lo que devolvió
+// contactoCapturaParaForm). El teléfono del aviso REEMPLAZA al que había
+// (escrito a mano o precargado del WhatsApp guardado); sin teléfono en el
+// aviso, queda el que estaba. Igual con el email.
+export function formConContactoCaptura(form, { whatsapp, email } = {}) {
+  return {
+    ...form,
+    ...(whatsapp ? { contactoWhatsapp: whatsapp.national, contactoWhatsappCountry: whatsapp.country } : {}),
+    ...(email ? { contactoEmail: email } : {}),
+  };
 }
