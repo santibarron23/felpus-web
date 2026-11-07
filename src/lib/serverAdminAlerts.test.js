@@ -35,6 +35,8 @@ describe("evaluarError", () => {
       "No se pudo activar las notificaciones push — No diste permiso",
       "No se pudo cargar el contacto del reporte — Demasiadas consultas de contacto",
       "No se pudieron cargar los reportes — JWT issued at future — code PGRST303",
+      "Error no capturado — Error invoking postMessage: Java object is gone",
+      "Error no capturado — Error invoking postMessage: Java bridge method invocation error",
     ]) {
       expect(esRuido(m)).toBe(true);
       const rec = [1, 2, 3, 4].map((n) => ({ message: m, user_agent: UA(n) }));

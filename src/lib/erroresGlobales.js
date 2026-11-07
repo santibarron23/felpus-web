@@ -4,6 +4,7 @@
 // logError, sin el ruido que no es de Felpus.
 import { logError } from "./log";
 import { reloadOnceForStaleDeploy, isChunkLoadError } from "./staleDeploy";
+import { esDeScriptInyectado } from "./scriptsInyectados";
 
 const RUIDO = [
   // Error de otro origen que el navegador oculta: no trae ningún dato útil.
@@ -20,8 +21,10 @@ const RUIDO = [
 // inyectan otras apps.
 const ORIGEN_AJENO = /^(chrome|moz|safari(-web)?|ms-browser)-extension:\/\//i;
 
-export function esErrorIgnorable({ message, filename } = {}) {
+export function esErrorIgnorable({ message, filename, stack } = {}) {
   if (filename && ORIGEN_AJENO.test(filename)) return true;
+  // Navegador interno de Instagram/Facebook (ver scriptsInyectados.js).
+  if (esDeScriptInyectado({ stack, filename })) return true;
   const m = String(message || "").trim();
   if (!m) return true;
   return RUIDO.some((re) => re.test(m));
@@ -39,7 +42,7 @@ export function instalarCapturaGlobal(win, { log = logError, recargar = reloadOn
   if (!win?.addEventListener) return () => {};
   const onError = (e) => {
     const error = e?.error || { message: e?.message };
-    if (esErrorIgnorable({ message: error?.message || e?.message, filename: e?.filename })) return;
+    if (esErrorIgnorable({ message: error?.message || e?.message, filename: e?.filename, stack: error?.stack })) return;
     // Pestaña abierta desde antes de un deploy: se recarga una vez, igual
     // que en error.js.
     if (isChunkLoadError(error) && recargar(error)) return;
@@ -47,7 +50,7 @@ export function instalarCapturaGlobal(win, { log = logError, recargar = reloadOn
   };
   const onRejection = (e) => {
     const error = aError(e?.reason);
-    if (esErrorIgnorable({ message: error.message })) return;
+    if (esErrorIgnorable({ message: error.message, stack: error.stack })) return;
     if (isChunkLoadError(error) && recargar(error)) return;
     log("Promesa rechazada sin manejar", error);
   };

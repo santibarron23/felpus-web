@@ -37,6 +37,9 @@ const RUIDO = [
   // Reloj del celular adelantado: el token de sesión "parece del futuro".
   // Es del dispositivo, no de la plataforma (2 casos en octubre).
   /JWT issued at future/i,
+  // Puente con Java del navegador interno de Instagram/Facebook en Android
+  // (ver scriptsInyectados.js). Felpus no usa ningún puente con Java.
+  /Error invoking postMessage: Java (object is gone|bridge method invocation error)/i,
 ];
 
 const CRITICO = /No se pudieron cargar los reportes/i;
