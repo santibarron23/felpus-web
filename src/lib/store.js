@@ -45,6 +45,37 @@ const PHOTOS_BUCKET = "felpus-photos";
 // antes con un mensaje claro si algún día llegara otra cosa.
 const UPLOAD_EXT = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
 
+//
+// Subida con permiso del servidor (2026-11-07, ver src/lib/serverFotos.js):
+// eso de mover el upload detrás de una ruta propia ya se hizo, junto con el
+// borrado (/api/fotos/borrar), que era lo que lo impedía. /api/fotos/subir
+// controla el cupo y devuelve un permiso firmado para un nombre que elige el
+// servidor (mismo esquema: prefijo + UUID). Si esa ruta no está disponible
+// (404/501/5xx), se sube directo como antes — sirve solo mientras exista la
+// policy felpus_photos_public_insert (la cierra la migración 20261107_02).
+async function sessionAuthHeader() {
+  try {
+    const token = (await supabase.auth.getSession())?.data?.session?.access_token;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
+// -> { path, token } | null (null = la ruta no está; subir directo)
+async function pedirPermisoDeSubida(prefijo, ext) {
+  const res = await fetch("/api/fotos/subir", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(prefijo.startsWith("avatars/") ? await sessionAuthHeader() : {}) },
+    body: JSON.stringify({ prefijo, ext }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.ok && data?.path && data?.token) return data;
+  // Cupo agotado o pedido rechazado: no tiene sentido subir por otro lado.
+  if ([400, 403, 429].includes(res.status)) throw new Error(data?.error || "No se pudo subir la foto.");
+  return null;
+}
+
 export async function uploadPhoto(dataUrl, path) {
   const res = await fetch(dataUrl);
   const blob = await res.blob();
@@ -53,6 +84,14 @@ export async function uploadPhoto(dataUrl, path) {
   // Reintenta si se corta la red (ver lib/retry.js), con un nombre nuevo en
   // cada intento: si el anterior llegó a subirse, no choca.
   const fullPath = await conReintentos(async () => {
+    const permiso = await pedirPermisoDeSubida(path, ext);
+    if (permiso) {
+      const { error } = await supabase.storage.from(PHOTOS_BUCKET).uploadToSignedUrl(permiso.path, permiso.token, blob, {
+        contentType: blob.type,
+      });
+      if (error) throw error;
+      return permiso.path;
+    }
     const intento = `${path}-${crypto.randomUUID()}.${ext}`;
     const { error } = await supabase.storage.from(PHOTOS_BUCKET).upload(intento, blob, {
       contentType: blob.type,
@@ -63,6 +102,22 @@ export async function uploadPhoto(dataUrl, path) {
   });
   const { data } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(fullPath);
   return data.publicUrl;
+}
+
+// Borra fotos con /api/fotos/borrar (comprueba de quién son en el servidor).
+// -> true si la ruta respondió bien. Si no, quien llama prueba el borrado
+// directo, que sigue sirviendo para fotos viejas subidas con la sesión.
+async function borrarFotosEnServidor(body) {
+  try {
+    const res = await fetch("/api/fotos/borrar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await sessionAuthHeader()) },
+      body: JSON.stringify(body),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 function storagePathFromPublicUrl(url) {
@@ -79,7 +134,7 @@ function storagePathFromPublicUrl(url) {
 // de la UI ya lo filtró.
 export async function deleteReport(reportId, ownerUserId, fotoUrls) {
   const paths = (fotoUrls || []).map(storagePathFromPublicUrl).filter(Boolean);
-  if (paths.length > 0) {
+  if (paths.length > 0 && !(await borrarFotosEnServidor({ reportId, urls: fotoUrls }))) {
     const { error: storageError } = await supabase.storage.from(PHOTOS_BUCKET).remove(paths);
     if (storageError) {
       // No bloqueante: mejor borrar la fila igual que dejar una publicación
@@ -681,12 +736,14 @@ export async function uploadAvatar(dataUrl, userId) {
   return uploadPhoto(dataUrl, `avatars/${userId}/avatar`);
 }
 
-// Borra la foto anterior al cambiarla. Best effort: la policy
-// felpus_photos_owner_delete solo deja borrar lo que subió uno mismo, y si
-// falla queda un archivo huérfano chico, nada más.
+// Borra la foto anterior al cambiarla. Best effort: primero en el servidor
+// (/api/fotos/borrar, comprueba que sea de tu carpeta); si no anda, directo
+// con felpus_photos_owner_delete (solo sirve para fotos subidas antes del
+// 07/11, que quedaron a tu nombre). Si falla queda un archivo huérfano chico.
 export async function deleteAvatarFile(url) {
   const path = storagePathFromPublicUrl(url);
   if (!path || !path.startsWith("avatars/")) return;
+  if (await borrarFotosEnServidor({ avatarUrl: url })) return;
   const { error } = await supabase.storage.from(PHOTOS_BUCKET).remove([path]);
   if (error) logError("No se pudo borrar la foto de perfil anterior", error);
 }
