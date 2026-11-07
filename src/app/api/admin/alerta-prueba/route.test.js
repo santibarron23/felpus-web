@@ -34,5 +34,6 @@ describe("POST /api/admin/alerta-prueba", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ enviada: true });
     expect(alertarAdmin.mock.calls[0][0]).toMatchObject({ firma: "prueba" });
+    expect(alertarAdmin.mock.calls[0][2]).toEqual({ ignorarSilencio: true });
   });
 });

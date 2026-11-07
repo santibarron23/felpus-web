@@ -15,6 +15,7 @@ import { reportFlagReasonLabel } from "../../lib/matching";
 import { petTitle } from "../../lib/petTitle";
 import { zonaConCiudad } from "../../lib/zona";
 import { authedFetch } from "../../lib/push";
+import { textoAlertaPrueba } from "../../lib/alertaPruebaTexto";
 
 // Una tarjeta de desglose del panel de admin (ver computeAdminBreakdowns en
 // matching.js): título + lista de barras horizontales, cada una con
@@ -203,13 +204,7 @@ export default function AdminPanel({
                 try {
                   const res = await authedFetch("/api/admin/alerta-prueba", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
                   const data = await res.json().catch(() => ({}));
-                  setAlertaPrueba(
-                    data.enviada
-                      ? `Enviada por ${data.canales.join(" y ")}.`
-                      : data.motivo === "silencio"
-                        ? "Ya mandaste una hace menos de 30 minutos."
-                        : "No salió: revisá RESEND_API_KEY y las claves VAPID en Vercel."
-                  );
+                  setAlertaPrueba(textoAlertaPrueba(data));
                 } catch {
                   setAlertaPrueba("No se pudo mandar. Probá de nuevo.");
                 }
