@@ -219,6 +219,10 @@ const ReportsMap = dynamic(() => import("./ReportsMap"));
 const FelpusAssistant = dynamic(() => import("./felpus/FelpusAssistant"), { ssr: false });
 
 const LOGO_RED = "/assets/logo_full_red.webp";
+// Versión horizontal (huella + "Felpus" en una fila) para el encabezado en
+// pantallas chicas: el logo apilado quedaba angosto y con la huella flotando
+// arriba, desalineado del lema. Sale del mismo logo_full_red.png (2026-11-07).
+const LOGO_RED_ROW = "/assets/logo_row_red.webp";
 // Imágenes fijas de la interfaz: se sirven tal cual (unoptimized), sin
 // gastar transformaciones de Vercel (ver docs/IMAGENES.md). mascot_hero.webp
 // es el mismo dibujo que mascot_hero.png, convertido una vez (62 KB -> 12 KB).
@@ -3048,7 +3052,14 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                   logo, en WebP del tamaño justo (7 KB en vez de un PNG de
                   2419 px y 51 KB). */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={LOGO_RED} alt="Felpus" width={185} height={108} className="h-9 w-auto object-contain" />
+              {/* En mobile, logo en una fila (huella + nombre) con el lema
+                  debajo alineado al mismo borde; desde sm vuelve el logo
+                  apilado de siempre. <picture> hace que el navegador baje
+                  uno solo de los dos archivos. */}
+              <picture>
+                <source media="(min-width: 640px)" srcSet={LOGO_RED} width={185} height={108} />
+                <img src={LOGO_RED_ROW} alt="Felpus" width={368} height={84} className="block h-7 sm:h-9 w-auto object-contain" />
+              </picture>
               {/* text-[var(--felpus-muted)] dark:text-[#B9ADA5] en vez de style={{color: C.muted}}:
                   igual que con el logo, un color elegido en JS según themeMode
                   no coincide entre el render del server (siempre asume tema
@@ -3061,8 +3072,12 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                   el propósito de la app a un vistazo (sin depender de leer
                   todo el hero) desaparecía justamente en el viewport que
                   más tráfico recibe. Visible en todos los tamaños ahora. */}
-              <p className="text-[12px] leading-snug mt-0.5 text-[var(--felpus-muted)] dark:text-[#B9ADA5]">
-                Buscador inteligente de mascotas perdidas y encontradas
+              {/* En mobile corta siempre en el mismo lugar ("…de mascotas" /
+                  "perdidas y encontradas"): dos líneas cortas y parejas en vez
+                  de una larga que casi toca el borde. Desde sm, una sola línea. */}
+              <p className="text-[12px] leading-snug mt-1.5 sm:mt-0.5 text-[var(--felpus-muted)] dark:text-[#B9ADA5]">
+                Buscador inteligente de mascotas{" "}
+                <span className="block sm:inline">perdidas y encontradas</span>
               </p>
             </div>
           </button>
