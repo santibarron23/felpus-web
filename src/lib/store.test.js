@@ -31,6 +31,9 @@ const {
   fetchSavedReportIds,
   saveReport,
   unsaveReport,
+  uploadPhoto,
+  deleteReport,
+  deleteAvatarFile,
 } = await import("./store");
 
 // Imita el query builder encadenable de supabase-js: cada método de la
@@ -822,5 +825,76 @@ describe("fetchSavedReportIds / saveReport / unsaveReport", () => {
   it("unsaveReport sin userId no hace nada (no rompe si se llama sin sesión)", async () => {
     await unsaveReport(null, "r1");
     expect(supabaseMock.from).not.toHaveBeenCalled();
+  });
+});
+
+// Subida con permiso del servidor (2026-11-07, ver serverFotos.js).
+describe("fotos en Storage vía /api/fotos", () => {
+  const DATA_URL = "data:image/jpeg;base64,AAAA";
+  function fetchCon(rutas) {
+    return vi.fn((url) => {
+      if (typeof url === "string" && url.startsWith("data:")) {
+        return Promise.resolve({ blob: () => Promise.resolve(new Blob(["x"], { type: "image/jpeg" })) });
+      }
+      const r = rutas[url] || { status: 404, body: {} };
+      return Promise.resolve({ ok: r.status < 300, status: r.status, json: () => Promise.resolve(r.body) });
+    });
+  }
+  function storageMock() {
+    const m = {
+      upload: vi.fn(() => Promise.resolve({ error: null })),
+      uploadToSignedUrl: vi.fn(() => Promise.resolve({ error: null })),
+      getPublicUrl: vi.fn((path) => ({ data: { publicUrl: `https://fake.supabase.co/storage/v1/object/public/felpus-photos/${path}` } })),
+      remove: vi.fn(() => Promise.resolve({ error: null })),
+    };
+    supabaseMock.storage.from.mockReturnValue(m);
+    return m;
+  }
+
+  it("sube con el permiso firmado y al nombre que eligió el servidor", async () => {
+    const st = storageMock();
+    vi.stubGlobal("fetch", fetchCon({ "/api/fotos/subir": { status: 200, body: { path: "r1-0-srv.jpg", token: "TKN" } } }));
+    const url = await uploadPhoto(DATA_URL, "r1-0");
+    expect(st.uploadToSignedUrl).toHaveBeenCalledWith("r1-0-srv.jpg", "TKN", expect.any(Blob), { contentType: "image/jpeg" });
+    expect(st.upload).not.toHaveBeenCalled();
+    expect(url).toMatch(/felpus-photos\/r1-0-srv\.jpg$/);
+    const pedido = JSON.parse(fetch.mock.calls.find(([u]) => u === "/api/fotos/subir")[1].body);
+    expect(pedido).toEqual({ prefijo: "r1-0", ext: "jpg" });
+  });
+
+  it("sin cupo: muestra el mensaje del servidor y no sube por otro lado", async () => {
+    const st = storageMock();
+    vi.stubGlobal("fetch", fetchCon({ "/api/fotos/subir": { status: 429, body: { error: "Subiste muchas fotos seguidas." } } }));
+    await expect(uploadPhoto(DATA_URL, "r1")).rejects.toThrow("Subiste muchas fotos seguidas.");
+    expect(st.upload).not.toHaveBeenCalled();
+    expect(st.uploadToSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it("si la ruta no está (deploy viejo o sin configurar), sube directo como antes", async () => {
+    const st = storageMock();
+    vi.stubGlobal("fetch", fetchCon({ "/api/fotos/subir": { status: 501, body: {} } }));
+    await uploadPhoto(DATA_URL, "r1");
+    expect(st.upload).toHaveBeenCalledWith(expect.stringMatching(/^r1-[0-9a-f-]{36}\.jpg$/), expect.any(Blob), expect.objectContaining({ upsert: false }));
+  });
+
+  it("borrar un aviso borra las fotos en el servidor; el borrado directo queda de respaldo", async () => {
+    const st = storageMock();
+    supabaseMock.from.mockReturnValue(makeBuilder({ error: null }));
+    const fotos = ["https://fake.supabase.co/storage/v1/object/public/felpus-photos/r1-0-u.jpg"];
+    vi.stubGlobal("fetch", fetchCon({ "/api/fotos/borrar": { status: 200, body: { ok: true } } }));
+    await deleteReport("r1", "u1", fotos);
+    expect(JSON.parse(fetch.mock.calls.find(([u]) => u === "/api/fotos/borrar")[1].body)).toEqual({ reportId: "r1", urls: fotos });
+    expect(st.remove).not.toHaveBeenCalled();
+
+    vi.stubGlobal("fetch", fetchCon({ "/api/fotos/borrar": { status: 502, body: {} } }));
+    await deleteReport("r1", "u1", fotos);
+    expect(st.remove).toHaveBeenCalledWith(["r1-0-u.jpg"]);
+  });
+
+  it("la foto de perfil anterior también se borra en el servidor", async () => {
+    const st = storageMock();
+    vi.stubGlobal("fetch", fetchCon({ "/api/fotos/borrar": { status: 200, body: { ok: true } } }));
+    await deleteAvatarFile("https://fake.supabase.co/storage/v1/object/public/felpus-photos/avatars/u1/avatar-x.jpg");
+    expect(st.remove).not.toHaveBeenCalled();
   });
 });

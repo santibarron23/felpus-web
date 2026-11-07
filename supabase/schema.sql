@@ -3262,3 +3262,49 @@ insert into public.limites_config (bucket, tipo, ventana, maximo) values
   ('coincidencias', 'ip', interval '1 day', 1500),
   ('coincidencias', 'global', interval '1 day', 60000)
 on conflict (bucket, tipo, ventana) do nothing;
+
+-- >>> migración 20261107_01_cupo_fotos.sql
+-- Cupo de subida de fotos (2026-11-07, hallazgo M1 de
+-- REVISION_SEGURIDAD_2026-11-07.md). /api/fotos/subir pide permiso a
+-- felpus_limite (tipo "foto") antes de entregar cada permiso de subida
+-- firmado. Mismo mecanismo que 20261104_01: solo agrega filas de cupo.
+--
+-- Uso real: hasta 3 fotos por aviso (más reintentos si se corta la red) y la
+-- foto de perfil. 15 por minuto, 40 por hora y 80 por día por IP sobran para
+-- una persona. El tope global (120 por hora, 400 por día) es lo que protege
+-- el 1 GB del plan gratis aunque alguien rote IPs; si se llega, le llega una
+-- alerta al admin ("Felpus llegó al tope diario de subidas de fotos").
+-- Sin esta migración, /api/fotos/subir usa solo el respaldo en memoria.
+-- Requiere 20261104_01. No borra ni cambia datos.
+--
+-- Rollback: delete from public.limites_config where bucket = 'foto';
+
+insert into public.limites_config (bucket, tipo, ventana, maximo) values
+  ('foto', 'ip', interval '1 minute', 15),
+  ('foto', 'ip', interval '1 hour', 40),
+  ('foto', 'ip', interval '1 day', 80),
+  ('foto', 'global', interval '1 hour', 120),
+  ('foto', 'global', interval '1 day', 400)
+on conflict (bucket, tipo, ventana) do nothing;
+
+-- >>> migración 20261107_02_cerrar_subida_directa.sql
+-- Cerrar la subida directa de fotos (2026-11-07, hallazgo M1 de
+-- REVISION_SEGURIDAD_2026-11-07.md).
+--
+-- CORRER RECIÉN DESPUÉS de que el código de /api/fotos/subir esté en
+-- producción y se haya comprobado que publicar un aviso con foto anda
+-- (la foto se ve en el aviso). Antes de eso, sacar esta policy deja a todos
+-- sin poder subir fotos.
+--
+-- Qué hace: saca felpus_photos_public_insert, la policy que dejaba subir
+-- archivos al bucket con la clave pública, sin límite de cantidad. Desde
+-- este cambio, la única forma de subir es el permiso firmado que entrega
+-- /api/fotos/subir después de pasar el cupo (20261107_01). Ese permiso no
+-- depende de ninguna policy de insert. El admin y el servidor siguen
+-- subiendo con la service key. No borra ni cambia archivos ni datos.
+--
+-- Rollback (vuelve a abrir la subida directa):
+--   create policy "felpus_photos_public_insert" on storage.objects
+--     for insert with check (bucket_id = 'felpus-photos');
+
+drop policy if exists "felpus_photos_public_insert" on storage.objects;

@@ -103,6 +103,12 @@ async function setup(page, { rows = [fakeRow(0), fakeRow(1), fakeRow(2)], tokens
     calls.created.push(route.request().postDataJSON());
     return route.fulfill({ json: { ok: true, pushToken: TOKEN } });
   });
+  // Permiso de subida (2026-11-07): mismo nombre que armaría el servidor.
+  await page.route("**/api/fotos/subir", (route) => {
+    const { prefijo, ext } = route.request().postDataJSON();
+    return route.fulfill({ json: { path: `${prefijo}-${crypto.randomUUID()}.${ext}`, token: "e2e" } });
+  });
+  await page.route("**/api/fotos/borrar", (route) => route.fulfill({ json: { ok: true, borradas: 0 } }));
   await page.route("**/api/admin/report", (route) => {
     calls.admin.push(route.request().postDataJSON());
     return route.fulfill({ json: { ok: true, changed: 1 } });

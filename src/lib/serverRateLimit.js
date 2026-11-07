@@ -76,7 +76,7 @@ export function makeWindowLimiter({ max, windowMs, maxKeys = 5000 }) {
 // admin, como mucho uno cada 30 minutos por tipo (ver serverAdminAlerts.js).
 // Import diferido: serverAdminAlerts trae web-push, que no hace falta cargar
 // en cada pedido.
-const NOMBRES = { reporte: "publicaciones", contacto: "consultas de contacto", ia: "pedidos a la IA", embed: "análisis de fotos" };
+const NOMBRES = { reporte: "publicaciones", contacto: "consultas de contacto", ia: "pedidos a la IA", embed: "análisis de fotos", foto: "subidas de fotos" };
 const ultimoAviso = new Map();
 export async function avisarTopeGlobal(bucket, env = process.env, now = Date.now()) {
   // Mientras dure el tope, cada pedido frenado llegaría acá: uno cada 10

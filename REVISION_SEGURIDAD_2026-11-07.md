@@ -14,7 +14,7 @@ Vercel o Google Cloud.
 
 | # | Nivel | Qué | Estado |
 |---|---|---|---|
-| M1 | Medio | Fotos: cualquiera sin login puede subir archivos sin límite de cantidad (ya conocido, sigue abierto) | Instrucciones abajo, sin cambiar |
+| M1 | Medio | Fotos: cualquiera sin login puede subir archivos sin límite de cantidad (ya conocido, sigue abierto) | Código listo (rama pendientes-seguridad-2026-11-07b); faltan 2 migraciones |
 | M2 | Medio | `/api/coincidencias`: ids inventados = hasta 10 consultas a Supabase por pedido | ✅ Arreglado |
 | M3 | Medio | `/api/log-error`: 6 pedidos a Supabase por cada error, se podía usar desde otros sitios | ✅ Arreglado (queda tope global, propuesto) |
 | B1 | Bajo | "Seguir buscando" fallaba con sesión iniciada en avisos publicados como invitado | ✅ Arreglado |
@@ -85,6 +85,13 @@ Verificación: `npm test` (81 archivos, 1102 tests) y `npm run lint` OK.
 ## Para decidir o configurar (sin cambios)
 
 ### M1 — Subida de fotos sin login y sin límite (sigue igual que el 04/11)
+> **Actualización 07/11 (tarde):** hecho el arreglo de verdad. Las fotos se
+> suben con un permiso firmado que entrega `/api/fotos/subir` después de
+> pasar el cupo `foto`, y se borran con `/api/fotos/borrar` (ver
+> `src/lib/serverFotos.js`). Para cerrarlo del todo faltan dos migraciones,
+> en este orden: `20261107_01_cupo_fotos.sql` (cuando quieras) y
+> `20261107_02_cerrar_subida_directa.sql` (recién después de comprobar en
+> producción que publicar con foto anda). Lo de abajo queda como historia.
 
 - **Dónde:** policy `felpus_photos_public_insert` (`supabase/schema.sql:737`).
 - **Qué pasa:** con la clave pública cualquiera sube JPG/PNG/WebP de hasta
