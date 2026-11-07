@@ -193,7 +193,8 @@ import AvistamientosHistorial from "./felpus/AvistamientosHistorial";
 import ResguardoPregunta from "./felpus/ResguardoPregunta";
 import { detallesResguardo } from "../lib/resguardo";
 import { tituloConsejos } from "../lib/consejos";
-import { splitStoredWhatsapp, parseWhatsappPhone, getDefaultCountry, formatE164ForDisplay } from "../lib/phone";
+import { splitStoredWhatsapp, getDefaultCountry, formatE164ForDisplay } from "../lib/phone";
+import { contactoCapturaParaForm, avisoContactoCaptura } from "../lib/contactoCaptura";
 import {
   Badge,
   EspecieIcon,
@@ -547,7 +548,8 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   const [savedWhatsapp, setSavedWhatsapp] = useState(null);
   const [savedWhatsappDisplay, setSavedWhatsappDisplay] = useState("");
   const [whatsappUsingSaved, setWhatsappUsingSaved] = useState(false);
-  // El contacto se completó con lo que decía la captura (ImportPostCard).
+  // El contacto se completó con lo que decía la captura (ImportPostCard):
+  // false, o el texto del aviso ("Usamos el teléfono del aviso.").
   const [contactoDeCaptura, setContactoDeCaptura] = useState(false);
   // Fuerza el estado de error del PhoneInput en un intento de submit fallido
   // aunque la persona nunca haya salido del campo (blur) — ver "no validar
@@ -2490,28 +2492,21 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
     if (photoFile) await processPhotoFile(photoFile);
   }
 
-  // Contacto que figuraba en la captura (postImport.js, extraerContacto):
-  // solo en los campos vacíos, nunca pisa lo que la persona ya cargó ni el
-  // WhatsApp guardado. Queda una nota junto al contacto para que lo revise.
+  // Contacto que figuraba en la captura (postImport.js, extraerContacto,
+  // normalizado en contactoCaptura.js): REEMPLAZA al que estaba cargado,
+  // incluido el WhatsApp guardado de una publicación anterior (se cierra la
+  // pill para que se vea el número nuevo). Si la captura no trae teléfono o
+  // email, ese campo queda como estaba. Aviso chico junto al contacto.
   async function completarContactoDeCaptura(contacto) {
-    if (!contacto) return;
-    let completo = false;
-    if (contacto.telefono && !whatsappUsingSaved && !form.contactoWhatsapp.trim()) {
-      const parsed = await parseWhatsappPhone(contacto.telefono, form.contactoWhatsappCountry || "AR");
-      if (parsed.isValid) {
-        const { country, national } = await splitStoredWhatsapp(parsed.digits);
-        if (national) {
-          setForm((f) => (f.contactoWhatsapp.trim() ? f : { ...f, contactoWhatsapp: national, contactoWhatsappCountry: country || f.contactoWhatsappCountry }));
-          completo = true;
-        }
-      }
+    const { whatsapp, email } = await contactoCapturaParaForm(contacto, form.contactoWhatsappCountry);
+    if (whatsapp) {
+      setWhatsappUsingSaved(false);
+      setForm((f) => ({ ...f, contactoWhatsapp: whatsapp.national, contactoWhatsappCountry: whatsapp.country }));
     }
-    if (contacto.email && !form.contactoEmail.trim()) {
-      setForm((f) => (f.contactoEmail.trim() ? f : { ...f, contactoEmail: contacto.email }));
-      completo = true;
-    }
-    setContactoDeCaptura(completo);
-    if (completo) track("captura_contacto_completado");
+    if (email) setForm((f) => ({ ...f, contactoEmail: email }));
+    const aviso = avisoContactoCaptura({ telefono: !!whatsapp, email: !!email });
+    setContactoDeCaptura(aviso || false);
+    if (aviso) track("captura_contacto_completado");
   }
 
   // Publica y busca coincidencias: lo comparten el formulario (handleSubmit)
@@ -4244,7 +4239,7 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
                 </p>
                 {contactoDeCaptura && (
                   <p className="text-[12px] mb-2 rounded-lg px-2.5 py-2" role="status" style={{ background: C.surfaceMuted, color: C.text }}>
-                    Lo completamos con el contacto que figuraba en la captura. Revisá que sea tuyo o de quien puede responder.
+                    {contactoDeCaptura} Revisá que sea tuyo o de quien puede responder.
                   </p>
                 )}
                 <div className="space-y-3">
