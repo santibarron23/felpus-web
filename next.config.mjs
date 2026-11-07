@@ -182,11 +182,24 @@ const nextConfig = {
     "/api/embed": ONNX_RUNTIME_FILES,
     // + Tesseract (OCR): el worker y el wasm se cargan con rutas que el
     // rastreo de Next no sigue.
+    // Todas las variantes del motor (2026-11-07): antes solo entraban las
+    // "*lstm*", pero tesseract.js 7.0.0 en Node siempre carga la variante
+    // SIN lstm — worker-script/index.js le pasa a getCore un booleano
+    // (lstmOnly) y getCore lo compara contra los números de OEM, así que
+    // nunca da "lstm". En producción fallaba cada OCR con ENOENT de
+    // tesseract-core-relaxedsimd.wasm. Cuál variante elige (relaxedsimd,
+    // simd o la común) depende de lo que soporte el procesador, por eso van
+    // todas. Los .wasm.js (el mismo wasm en base64, para el navegador) no
+    // hacen falta. nextConfig.test.js lo vigila.
     "/api/photo-check": [
       ...ONNX_RUNTIME_FILES,
       "node_modules/tesseract.js/src/**",
       "node_modules/tesseract.js/package.json",
-      "node_modules/tesseract.js-core/tesseract-core*lstm*",
+      "node_modules/tesseract.js-core/tesseract-core*.wasm",
+      ...["", "-simd", "-relaxedsimd"].flatMap((v) => [
+        `node_modules/tesseract.js-core/tesseract-core${v}.js`,
+        `node_modules/tesseract.js-core/tesseract-core${v}-lstm.js`,
+      ]),
       "node_modules/tesseract.js-core/package.json",
       "node_modules/tesseract.js-core/index.js",
     ],
