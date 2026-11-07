@@ -10,25 +10,6 @@ import { useTheme } from "./ThemeProvider";
 import { useFocusTrap } from "./useFocusTrap";
 import { track } from "../../lib/analytics";
 
-// Tarjeta de bienvenida descartada (o guía terminada): no vuelve a aparecer.
-export const WELCOME_DISMISSED_KEY = "felpus_bienvenida_vista";
-
-export function markWelcomeSeen() {
-  try {
-    localStorage.setItem(WELCOME_DISMISSED_KEY, "1");
-  } catch {
-    // sin localStorage: la tarjeta puede volver a aparecer, no es grave
-  }
-}
-
-export function welcomeSeen() {
-  try {
-    return localStorage.getItem(WELCOME_DISMISSED_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
 export default function OnboardingTutorial({ onClose, onFinish }) {
   const C = useTheme();
   const [step, setStep] = useState(0);
