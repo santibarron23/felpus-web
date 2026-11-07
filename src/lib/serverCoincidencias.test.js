@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { makeReportesFuente, coincidenciasDe, reporteLiviano, CACHE_MS } from "./serverCoincidencias";
+import { makeReportesFuente, coincidenciasDe, reporteLiviano, CACHE_MS, NO_EXISTE_MS } from "./serverCoincidencias";
 import { findMatches, matchBreakdown } from "./matchingScore";
 import { candidatosParaComparar } from "./matching";
 import { rowToReport } from "./reportFromRow";
@@ -73,10 +73,26 @@ describe("makeReportesFuente", () => {
   });
 
   it("un aviso recién publicado que no está en la caché se pide aparte", async () => {
-    const fetchImpl = vi.fn(async (url) => (url.includes("id=eq.nuevo") ? json([fila({ id: "nuevo" })]) : json(url.includes("id=eq.") ? [] : FILAS)));
+    const fetchImpl = vi.fn(async (url) => (url.includes("id=in.(nuevo") ? json([fila({ id: "nuevo" })]) : json(url.includes("id=in.") ? [] : FILAS)));
     const f = makeReportesFuente({ supabaseUrl: "https://s", anonKey: "anon", fetchImpl });
     expect((await f.uno("nuevo")).reporte.id).toBe("nuevo");
     expect((await f.uno("no-existe")).reporte).toBeNull();
+  });
+
+  it("varios: los que faltan van en una consulta y el 'no existe' se recuerda un minuto", async () => {
+    let t = 0;
+    const fetchImpl = vi.fn(async (url) => (url.includes("id=in.") ? json([fila({ id: "nuevo" })]) : json(FILAS)));
+    const f = makeReportesFuente({ supabaseUrl: "https://s", anonKey: "anon", fetchImpl, now: () => t });
+    const r = await f.varios(["p1", "nuevo", "falso-1", "falso-2"]);
+    expect(r.reportes.map((x) => x?.id ?? null)).toEqual(["p1", "nuevo", null, null]);
+    const sueltas = () => fetchImpl.mock.calls.filter(([url]) => url.includes("id=in."));
+    expect(sueltas()).toHaveLength(1);
+    expect(sueltas()[0][0]).toContain("id=in.(nuevo,falso-1,falso-2)");
+    await f.varios(["falso-1", "falso-2"]);
+    expect(sueltas()).toHaveLength(1);
+    t = NO_EXISTE_MS + 1;
+    await f.varios(["falso-1"]);
+    expect(sueltas()).toHaveLength(2);
   });
 
   it("si faltan columnas opcionales, reintenta con las básicas", async () => {

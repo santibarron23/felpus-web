@@ -19,6 +19,7 @@ import { findMatches, matchBreakdown } from "./matchingScore";
 // de pedidos no vuelve a bajar todo el listado de Supabase cada vez.
 export const CACHE_MS = 3 * 60_000;
 export const LIMITE_MAX = 50;
+export const NO_EXISTE_MS = 60_000;
 
 async function pedirFilas({ supabaseUrl, anonKey, fetchImpl }, query) {
   const res = await fetchImpl(`${supabaseUrl}/rest/v1/reports?${query}`, {
@@ -53,15 +54,40 @@ export function makeReportesFuente({ supabaseUrl, anonKey, fetchImpl = (...a) =>
     });
     return promise;
   }
-  // Un aviso recién publicado puede no estar todavía en la caché.
-  async function uno(id) {
-    const lista = await todos();
-    const enCache = lista.find((r) => r.id === id);
-    if (enCache) return { reporte: enCache, lista };
-    const [fresco] = await leerReportes(env, `&id=eq.${encodeURIComponent(id)}&limit=1`);
-    return { reporte: fresco || null, lista };
+  // Ids que se buscaron y no existen (o están ocultos), por un minuto.
+  // Revisión 2026-11-07: un pedido con 10 ids inventados hacía 10 consultas
+  // a Supabase (con el cupo de 40 pedidos por minuto, 400 consultas por
+  // minuto desde una sola IP). Los ids de avisos nuevos son aleatorios, así
+  // que nadie pregunta antes por uno que se va a publicar: guardar el "no
+  // existe" un rato no esconde un aviso real.
+  const noExisten = new Map();
+  function noExisteVigente(id) {
+    const at = noExisten.get(id);
+    if (at == null) return false;
+    if (now() - at < NO_EXISTE_MS) return true;
+    noExisten.delete(id);
+    return false;
   }
-  return { todos, uno };
+  // Un aviso recién publicado puede no estar todavía en la caché: los que
+  // faltan se piden aparte, todos juntos en UNA consulta.
+  // ids: ya validados por la ruta (solo letras, números y guiones).
+  async function varios(ids) {
+    const lista = await todos();
+    const porId = new Map(lista.map((r) => [r.id, r]));
+    const faltan = [...new Set(ids)].filter((id) => !porId.has(id) && !noExisteVigente(id));
+    if (faltan.length) {
+      const frescos = await leerReportes(env, `&id=in.(${faltan.map(encodeURIComponent).join(",")})&limit=${faltan.length}`);
+      for (const r of frescos) porId.set(r.id, r);
+      if (noExisten.size > 5000) noExisten.clear();
+      for (const id of faltan) if (!porId.has(id)) noExisten.set(id, now());
+    }
+    return { reportes: ids.map((id) => porId.get(id) || null), lista };
+  }
+  async function uno(id) {
+    const { reportes, lista } = await varios([id]);
+    return { reporte: reportes[0], lista };
+  }
+  return { todos, uno, varios };
 }
 
 // Lo que necesita la pantalla de cada coincidencia: sin los vectores de las
