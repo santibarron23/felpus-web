@@ -194,7 +194,7 @@ import ResguardoPregunta from "./felpus/ResguardoPregunta";
 import { detallesResguardo } from "../lib/resguardo";
 import { tituloConsejos } from "../lib/consejos";
 import { splitStoredWhatsapp, getDefaultCountry, formatE164ForDisplay } from "../lib/phone";
-import { contactoCapturaParaForm, avisoContactoCaptura } from "../lib/contactoCaptura";
+import { contactoCapturaParaForm, avisoContactoCaptura, formConContactoCaptura } from "../lib/contactoCaptura";
 import {
   Badge,
   EspecieIcon,
@@ -2499,11 +2499,9 @@ export default function FelpusMatcher({ initialStats = null } = {}) {
   // email, ese campo queda como estaba. Aviso chico junto al contacto.
   async function completarContactoDeCaptura(contacto) {
     const { whatsapp, email } = await contactoCapturaParaForm(contacto, form.contactoWhatsappCountry);
-    if (whatsapp) {
-      setWhatsappUsingSaved(false);
-      setForm((f) => ({ ...f, contactoWhatsapp: whatsapp.national, contactoWhatsappCountry: whatsapp.country }));
-    }
-    if (email) setForm((f) => ({ ...f, contactoEmail: email }));
+    // La pill del WhatsApp guardado se cierra para que se vea el número nuevo.
+    if (whatsapp) setWhatsappUsingSaved(false);
+    if (whatsapp || email) setForm((f) => formConContactoCaptura(f, { whatsapp, email }));
     const aviso = avisoContactoCaptura({ telefono: !!whatsapp, email: !!email });
     setContactoDeCaptura(aviso || false);
     if (aviso) track("captura_contacto_completado");
