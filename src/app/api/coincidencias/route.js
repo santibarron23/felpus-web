@@ -57,10 +57,10 @@ export async function POST(request) {
 
   try {
     const resultados = {};
-    for (const id of ids) {
-      const { reporte, lista } = await fuenteReportes().uno(id);
-      if (reporte) resultados[id] = coincidenciasDe(reporte, lista, { limit });
-    }
+    const { reportes, lista } = await fuenteReportes().varios(ids);
+    ids.forEach((id, i) => {
+      if (reportes[i]) resultados[id] = coincidenciasDe(reportes[i], lista, { limit });
+    });
     return Response.json({ resultados });
   } catch (e) {
     logError("No se pudieron calcular las coincidencias", e);

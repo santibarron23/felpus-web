@@ -24,7 +24,7 @@ describe("POST /api/coincidencias", () => {
     vi.resetModules();
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://s.supabase.co";
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon";
-    vi.stubGlobal("fetch", vi.fn(async (url) => respuesta(String(url).includes("id=eq.") ? [] : FILAS)));
+    vi.stubGlobal("fetch", vi.fn(async (url) => respuesta(String(url).includes("id=in.") ? [] : FILAS)));
     ({ POST } = await import("./route"));
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -54,5 +54,15 @@ describe("POST /api/coincidencias", () => {
   it("un aviso inexistente no aparece en los resultados", async () => {
     const res = await POST(req({ reportIds: ["no-existe"] }));
     expect((await res.json()).resultados).toEqual({});
+  });
+
+  it("varios ids que no están en la caché se piden en una sola consulta", async () => {
+    const ids = Array.from({ length: 10 }, (_, i) => `x${i}`);
+    await POST(req({ reportIds: ids }));
+    const sueltas = fetch.mock.calls.filter(([url]) => String(url).includes("id=in."));
+    expect(sueltas).toHaveLength(1);
+    // Y el "no existe" queda guardado un rato: el mismo pedido no vuelve a la base.
+    await POST(req({ reportIds: ids }));
+    expect(fetch.mock.calls.filter(([url]) => String(url).includes("id=in."))).toHaveLength(1);
   });
 });

@@ -1,6 +1,7 @@
 import { logError } from "../../../../lib/log";
 import { isJsonRequest } from "../../../../lib/httpGuards";
 import { getAuthUserId, supabaseServerEnv } from "../../../../lib/serverAuth";
+import { ownerFilter } from "../edit/route";
 
 // "Seguir buscando": reactiva un reporte (vuelve a generar alertas por 60
 // días). Dueño logueado, o push_token del reporte para invitados.
@@ -20,7 +21,10 @@ export async function POST(request) {
   const pushToken = typeof body?.pushToken === "string" && /^[0-9a-f-]{36}$/i.test(body.pushToken) ? body.pushToken : null;
   if (!reportId) return Response.json({ error: "Falta reportId." }, { status: 400 });
   const userId = await getAuthUserId(request, env);
-  const filter = userId ? `user_id=eq.${userId}` : pushToken ? `push_token=eq.${pushToken}` : null;
+  // Cuenta o token del dispositivo, cualquiera de los dos (igual que
+  // /api/reports/edit). Antes, con la sesión iniciada se ignoraba el token: un
+  // aviso publicado como invitado en este teléfono no se podía renovar.
+  const filter = ownerFilter(userId, pushToken);
   if (!filter) return Response.json({ error: "No autorizado." }, { status: 401 });
   try {
     const res = await fetch(`${env.supabaseUrl}/rest/v1/reports?id=eq.${encodeURIComponent(reportId)}&${filter}&resuelto=eq.false`, {
