@@ -352,7 +352,7 @@ describe("createReport", () => {
   });
 
   it("con sesión activa, manda el access_token como Authorization: Bearer", async () => {
-    supabaseMock.auth.getSession.mockResolvedValueOnce({ data: { session: { access_token: "tok-123" } } });
+    supabaseMock.auth.getSession.mockResolvedValue({ data: { session: { access_token: "tok-123" } } });
     const fetchMock = vi.fn((url) => {
       if (typeof url === "string" && url.startsWith("data:")) {
         return Promise.resolve({ blob: () => Promise.resolve(new Blob(["x"], { type: "image/jpeg" })) });

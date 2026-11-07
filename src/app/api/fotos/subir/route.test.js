@@ -6,6 +6,7 @@ vi.mock("../../../../lib/serverAiRateLimit", () => ({ makeAiRateLimit: () => per
 vi.mock("../../../../lib/serverAuth", () => ({
   supabaseServerEnv: () => ({ supabaseUrl: "https://s.supabase.co", serviceKey: "service" }),
   getAuthUserId: vi.fn(async () => null),
+  getAuthUser: vi.fn(async () => null),
 }));
 
 const USER = "11111111-2222-3333-4444-555555555555";
@@ -59,6 +60,19 @@ describe("POST /api/fotos/subir", () => {
     expect((await POST(req({ prefijo: `avatars/${USER}/avatar`, ext: "jpg" }))).status).toBe(400);
     getAuthUserId.mockResolvedValueOnce(USER);
     expect((await POST(req({ prefijo: `avatars/${USER}/avatar`, ext: "jpg" }))).status).toBe(200);
+  });
+
+  it("la cuenta de Felpus no pasa por el cupo", async () => {
+    const { getAuthUser } = await import("../../../../lib/serverAuth");
+    getAuthUser.mockResolvedValueOnce({ id: "u1", email: "contacto.felpus@gmail.com" });
+    permitir.mockResolvedValue(false);
+    const r = new Request("https://felpus.com/api/fotos/subir", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer tok" },
+      body: JSON.stringify({ prefijo: "170-abc", ext: "jpg" }),
+    });
+    expect((await POST(r)).status).toBe(200);
+    expect(permitir).not.toHaveBeenCalled();
   });
 
   it("rechaza pedidos de otros sitios", async () => {

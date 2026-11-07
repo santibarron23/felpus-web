@@ -2,6 +2,7 @@ import { logError } from "../../../lib/log";
 import { isJsonRequest, getClientIp, esPedidoDeOtroSitio, respuestaOtroSitio } from "../../../lib/httpGuards";
 import { parseImageDataUrl } from "../../../lib/chatbot";
 import { makeAiRateLimit } from "../../../lib/serverAiRateLimit";
+import { pedidoSinLimite } from "../../../lib/serverCuentasSinLimite";
 import {
   DEFAULT_GEMINI_MODEL,
   FALLBACK_GEMINI_MODEL,
@@ -92,7 +93,8 @@ export async function POST(request) {
   if (modo === "foto" && images.length !== 1) return json({ error: "Falta la foto." }, 400);
   if (!images.length && !hayTexto) return json({ error: "Subí una captura o pegá el texto del aviso." }, 400);
 
-  if (!(await checkRateLimit(getClientIp(request)))) {
+  // Cuentas sin cupos (cuentasSinLimite.js): primero, así no cuentan para el tope global.
+  if (!(await pedidoSinLimite(request)) && !(await checkRateLimit(getClientIp(request)))) {
     return json({ error: "Demasiados intentos seguidos. Probá de nuevo en un rato.", code: "rate_limit" }, 429);
   }
 

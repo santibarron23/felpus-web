@@ -2,6 +2,8 @@
 // mandarla, recortar la foto de la mascota y llamar a /api/import-post.
 // Lo puro (validación, mapeo al formulario) está en postImport.js.
 
+import { headerCuentaSinLimite } from "./cuentasSinLimite";
+
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -63,7 +65,7 @@ export async function importPost(payload) {
   try {
     const res = await fetch("/api/import-post", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await headerCuentaSinLimite()) },
       body: JSON.stringify(payload),
     });
     const body = await res.json().catch(() => ({}));

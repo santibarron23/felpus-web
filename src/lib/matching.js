@@ -1,4 +1,5 @@
 import { logError } from "./log";
+import { headerCuentaSinLimite } from "./cuentasSinLimite";
 
 // ---------------------------------------------------------------------------
 // Felpus — datos y utilidades de matching. El puntaje en sí (pesos,
@@ -524,7 +525,7 @@ export async function getImageEmbedding(dataUrl) {
   try {
     const res = await fetch("/api/embed", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await headerCuentaSinLimite()) },
       body: JSON.stringify({ imageDataUrl: dataUrl }),
     });
     if (!res.ok) return null;
