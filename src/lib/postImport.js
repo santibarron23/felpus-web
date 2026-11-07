@@ -10,9 +10,9 @@
 // Protección de datos: la captura no se guarda en ningún lado, y de los
 // textos se borran teléfonos, mails, links y @usuarios.
 // Contacto (2026-11-02, a pedido): el teléfono y el email que figuren en el
-// aviso vuelven aparte (extraerContacto) y el formulario los usa SOLO si sus
-// campos de contacto están vacíos, con una nota para que quien publica
-// confirme que corresponden (la captura puede ser del post de otra persona).
+// aviso vuelven aparte (extraerContacto). Desde 2026-11-07 el formulario
+// los usa en lugar del contacto que estaba cargado (ver contactoCaptura.js),
+// con una nota para que quien publica confirme que corresponden.
 import { COLOR_OPTIONS, TAMANO_OPTIONS } from "./matching";
 import {
   normalizeDraft,
