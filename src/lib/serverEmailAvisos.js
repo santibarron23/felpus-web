@@ -64,11 +64,18 @@ export function avisoUrls(siteUrl, token) {
 
 // Resend. Sin clave → null (avisos por email apagados).
 export function makeEmailSender(env = process.env, fetchImpl = fetch) {
-  const key = env.RESEND_API_KEY;
+  const key = String(env.RESEND_API_KEY || "").trim();
   if (!key) return null;
   const from = env.EMAIL_FROM || EMAIL_FROM_DEFAULT;
   const replyTo = env.EMAIL_REPLY_TO || EMAIL_REPLY_TO_DEFAULT;
+  // Caso real (28/10 al 07/11): en Vercel quedó la clave enmascarada que
+  // muestra Resend ("re_•••…"). fetch tiraba "Cannot convert argument to a
+  // ByteString" antes de llegar a Resend y no salió ningún email.
+  const claveInvalida = !/^[\x21-\x7e]+$/.test(key);
   return async function send({ to, subject, html, text, unsubscribeUrl }) {
+    if (claveInvalida) {
+      throw new Error("RESEND_API_KEY inválida en Vercel: tiene caracteres que no son de una clave (¿se pegó la clave enmascarada con •••?). Creá una nueva en Resend y pegala completa.");
+    }
     const res = await fetchImpl("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },

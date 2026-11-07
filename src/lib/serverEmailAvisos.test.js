@@ -54,6 +54,19 @@ describe("makeEmailSender", () => {
     await expect(send({ to: "a@b.com", subject: "s", html: "h", text: "t" })).rejects.toThrow("Resend 403: The felpus.com domain is not verified.");
   });
 
+  it("clave enmascarada (re_•••) en Vercel: error claro y no llama a Resend", async () => {
+    const fetchImpl = vi.fn();
+    const send = makeEmailSender({ RESEND_API_KEY: "re_AVbp••••••••" }, fetchImpl);
+    await expect(send({ to: "a@b.com", subject: "s", html: "h", text: "t" })).rejects.toThrow(/clave enmascarada/);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("espacios alrededor de la clave no la rompen", async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
+    await makeEmailSender({ RESEND_API_KEY: "  re_x\n" }, fetchImpl)({ to: "a@b.com", subject: "s", html: "h", text: "t" });
+    expect(fetchImpl.mock.calls[0][1].headers.Authorization).toBe("Bearer re_x");
+  });
+
   it("si Resend rechaza sin cuerpo legible, igual dice el código", async () => {
     const fetchImpl = vi.fn(async () => ({ ok: false, status: 500, json: async () => { throw new Error("no json"); } }));
     const send = makeEmailSender({ RESEND_API_KEY: "re_x" }, fetchImpl);
