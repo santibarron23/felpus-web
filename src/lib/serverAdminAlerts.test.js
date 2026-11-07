@@ -97,10 +97,23 @@ describe("enviarAlertaAdmin", () => {
 
   it("si falla el email igual manda el push, y nunca tira", async () => {
     const d = deps({ sendEmail: vi.fn(async () => { throw new Error("Resend 500"); }) });
-    expect(await enviarAlertaAdmin({ ...alerta, firma: "x" }, { ...d, now: 0 })).toMatchObject({ enviada: true, canales: ["push"] });
+    expect(await enviarAlertaAdmin({ ...alerta, firma: "x" }, { ...d, now: 0 })).toMatchObject({ enviada: true, canales: ["push"], email: "Resend 500" });
     const roto = deps();
     roto.db.marcarAlerta = vi.fn(async () => { throw new Error("boom"); });
     await expect(enviarAlertaAdmin({ ...alerta, firma: "y" }, { ...roto, now: 0 })).resolves.toMatchObject({ enviada: false });
+  });
+
+  it("dice si el email salió o por qué no", async () => {
+    expect(await enviarAlertaAdmin({ ...alerta, firma: "e1" }, { ...deps(), now: 0 })).toMatchObject({ email: "enviado" });
+    expect(await enviarAlertaAdmin({ ...alerta, firma: "e2" }, { ...deps({ sendEmail: null }), now: 0 })).toMatchObject({ canales: ["push"], email: "sin RESEND_API_KEY" });
+  });
+
+  it("la prueba puede ignorar el silencio de 30 minutos", async () => {
+    const d = deps();
+    const a = { ...alerta, firma: "prueba-silencio" };
+    await enviarAlertaAdmin(a, { ...d, now: 0 });
+    expect(await enviarAlertaAdmin(a, { ...d, now: MIN })).toMatchObject({ motivo: "silencio" });
+    expect(await enviarAlertaAdmin(a, { ...d, now: 2 * MIN, ignorarSilencio: true })).toMatchObject({ enviada: true });
   });
 
   it("descarta suscripciones push de dominios no permitidos", async () => {

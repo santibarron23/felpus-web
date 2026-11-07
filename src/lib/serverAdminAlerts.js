@@ -93,7 +93,12 @@ const enMemoria = new Map();
 
 // Manda la alerta si no se mandó la misma en los últimos SILENCIO_MIN
 // minutos. Nunca tira: una alerta que falla no puede romper lo que la llamó.
-export async function enviarAlertaAdmin(alerta, { db, sendEmail, pusher, adminEmail, now = Date.now(), log = () => {} }) {
+// Devuelve también `email`: "enviado", "sin RESEND_API_KEY" o el error de
+// Resend, para que la alerta de prueba diga POR QUÉ no llegó el mail (antes,
+// si salía el push, decía "Enviada por push" y el email fallaba en silencio).
+// ignorarSilencio: solo la alerta de prueba, para reintentar enseguida
+// después de corregir la configuración.
+export async function enviarAlertaAdmin(alerta, { db, sendEmail, pusher, adminEmail, now = Date.now(), log = () => {}, ignorarSilencio = false }) {
   if (!alerta) return { enviada: false, motivo: "sin alerta" };
   try {
     let ultima = null;
@@ -104,7 +109,7 @@ export async function enviarAlertaAdmin(alerta, { db, sendEmail, pusher, adminEm
       conTabla = false;
       ultima = enMemoria.get(alerta.firma) ?? null;
     }
-    if (ultima != null && now - ultima < SILENCIO_MIN * 60_000) {
+    if (!ignorarSilencio && ultima != null && now - ultima < SILENCIO_MIN * 60_000) {
       if (conTabla) await db.sumarRepeticion(alerta.firma).catch(() => {});
       return { enviada: false, motivo: "silencio" };
     }
@@ -112,6 +117,7 @@ export async function enviarAlertaAdmin(alerta, { db, sendEmail, pusher, adminEm
     else enMemoria.set(alerta.firma, now);
 
     const canales = [];
+    let email = !sendEmail ? "sin RESEND_API_KEY" : !adminEmail ? "sin email del admin" : null;
     if (sendEmail && adminEmail) {
       try {
         await sendEmail({
@@ -121,7 +127,9 @@ export async function enviarAlertaAdmin(alerta, { db, sendEmail, pusher, adminEm
           html: `<p><strong>${escapar(alerta.titulo)}</strong></p><p>${escapar(alerta.detalle)}</p><p><a href="https://felpus.com/api/health">Ver /api/health</a></p><p style="color:#756A62;font-size:12px">No se repite esta misma alerta por ${SILENCIO_MIN} minutos.</p>`,
         });
         canales.push("email");
+        email = "enviado";
       } catch (e) {
+        email = String(e?.message || e).slice(0, 240);
         log("No se pudo mandar la alerta por email", e);
       }
     }
@@ -143,7 +151,7 @@ export async function enviarAlertaAdmin(alerta, { db, sendEmail, pusher, adminEm
         log("No se pudo mandar la alerta por push", e);
       }
     }
-    return { enviada: canales.length > 0, canales };
+    return { enviada: canales.length > 0, canales, email };
   } catch (e) {
     log("No se pudo procesar la alerta al admin", e);
     return { enviada: false, motivo: "error" };
@@ -201,7 +209,7 @@ export function esFallaDePublicacion(error) {
 // Arma todo desde las variables de entorno y manda (para las rutas).
 // Sin Supabase configurado no hace nada; sin RESEND_API_KEY o sin claves
 // VAPID, usa el canal que haya.
-export async function alertarAdmin(alerta, env = process.env) {
+export async function alertarAdmin(alerta, env = process.env, { ignorarSilencio = false } = {}) {
   const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
   if (!alerta || !supabaseUrl || !serviceKey) return { enviada: false, motivo: "sin configurar" };
@@ -212,5 +220,6 @@ export async function alertarAdmin(alerta, env = process.env) {
     pusher,
     adminEmail: env.ALERTAS_ADMIN_EMAIL || ADMIN_EMAIL,
     log: (...a) => console.error(...a),
+    ignorarSilencio,
   });
 }

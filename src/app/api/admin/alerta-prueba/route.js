@@ -18,6 +18,6 @@ export async function POST(request) {
     firma: "prueba",
     titulo: "Alerta de prueba",
     detalle: "Si te llegó esto, las alertas de Felpus funcionan. Cuando algo deje de andar (el listado, publicar, un error que les pasa a varias personas), te llega un aviso así.",
-  });
+  }, process.env, { ignorarSilencio: true });
   return Response.json(r);
 }

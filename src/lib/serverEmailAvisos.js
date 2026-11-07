@@ -84,9 +84,21 @@ export function makeEmailSender(env = process.env, fetchImpl = fetch) {
           : {}),
       }),
     });
-    if (!res.ok) throw new Error(`Resend ${res.status}`);
+    // Con el motivo que da Resend (dominio sin verificar, clave inválida,
+    // remitente de otro dominio…): sin eso, "Resend 403" no dice qué arreglar.
+    if (!res.ok) throw new Error(`Resend ${res.status}${await motivoResend(res)}`);
     return true;
   };
+}
+
+async function motivoResend(res) {
+  try {
+    const data = await res.json();
+    const msg = String(data?.message || data?.error || "").replace(/\s+/g, " ").trim().slice(0, 200);
+    return msg ? `: ${msg}` : "";
+  } catch {
+    return "";
+  }
 }
 
 // Acceso a la base (REST con service_role). Si la migración 20261028_01

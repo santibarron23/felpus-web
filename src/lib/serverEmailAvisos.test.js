@@ -47,6 +47,18 @@ describe("makeEmailSender", () => {
     expect(body.reply_to).toBe("contacto.felpus@gmail.com");
     expect(body.headers["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click");
   });
+
+  it("si Resend rechaza, el error trae su motivo", async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: false, status: 403, json: async () => ({ message: "The felpus.com domain is not verified." }) }));
+    const send = makeEmailSender({ RESEND_API_KEY: "re_x" }, fetchImpl);
+    await expect(send({ to: "a@b.com", subject: "s", html: "h", text: "t" })).rejects.toThrow("Resend 403: The felpus.com domain is not verified.");
+  });
+
+  it("si Resend rechaza sin cuerpo legible, igual dice el código", async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: false, status: 500, json: async () => { throw new Error("no json"); } }));
+    const send = makeEmailSender({ RESEND_API_KEY: "re_x" }, fetchImpl);
+    await expect(send({ to: "a@b.com", subject: "s", html: "h", text: "t" })).rejects.toThrow(/^Resend 500$/);
+  });
 });
 
 describe("enviarSeguimientos", () => {
