@@ -40,6 +40,17 @@ describe("instalarCapturaGlobal", () => {
     expect(log.mock.calls[1][1].message).toBe("falló el guardado");
   });
 
+  it("ignora el error del navegador de Instagram/Facebook al salir de la página", () => {
+    const w = ventana();
+    const log = vi.fn();
+    instalarCapturaGlobal(w, { log, recargar: () => false });
+    const err = new Error("Error invoking postMessage: Java object is gone");
+    err.stack = `Error: ${err.message}\n    at sendDataToNative (iabjs://navigation_performance_logger_android:1:11722)\n    at sendBeforeUnloadMessage (iabjs://navigation_performance_logger_android:1:15376)`;
+    w.h.error({ error: err, message: `Uncaught ${err.message}`, filename: "" });
+    w.h.unhandledrejection({ reason: err });
+    expect(log).not.toHaveBeenCalled();
+  });
+
   it("un chunk viejo recarga una vez en vez de registrar", () => {
     const w = ventana();
     const log = vi.fn();

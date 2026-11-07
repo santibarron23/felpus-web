@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { isJsonRequest, getClientIp } from "../../../lib/httpGuards";
 import { alertarAdmin, esRuido, evaluarError, PICO_VENTANA_MIN } from "../../../lib/serverAdminAlerts";
 import { ipParaLimite } from "../../../lib/serverRateLimit";
+import { esDeScriptInyectado } from "../../../lib/scriptsInyectados";
 
 // Corre en el servidor — nunca en el navegador, así que la service role key
 // nunca queda expuesta al público.
@@ -53,6 +54,13 @@ export async function POST(request) {
     url: body?.url ? String(body.url).slice(0, 500) : null,
     user_agent: body?.userAgent ? String(body.userAgent).slice(0, 500) : null,
   };
+
+  // Error del script que inyecta el navegador de Instagram/Facebook, no de
+  // Felpus (ver scriptsInyectados.js). El navegador ya no lo manda, pero una
+  // pestaña abierta con la versión anterior todavía puede: no se guarda.
+  if (esDeScriptInyectado({ stack: row.stack })) {
+    return Response.json({ ok: true });
+  }
 
   const ip = ipParaLimite(getClientIp(request));
   try {
