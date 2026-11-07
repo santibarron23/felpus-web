@@ -5,6 +5,7 @@ import { isJsonRequest, getClientIp, esPedidoDeOtroSitio, respuestaOtroSitio } f
 import { validateReportContact, validarResguardo } from "../../../lib/reportValidation";
 import { sanitizeReportRow } from "../../../lib/reportRow";
 import { validarDatosAvistamiento } from "../../../lib/sighting";
+import { esCuentaSinLimite } from "../../../lib/cuentasSinLimite";
 import { avisarTopeGlobal, clavesLimite, consultarLimite, ipParaLimite, makeWindowLimiter } from "../../../lib/serverRateLimit";
 
 // Corre en el servidor — nunca en el navegador, así que la service role key
@@ -141,11 +142,15 @@ export async function POST(request) {
   if (row.detalles != null) row = { ...row, detalles: avistamiento.detalles };
 
   let realUserId = null;
+  let realEmail = null;
   const authHeader = request.headers.get("authorization");
   if (authHeader?.startsWith("Bearer ")) {
     try {
       const { data, error } = await supabase.auth.getUser(authHeader.slice(7));
-      if (!error && data?.user) realUserId = data.user.id;
+      if (!error && data?.user) {
+        realUserId = data.user.id;
+        realEmail = data.user.email || null;
+      }
     } catch (e) {
       // Token inválido/vencido: se sigue como invitado (user_id null) en
       // vez de romper la publicación — mismo criterio permisivo que el
@@ -163,7 +168,9 @@ export async function POST(request) {
     }
   }
 
-  if (!(await permitirPublicacion(supabase, getClientIp(request), realUserId))) {
+  // Cuentas sin cupos (cuentasSinLimite.js): no pasan por permitirPublicacion,
+  // así tampoco cuentan para el tope global.
+  if (!esCuentaSinLimite(realEmail) && !(await permitirPublicacion(supabase, getClientIp(request), realUserId))) {
     // Mismo texto para todos los cupos (IP, cuenta o global): no se dice
     // cuál ni cuánto falta.
     return Response.json(

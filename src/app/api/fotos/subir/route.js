@@ -2,6 +2,7 @@ import { logError } from "../../../../lib/log";
 import { isJsonRequest, getClientIp, esPedidoDeOtroSitio, respuestaOtroSitio } from "../../../../lib/httpGuards";
 import { getAuthUserId, supabaseServerEnv } from "../../../../lib/serverAuth";
 import { makeAiRateLimit } from "../../../../lib/serverAiRateLimit";
+import { pedidoSinLimite } from "../../../../lib/serverCuentasSinLimite";
 import { EXT_PERMITIDAS, firmarSubida, prefijoPermitido } from "../../../../lib/serverFotos";
 
 // Permiso para subir UNA foto a Storage, después de pasar el cupo. Ver
@@ -37,7 +38,8 @@ export async function POST(request) {
   const prefijo = prefijoPermitido(body?.prefijo, userId);
   if (!prefijo) return Response.json({ error: "Nombre de foto inválido." }, { status: 400 });
 
-  if (!(await checkRateLimit(getClientIp(request)))) {
+  // Cuentas sin cupos (cuentasSinLimite.js): primero, así no cuentan para el tope global.
+  if (!(await pedidoSinLimite(request, env)) && !(await checkRateLimit(getClientIp(request)))) {
     return Response.json({ error: "Subiste muchas fotos seguidas. Esperá un rato y probá de nuevo." }, { status: 429 });
   }
 

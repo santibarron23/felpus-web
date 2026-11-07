@@ -2,6 +2,7 @@ import { logError } from "../../../lib/log";
 import { isJsonRequest, getClientIp, esPedidoDeOtroSitio, respuestaOtroSitio } from "../../../lib/httpGuards";
 import { embedImage } from "../../../lib/imageEmbedding";
 import { makeAiRateLimit } from "../../../lib/serverAiRateLimit";
+import { pedidoSinLimite } from "../../../lib/serverCuentasSinLimite";
 
 // El modelo (DINOv2, ver imageEmbedding.js) corre acá mismo con ONNX
 // Runtime nativo: necesita Node, no Edge. maxDuration cubre el arranque en
@@ -29,7 +30,8 @@ export async function POST(request) {
   }
 
   const ip = getClientIp(request);
-  const allowed = await checkRateLimit(ip);
+  // Cuentas sin cupos (cuentasSinLimite.js): primero, así no cuentan para el tope global.
+  const allowed = (await pedidoSinLimite(request)) || (await checkRateLimit(ip));
   if (!allowed) {
     return Response.json({ error: "Demasiadas solicitudes, probá de nuevo en un minuto." }, { status: 429 });
   }

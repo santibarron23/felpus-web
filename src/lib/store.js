@@ -9,6 +9,7 @@ import {
 } from "./reportColumns";
 import { rowToReport } from "./reportFromRow";
 import { conReintentos } from "./retry";
+import { headerCuentaSinLimite } from "./cuentasSinLimite";
 
 const REPORTS_TABLE = "reports";
 const CONTRIBUTORS_TABLE = "contributors";
@@ -66,7 +67,7 @@ async function sessionAuthHeader() {
 async function pedirPermisoDeSubida(prefijo, ext) {
   const res = await fetch("/api/fotos/subir", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...(prefijo.startsWith("avatars/") ? await sessionAuthHeader() : {}) },
+    headers: { "Content-Type": "application/json", ...(prefijo.startsWith("avatars/") ? await sessionAuthHeader() : await headerCuentaSinLimite()) },
     body: JSON.stringify({ prefijo, ext }),
   });
   const data = await res.json().catch(() => ({}));

@@ -2,6 +2,7 @@ import { logError } from "../../../lib/log";
 import { isJsonRequest, getClientIp, esPedidoDeOtroSitio, respuestaOtroSitio } from "../../../lib/httpGuards";
 import { checkPhoto } from "../../../lib/photoCheck";
 import { makeAiRateLimit } from "../../../lib/serverAiRateLimit";
+import { pedidoSinLimite } from "../../../lib/serverCuentasSinLimite";
 
 // ¿Foto real o flyer/captura/ilustración? Ver photoCheck.js. Mismo modelo
 // de ejecución y mismos controles que /api/embed (Node, ONNX Runtime nativo,
@@ -22,7 +23,8 @@ export async function POST(request) {
   if (!isJsonRequest(request)) {
     return Response.json({ error: "Content-Type inválido." }, { status: 415 });
   }
-  const allowed = await checkRateLimit(getClientIp(request));
+  // Cuentas sin cupos (cuentasSinLimite.js): primero, así no cuentan para el tope global.
+  const allowed = (await pedidoSinLimite(request)) || (await checkRateLimit(getClientIp(request)));
   if (!allowed) {
     return Response.json({ error: "Demasiadas solicitudes, probá de nuevo en un minuto." }, { status: 429 });
   }
